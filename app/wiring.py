@@ -15,11 +15,13 @@ def register_all_handlers(*, force: bool = False) -> None:
 
     from .modules.accounting.handlers import register_handlers as accounting
     from .modules.assets.handlers import register_handlers as assets
+    from .modules.expense.handlers import register_handlers as expense
     from .modules.procurement.handlers import register_handlers as procurement
 
     procurement()  # approved purchase request -> draft PO
-    accounting()   # inbound / depreciation / reclass -> journal entries
+    expense()      # approved expense request -> ExpenseApproved
+    accounting()   # inbound / outbound / depreciation / reclass / AR / expense -> journal entries
     assets()       # inbound asset line -> FixedAsset record
-    # future modules: sales, expense, bank
+    # future modules: bank
 
     _registered = True

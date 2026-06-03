@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ...core.events import bus
 from ..assets.events import DepreciationPosted, Reclassified
+from ..expense.events import ExpenseApproved, ReimbursementPosted
 from ..inventory.events import InboundPosted, OutboundPosted
 from ..sales.events import ARInvoicePosted, ReceiptPosted
 from .ledger_models import JournalSource
@@ -177,6 +178,42 @@ def on_receipt_posted(event: ReceiptPosted, session: Session) -> None:
     )
 
 
+def on_expense_approved(event: ExpenseApproved, session: Session) -> None:
+    """Dr expense account(s) / Cr Employee Payable. Per-category accounts;
+    falls back to supplies_expense when a category has no mapped account."""
+    fallback = get_account_by_role(session, "supplies_expense").id
+    by_acct: dict[int, Decimal] = {}
+    for ln in event.lines:
+        acct = ln.get("expense_account_id") or fallback
+        by_acct[acct] = by_acct.get(acct, Decimal("0")) + Decimal(str(ln["amount"]))
+    total = sum(by_acct.values(), Decimal("0")).quantize(_CENTS)
+    if total <= 0:
+        return
+    lines = [Line(acct, debit=amt) for acct, amt in by_acct.items()]
+    lines.append(Line(get_account_by_role(session, "employee_payable").id, credit=total))
+    post_journal(
+        session,
+        entry_date=event.entry_date,
+        lines=lines,
+        description=f"Expense claim #{event.claim_id}",
+        source_type=JournalSource.EXPENSE,
+        source_id=event.claim_id,
+    )
+
+
+def on_reimbursement_posted(event: ReimbursementPosted, session: Session) -> None:
+    """Dr Employee Payable / Cr Cash."""
+    apply_rule(
+        session,
+        event_type="reimburse.posted",
+        amount=event.amount,
+        entry_date=event.entry_date,
+        description=f"Reimbursement #{event.reimbursement_id}",
+        source_type=JournalSource.EXPENSE,
+        source_id=event.reimbursement_id,
+    )
+
+
 def register_handlers() -> None:
     bus.subscribe(InboundPosted, on_inbound_posted)
     bus.subscribe(OutboundPosted, on_outbound_posted)
@@ -184,3 +221,5 @@ def register_handlers() -> None:
     bus.subscribe(Reclassified, on_reclassified)
     bus.subscribe(ARInvoicePosted, on_ar_invoice_posted)
     bus.subscribe(ReceiptPosted, on_receipt_posted)
+    bus.subscribe(ExpenseApproved, on_expense_approved)
+    bus.subscribe(ReimbursementPosted, on_reimbursement_posted)
