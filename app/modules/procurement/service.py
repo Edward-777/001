@@ -1,10 +1,14 @@
-"""procurement.service — vendor master (M3). Purchase orders in M6."""
+"""procurement.service — vendor master (M3) + purchase orders (M6)."""
 from __future__ import annotations
+
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import PaymentTerms, Vendor
+from ...core.sequences import next_number
+from .models import PaymentTerms, POLine, POStatus, PurchaseOrder, Vendor
 
 
 def create_vendor(
@@ -36,4 +40,80 @@ def list_vendors(session: Session, *, active_only: bool = True) -> list[Vendor]:
     stmt = select(Vendor)
     if active_only:
         stmt = stmt.where(Vendor.is_active.is_(True))
+    return list(session.scalars(stmt))
+
+
+# ---- purchase orders (M6) ----------------------------------------------
+
+_CENTS = Decimal("0.01")
+
+
+def create_po_from_request(
+    session: Session, *, request_id: int, lines: list[dict]
+) -> PurchaseOrder:
+    """Auto-create a DRAFT PO from an approved purchase request's line snapshot.
+    Vendor is assigned later via issue_po (approval authorizes the spend; procurement
+    places the actual order)."""
+    po = PurchaseOrder(
+        po_no=next_number(session, "PO", datetime.now(timezone.utc).year),
+        request_id=request_id,
+        status=str(POStatus.DRAFT),
+    )
+    session.add(po)
+    session.flush()
+
+    subtotal = Decimal("0")
+    for ln in lines:
+        qty = Decimal(str(ln.get("qty", 0)))
+        price = Decimal(str(ln.get("unit_price", 0)))
+        amount = (qty * price).quantize(_CENTS)
+        subtotal += amount
+        session.add(
+            POLine(
+                po_id=po.id,
+                product_id=ln.get("product_id"),
+                description=ln.get("description"),
+                qty_ordered=qty,
+                qty_received=Decimal("0"),
+                unit_price=price,
+                amount=amount,
+            )
+        )
+    po.subtotal = subtotal
+    po.tax = Decimal("0")
+    po.total = subtotal
+    session.flush()
+    return po
+
+
+def issue_po(
+    session: Session,
+    po_id: int,
+    *,
+    vendor_id: int,
+    order_date: date | None = None,
+    expected_date: date | None = None,
+) -> PurchaseOrder:
+    """Assign a vendor and move the PO from draft -> open (ready to receive)."""
+    po = session.get(PurchaseOrder, po_id)
+    if po is None:
+        raise ValueError("PO not found")
+    if po.status != POStatus.DRAFT:
+        raise ValueError(f"can only issue a draft PO (is {po.status})")
+    po.vendor_id = vendor_id
+    po.order_date = order_date or date.today()
+    po.expected_date = expected_date
+    po.status = str(POStatus.OPEN)
+    session.flush()
+    return po
+
+
+def get_po(session: Session, po_id: int) -> PurchaseOrder | None:
+    return session.get(PurchaseOrder, po_id)
+
+
+def list_pos(session: Session, *, status: POStatus | None = None) -> list[PurchaseOrder]:
+    stmt = select(PurchaseOrder)
+    if status is not None:
+        stmt = stmt.where(PurchaseOrder.status == str(status))
     return list(session.scalars(stmt))

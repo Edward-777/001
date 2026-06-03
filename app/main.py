@@ -33,6 +33,11 @@ def create_app() -> FastAPI:
         same_site="lax",
     )
 
+    # Wire cross-module event handlers (procurement<-approval, accounting<-..., ...).
+    from .wiring import register_all_handlers
+
+    register_all_handlers()
+
     # NOTE: dev-only convenience. Production uses Alembic migrations (M0+).
     Base.metadata.create_all(bind=engine)
 

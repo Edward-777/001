@@ -202,11 +202,26 @@ def _finalize_approved(session: Session, req: Request) -> None:
     req.status = str(RequestStatus.APPROVED)
     req.decided_at = _now()
     session.flush()
+
+    req_lines = session.scalars(
+        select(RequestLine).where(RequestLine.request_id == req.id)
+    ).all()
+    snapshot = [
+        {
+            "product_id": ln.product_id,
+            "description": ln.description,
+            "qty": Decimal(str(ln.qty)),
+            "unit_price": Decimal(str(ln.estimated_unit_price)),
+        }
+        for ln in req_lines
+    ]
     bus.emit(
         RequestApproved(
             request_id=req.id,
             request_type=req.type,
+            requester_id=req.requester_id,
             total_amount=Decimal(str(req.total_amount)),
+            lines=snapshot,
         ),
         session,
     )
