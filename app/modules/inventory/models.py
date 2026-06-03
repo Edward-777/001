@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Date, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...core.base import PKMixin, TimestampMixin
@@ -100,8 +100,8 @@ class StockMovement(PKMixin, Base):
     movement_type: Mapped[str] = mapped_column(String(12), nullable=False)
     qty: Mapped[float] = mapped_column(Qty, nullable=False)  # signed: + in, - out
     unit_cost: Mapped[float] = mapped_column(Money, nullable=False, default=0)
-    ref_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    ref_id: Mapped[int | None] = mapped_column(ForeignKey("inbounds.id"), nullable=True)
+    ref_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # inbound/outbound/reclass
+    ref_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class StockBalance(PKMixin, Base):

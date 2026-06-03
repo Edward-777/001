@@ -178,3 +178,42 @@ def post_inbound(session: Session, inbound_id: int) -> Inbound:
         session,
     )
     return inb
+
+
+# ---- generic stock issue/receipt (reused by reclass M8, outbound M9) ------
+
+def adjust_out(
+    session: Session, product_id: int, qty: Decimal, *, ref_type: str, ref_id: int | None = None
+) -> Decimal:
+    """Issue qty from stock at the current moving-average cost. Returns that cost.
+    Average is unchanged on issue; only quantity/value drop."""
+    bal = get_stock(session, product_id)
+    qty = Decimal(str(qty))
+    if bal is None or Decimal(str(bal.qty_on_hand)) < qty:
+        raise ValueError("insufficient stock")
+    unit_cost = Decimal(str(bal.avg_unit_cost))
+    new_qty = Decimal(str(bal.qty_on_hand)) - qty
+    bal.qty_on_hand = new_qty
+    bal.total_value = (new_qty * unit_cost).quantize(_CENTS)
+    session.add(
+        StockMovement(
+            product_id=product_id, movement_type=str(MovementType.OUTBOUND),
+            qty=-qty, unit_cost=unit_cost, ref_type=ref_type, ref_id=ref_id,
+        )
+    )
+    return unit_cost
+
+
+def adjust_in(
+    session: Session, product_id: int, qty: Decimal, unit_cost: Decimal,
+    *, ref_type: str, ref_id: int | None = None,
+) -> None:
+    """Receive qty into stock at a given unit cost (blends into moving average)."""
+    qty, unit_cost = Decimal(str(qty)), Decimal(str(unit_cost))
+    _receive_into_stock(session, product_id, qty, unit_cost)
+    session.add(
+        StockMovement(
+            product_id=product_id, movement_type=str(MovementType.ADJUSTMENT),
+            qty=qty, unit_cost=unit_cost, ref_type=ref_type, ref_id=ref_id,
+        )
+    )
