@@ -38,6 +38,25 @@ def get_account_by_role(session: Session, role: str) -> Account | None:
     return session.scalar(select(Account).where(Account.system_role == role))
 
 
+def find_journal_line_match(session: Session, *, account_id: int, amount, exclude_ids):
+    """Find a posted journal line on `account_id` whose movement equals a bank
+    statement line (M12). amount>0 = a debit (deposit); amount<0 = a credit
+    (withdrawal). Skips lines already reconciled (exclude_ids)."""
+    from decimal import Decimal as _D
+
+    from .ledger_models import JournalLine
+
+    amt = _D(str(amount))
+    stmt = select(JournalLine).where(JournalLine.account_id == account_id)
+    if exclude_ids:
+        stmt = stmt.where(JournalLine.id.notin_(list(exclude_ids)))
+    if amt > 0:
+        stmt = stmt.where(JournalLine.debit == amt)
+    else:
+        stmt = stmt.where(JournalLine.credit == -amt)
+    return session.scalars(stmt).first()
+
+
 def seed_coa(session: Session) -> int:
     """Idempotently load the default Chart of Accounts. Returns # inserted."""
     existing = {c for (c,) in session.execute(select(Account.code)).all()}
