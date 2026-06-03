@@ -22,6 +22,8 @@ from .modules import expense as _expense  # noqa: F401
 from .modules import approval as _approval  # noqa: F401
 from .modules import assets as _assets  # noqa: F401
 from .modules import bank as _bank  # noqa: F401
+from .modules import documents as _documents  # noqa: F401
+from .modules import notifications as _notifications  # noqa: F401
 
 
 def create_app() -> FastAPI:

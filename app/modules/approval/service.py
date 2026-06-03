@@ -16,6 +16,7 @@ from ...core.events import bus
 from ...core.sequences import next_number
 from ..auth.models import User
 from ..hr import service as hr
+from ..notifications import service as notify
 from .events import RequestApproved
 from .models import (
     ApprovalLine,
@@ -141,6 +142,10 @@ def submit_request(session: Session, request_id: int) -> Request:
     # No one above the requester (e.g. top of org) -> nothing to approve.
     if not approvers:
         _finalize_approved(session, req)
+    else:
+        notify.notify(session, user_id=approvers[0], type="approval",
+                      title=f"Approval needed: {req.title}",
+                      body=f"{req.request_no} (${req.total_amount})", link=f"/requests/{req.id}")
     return req
 
 
@@ -176,8 +181,13 @@ def approve(session: Session, request_id: int, approver_user_id: int, *, comment
     current.decided_at = _now()
     session.flush()
 
-    if _current_step(lines) is None:  # no more pending
+    nxt = _current_step(lines)
+    if nxt is None:  # no more pending
         _finalize_approved(session, req)
+    else:
+        notify.notify(session, user_id=nxt.approver_id, type="approval",
+                      title=f"Approval needed: {req.title}",
+                      body=f"{req.request_no} (${req.total_amount})", link=f"/requests/{req.id}")
     return req
 
 
@@ -195,6 +205,9 @@ def reject(session: Session, request_id: int, approver_user_id: int, *, comment:
     req.status = str(RequestStatus.REJECTED)
     req.decided_at = _now()
     session.flush()
+    notify.notify(session, user_id=req.requester_id, type="rejection",
+                  title=f"Rejected: {req.title}",
+                  body=comment or req.request_no, link=f"/requests/{req.id}")
     return req
 
 
@@ -202,6 +215,9 @@ def _finalize_approved(session: Session, req: Request) -> None:
     req.status = str(RequestStatus.APPROVED)
     req.decided_at = _now()
     session.flush()
+    notify.notify(session, user_id=req.requester_id, type="approval",
+                  title=f"Approved: {req.title}",
+                  body=req.request_no, link=f"/requests/{req.id}")
 
     req_lines = session.scalars(
         select(RequestLine).where(RequestLine.request_id == req.id)
