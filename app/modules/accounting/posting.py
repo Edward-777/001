@@ -25,7 +25,6 @@ from .ledger_models import (
     PeriodStatus,
     PostingRule,
 )
-from .service import get_account_by_role
 
 _CENTS = Decimal("0.01")
 
@@ -155,6 +154,8 @@ def apply_rule(
     actor_user_id: int | None = None,
 ) -> JournalEntry:
     """Look up the posting rule, resolve roles -> accounts, post a balanced JE."""
+    from .service import get_account_by_role  # lazy import: avoids import cycle
+
     rule = session.scalar(
         select(PostingRule).where(
             PostingRule.event_type == event_type, PostingRule.condition == condition

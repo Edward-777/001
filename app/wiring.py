@@ -13,9 +13,11 @@ def register_all_handlers(*, force: bool = False) -> None:
     if _registered and not force:
         return
 
+    from .modules.accounting.handlers import register_handlers as accounting
     from .modules.procurement.handlers import register_handlers as procurement
 
-    procurement()
-    # future modules: accounting (posts on inbound/outbound/...), assets, etc.
+    procurement()  # approved purchase request -> draft PO
+    accounting()   # inbound posted -> journal entry
+    # future modules: assets (inbound asset -> FixedAsset), sales, expense, bank
 
     _registered = True

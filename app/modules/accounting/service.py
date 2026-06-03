@@ -63,7 +63,6 @@ def create_tax_code(
 
 
 # ---- M4 posting engine (re-exported as the module's public API) ----------
-# Imported at end to avoid a cycle (posting.py imports get_account_by_role above).
 from .posting import (  # noqa: E402
     Line,
     PostingError,
