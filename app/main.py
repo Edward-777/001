@@ -53,6 +53,19 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "app": settings.app_name}
 
+    # Web UI (M15)
+    from .web.auth_routes import router as auth_router
+    from .web.main_routes import router as main_router
+
+    app.include_router(auth_router)
+    app.include_router(main_router)
+
+    # Nightly backup scheduler (production only; off in dev/tests).
+    if settings.enable_scheduler:
+        from .core.scheduler import start_scheduler
+
+        start_scheduler()
+
     return app
 
 

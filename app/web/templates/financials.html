@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+{% block title %}Financials — 001 ERP{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold">Financials — {{ period }}</h1>
+  <form method="get" action="/reports/financials">
+    <input name="period" value="{{ period }}" class="border rounded px-3 py-1">
+    <button class="bg-slate-900 text-white rounded px-3 py-1">Go</button>
+  </form>
+</div>
+
+<div class="grid grid-cols-2 gap-6">
+  <div class="bg-white rounded-xl shadow p-5">
+    <h2 class="font-semibold mb-3">Income Statement</h2>
+    {% set is_ = fin.income_statement %}
+    <table class="w-full text-sm">
+      {% for r in is_.revenue %}<tr><td>{{ r.name }}</td><td class="text-right">${{ r.balance }}</td></tr>{% endfor %}
+      <tr class="font-medium border-t"><td>Total revenue</td><td class="text-right">${{ is_.total_revenue }}</td></tr>
+      {% for r in is_.expenses %}<tr><td class="text-slate-500">{{ r.name }}</td><td class="text-right text-slate-500">(${{ r.balance }})</td></tr>{% endfor %}
+      <tr class="font-medium"><td>Total expenses</td><td class="text-right">(${{ is_.total_expenses }})</td></tr>
+      <tr class="font-bold border-t text-emerald-700"><td>Net income</td><td class="text-right">${{ is_.net_income }}</td></tr>
+    </table>
+  </div>
+  <div class="bg-white rounded-xl shadow p-5">
+    <h2 class="font-semibold mb-3">Balance Sheet</h2>
+    {% set bs = fin.balance_sheet %}
+    <table class="w-full text-sm">
+      <tr class="font-medium"><td>Total assets</td><td class="text-right">${{ bs.total_assets }}</td></tr>
+      <tr><td>Total liabilities</td><td class="text-right">${{ bs.total_liabilities }}</td></tr>
+      <tr><td>Net income</td><td class="text-right">${{ bs.net_income }}</td></tr>
+      <tr class="font-medium"><td>Total equity</td><td class="text-right">${{ bs.total_equity }}</td></tr>
+      <tr class="border-t {% if bs.balanced %}text-emerald-700{% else %}text-rose-700{% endif %}">
+        <td>Balanced?</td><td class="text-right">{{ 'Yes' if bs.balanced else 'NO' }}</td></tr>
+    </table>
+  </div>
+</div>
+{% endblock %}

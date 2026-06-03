@@ -15,6 +15,7 @@ dependencies = [
     "bcrypt>=4.0",
     "itsdangerous>=2.2",
     "python-dotenv>=1.0",
+    "APScheduler>=3.10",
     # production DB (dev defaults to sqlite; see core/config.py)
     "psycopg2-binary>=2.9.9",
 ]
@@ -40,3 +41,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.web" = ["templates/*.html"]

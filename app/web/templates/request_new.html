@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+{% block title %}New Request — 001 ERP{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">New Request</h1>
+<form method="post" action="/requests" class="bg-white rounded-xl shadow p-6 max-w-lg space-y-4">
+  <div>
+    <label class="block text-sm text-slate-500 mb-1">Title</label>
+    <input name="title" required class="w-full border rounded px-3 py-2">
+  </div>
+  <div>
+    <label class="block text-sm text-slate-500 mb-1">Type</label>
+    <select name="type" class="w-full border rounded px-3 py-2">
+      <option value="purchase">Purchase</option>
+      <option value="expense">Expense</option>
+      <option value="general">General</option>
+    </select>
+  </div>
+  <div>
+    <label class="block text-sm text-slate-500 mb-1">Description</label>
+    <input name="description" class="w-full border rounded px-3 py-2">
+  </div>
+  <div class="flex gap-4">
+    <div class="flex-1">
+      <label class="block text-sm text-slate-500 mb-1">Quantity</label>
+      <input name="qty" type="number" step="any" value="1" class="w-full border rounded px-3 py-2">
+    </div>
+    <div class="flex-1">
+      <label class="block text-sm text-slate-500 mb-1">Unit price</label>
+      <input name="unit_price" type="number" step="any" value="0" class="w-full border rounded px-3 py-2">
+    </div>
+  </div>
+  <div class="flex gap-2">
+    <button class="bg-slate-900 text-white rounded px-4 py-2 hover:bg-slate-700">Submit for approval</button>
+    <a href="/requests" class="px-4 py-2 text-slate-500">Cancel</a>
+  </div>
+</form>
+{% endblock %}

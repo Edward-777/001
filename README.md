@@ -9,8 +9,11 @@ sold as a single-tenant appliance bundled with server hardware.
 - [docs/SCHEMA.md](docs/SCHEMA.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/POLICIES.md](docs/POLICIES.md) · [docs/AI-AGENT.md](docs/AI-AGENT.md)
 
 ## Status
-**Phase 1 / M0 — project scaffold.** Core infrastructure (config, DB, event bus,
-doc numbering, audit log, app factory) in place. Modules build per ROADMAP.md.
+**Phase 1 COMPLETE (M0–M15).** Full accounting cycle — request → org-chart
+approval → purchase → inbound → inventory ⇄ assets → outbound → sales/AR →
+AP 3-way match → expense/reimbursement → bank reconciliation → financial
+reports — all auto-booked via double-entry, plus notifications, backup, and a
+server-rendered HTMX/Tailwind UI. 100 tests passing.
 
 ## Setup (requires Python 3.12+)
 ```bash
@@ -18,9 +21,10 @@ python -m venv .venv
 .venv\Scripts\activate          # Windows
 pip install -e ".[dev]"
 copy .env.example .env          # then edit
+python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
-#  -> http://127.0.0.1:8001/health
-pytest                          # run tests (event bus, ...)
+#  -> http://127.0.0.1:8001/        login: admin@001.local / admin
+pytest                          # 100 tests
 ```
 
 > Dev uses SQLite for instant run. Production = PostgreSQL (set `DATABASE_URL`).

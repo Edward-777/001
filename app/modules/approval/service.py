@@ -211,6 +211,33 @@ def reject(session: Session, request_id: int, approver_user_id: int, *, comment:
     return req
 
 
+def list_requests_for_user(session: Session, requester_id: int, *, limit: int = 50) -> list[Request]:
+    return list(
+        session.scalars(
+            select(Request).where(Request.requester_id == requester_id)
+            .order_by(Request.id.desc()).limit(limit)
+        )
+    )
+
+
+def pending_for_user(session: Session, approver_user_id: int) -> list[Request]:
+    """Requests currently awaiting THIS user's approval (their step is next)."""
+    subs = session.scalars(
+        select(Request).where(Request.status == str(RequestStatus.SUBMITTED))
+        .order_by(Request.id.desc())
+    ).all()
+    out = []
+    for req in subs:
+        current = _current_step(_lines(session, req.id))
+        if current is not None and current.approver_id == approver_user_id:
+            out.append(req)
+    return out
+
+
+def get_request(session: Session, request_id: int) -> Request | None:
+    return session.get(Request, request_id)
+
+
 def _finalize_approved(session: Session, req: Request) -> None:
     req.status = str(RequestStatus.APPROVED)
     req.decided_at = _now()

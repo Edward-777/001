@@ -15,5 +15,9 @@ class Settings(BaseSettings):
     port: int = 8001
     secure_cookies: bool = False
 
+    # Nightly backup scheduler — on in production, off in dev/tests.
+    enable_scheduler: bool = False
+    backup_dir: str = "backups"
+
 
 settings = Settings()

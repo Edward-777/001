@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block title %}My Requests — 001 ERP{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold">My Requests</h1>
+  <a href="/requests/new" class="bg-slate-900 text-white rounded px-4 py-2 hover:bg-slate-700">+ New request</a>
+</div>
+<table class="w-full bg-white rounded-xl shadow overflow-hidden text-sm">
+  <thead class="bg-slate-50 text-left text-slate-500">
+    <tr><th class="p-3">No.</th><th class="p-3">Title</th><th class="p-3">Type</th>
+        <th class="p-3">Amount</th><th class="p-3">Status</th></tr>
+  </thead>
+  <tbody>
+  {% for r in reqs %}
+    <tr class="border-t">
+      <td class="p-3">{{ r.request_no }}</td><td class="p-3">{{ r.title }}</td>
+      <td class="p-3">{{ r.type }}</td><td class="p-3">${{ r.total_amount }}</td>
+      <td class="p-3"><span class="px-2 py-1 rounded text-xs
+        {% if r.status == 'approved' %}bg-emerald-100 text-emerald-700
+        {% elif r.status == 'rejected' %}bg-rose-100 text-rose-700
+        {% else %}bg-amber-100 text-amber-700{% endif %}">{{ r.status }}</span></td>
+    </tr>
+  {% else %}
+    <tr><td class="p-3 text-slate-400" colspan="5">No requests yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

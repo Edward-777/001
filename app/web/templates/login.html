@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — 001 ERP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center">
+  <form method="post" action="/login" class="bg-white p-8 rounded-xl shadow w-80 space-y-4">
+    <div class="text-xl font-bold text-center">001 ERP</div>
+    {% if error %}<div class="text-sm text-rose-600 text-center">{{ error }}</div>{% endif %}
+    <input name="email" type="email" placeholder="Email" required
+           class="w-full border rounded px-3 py-2">
+    <input name="password" type="password" placeholder="Password" required
+           class="w-full border rounded px-3 py-2">
+    <button class="w-full bg-slate-900 text-white rounded py-2 hover:bg-slate-700">Sign in</button>
+  </form>
+</body>
+</html>

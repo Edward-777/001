@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% block title %}Notifications — 001 ERP{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Notifications</h1>
+<div class="space-y-2">
+{% for n in items %}
+  <div class="bg-white rounded-xl shadow p-4 {% if not n.is_read %}border-l-4 border-blue-500{% endif %}">
+    <div class="font-medium">{{ n.title }}</div>
+    {% if n.body %}<div class="text-sm text-slate-500">{{ n.body }}</div>{% endif %}
+    <div class="text-xs text-slate-400">{{ n.type }}</div>
+  </div>
+{% else %}
+  <div class="text-slate-400">No notifications.</div>
+{% endfor %}
+</div>
+{% endblock %}
