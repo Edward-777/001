@@ -22,11 +22,11 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ...core.money import ZERO as _ZERO
 from .ap_models import APBill
 from .ledger_models import JournalEntry, JournalLine
 from .models import Account
 
-_ZERO = Decimal("0.00")
 _POSTED = ["posted", "reversed"]  # reversed entries net out against their reversal
 
 
@@ -93,26 +93,29 @@ def _grouped(session: Session, nets: dict[int, Decimal]):
     return groups
 
 
+def _total(group: list[dict]) -> Decimal:
+    return sum((r["balance"] for r in group), _ZERO)
+
+
+def _net_income(groups: dict[str, list[dict]]) -> Decimal:
+    return (_total(groups["revenue"]) - _total(groups["expense"])).quantize(_ZERO)
+
+
 def income_statement(session: Session, *, start: date, end: date) -> dict:
     groups = _grouped(session, _net_by_account(session, start=start, end=end))
-    revenue = sum((r["balance"] for r in groups["revenue"]), _ZERO)
-    expenses = sum((r["balance"] for r in groups["expense"]), _ZERO)
     return {
         "revenue": groups["revenue"], "expenses": groups["expense"],
-        "total_revenue": revenue, "total_expenses": expenses,
-        "net_income": (revenue - expenses).quantize(_ZERO),
+        "total_revenue": _total(groups["revenue"]), "total_expenses": _total(groups["expense"]),
+        "net_income": _net_income(groups),
     }
 
 
 def balance_sheet(session: Session, *, as_of: date) -> dict:
     groups = _grouped(session, _net_by_account(session, end=as_of))
-    total_assets = sum((r["balance"] for r in groups["asset"]), _ZERO)
-    total_liab = sum((r["balance"] for r in groups["liability"]), _ZERO)
-    equity_accounts = sum((r["balance"] for r in groups["equity"]), _ZERO)
-    revenue = sum((r["balance"] for r in groups["revenue"]), _ZERO)
-    expenses = sum((r["balance"] for r in groups["expense"]), _ZERO)
-    net_income = (revenue - expenses).quantize(_ZERO)
-    total_equity = (equity_accounts + net_income).quantize(_ZERO)
+    total_assets = _total(groups["asset"])
+    total_liab = _total(groups["liability"])
+    net_income = _net_income(groups)
+    total_equity = (_total(groups["equity"]) + net_income).quantize(_ZERO)
     return {
         "assets": groups["asset"], "liabilities": groups["liability"], "equity": groups["equity"],
         "total_assets": total_assets, "total_liabilities": total_liab,
@@ -205,40 +208,40 @@ def _bucket(as_of: date, due: date | None) -> str:
     return "90+"
 
 
+def _aging(items, *, as_of: date, due_of, bal_of, row_of) -> dict:
+    """Bucket a set of open documents by days-past-due. Shared by AP and AR."""
+    buckets = {b: _ZERO for b in _BUCKETS}
+    rows = []
+    for it in items:
+        bucket = _bucket(as_of, due_of(it))
+        bal = Decimal(str(bal_of(it)))
+        buckets[bucket] += bal
+        rows.append({**row_of(it), "balance": bal, "bucket": bucket})
+    return {"as_of": as_of, "buckets": buckets, "rows": rows,
+            "total": sum(buckets.values(), _ZERO)}
+
+
 def ap_aging(session: Session, *, as_of: date) -> dict:
     # Only POSTED bills (open/partially_paid) — draft/exception bills aren't in the
     # GL yet, so excluding them keeps the aging tied to the AP control account.
     bills = session.scalars(
-        select(APBill).where(
-            APBill.balance > 0, APBill.status.in_(["open", "partially_paid"])
-        )
+        select(APBill).where(APBill.balance > 0, APBill.status.in_(["open", "partially_paid"]))
     ).all()
-    buckets = {b: _ZERO for b in _BUCKETS}
-    rows = []
-    for b in bills:
-        bucket = _bucket(as_of, b.due_date)
-        bal = Decimal(str(b.balance))
-        buckets[bucket] += bal
-        rows.append({"bill_no": b.bill_no, "vendor_id": b.vendor_id, "due_date": b.due_date,
-                     "balance": bal, "bucket": bucket})
-    return {"as_of": as_of, "buckets": buckets, "rows": rows,
-            "total": sum(buckets.values(), _ZERO)}
+    return _aging(
+        bills, as_of=as_of, due_of=lambda b: b.due_date, bal_of=lambda b: b.balance,
+        row_of=lambda b: {"bill_no": b.bill_no, "vendor_id": b.vendor_id, "due_date": b.due_date},
+    )
 
 
 def ar_aging(session: Session, *, as_of: date) -> dict:
     from ..sales import service as sales
 
-    invoices = sales.list_open_invoices(session)
-    buckets = {b: _ZERO for b in _BUCKETS}
-    rows = []
-    for inv in invoices:
-        bucket = _bucket(as_of, inv.due_date)
-        bal = Decimal(str(inv.balance))
-        buckets[bucket] += bal
-        rows.append({"invoice_no": inv.invoice_no, "customer_id": inv.customer_id,
-                     "due_date": inv.due_date, "balance": bal, "bucket": bucket})
-    return {"as_of": as_of, "buckets": buckets, "rows": rows,
-            "total": sum(buckets.values(), _ZERO)}
+    return _aging(
+        sales.list_open_invoices(session), as_of=as_of,
+        due_of=lambda i: i.due_date, bal_of=lambda i: i.balance,
+        row_of=lambda i: {"invoice_no": i.invoice_no, "customer_id": i.customer_id,
+                          "due_date": i.due_date},
+    )
 
 
 def inventory_valuation(session: Session) -> dict:

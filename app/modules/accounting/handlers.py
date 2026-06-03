@@ -15,11 +15,31 @@ from ..assets.events import DepreciationPosted, Reclassified
 from ..expense.events import ExpenseApproved, ReimbursementPosted
 from ..inventory.events import InboundPosted, OutboundPosted
 from ..sales.events import ARInvoicePosted, ReceiptPosted
+from ...core.money import CENTS as _CENTS
 from .ledger_models import JournalSource
-from .posting import Line, apply_rule, post_journal
+from .posting import Line, PostingError, apply_rule, post_journal
 from .service import get_account_by_role
 
-_CENTS = Decimal("0.01")
+
+def _role_id(session: Session, role: str) -> int:
+    """Resolve a posting role to an account id, failing loudly if it's missing
+    (instead of an opaque AttributeError on None.id)."""
+    acct = get_account_by_role(session, role)
+    if acct is None:
+        raise PostingError(f"no account mapped to role '{role}' (seed the COA)")
+    return acct.id
+
+
+def _grouped_debit_lines(session: Session, line_items: list[dict], *, fallback_role: str):
+    """Group line amounts by their expense account (falling back to a role), as a
+    list of debit Lines + the total. Shared by consumption and expense postings."""
+    fallback = _role_id(session, fallback_role)
+    by_acct: dict[int, Decimal] = {}
+    for ln in line_items:
+        acct = ln.get("expense_account_id") or fallback
+        by_acct[acct] = by_acct.get(acct, Decimal("0")) + Decimal(str(ln["amount"]))
+    total = sum(by_acct.values(), Decimal("0")).quantize(_CENTS)
+    return [Line(acct, debit=amt) for acct, amt in by_acct.items()], total
 
 
 def on_inbound_posted(event: InboundPosted, session: Session) -> None:
@@ -44,10 +64,10 @@ def on_inbound_posted(event: InboundPosted, session: Session) -> None:
 
     lines: list[Line] = []
     if inv_total > 0:
-        lines.append(Line(get_account_by_role(session, "inventory").id, debit=inv_total))
+        lines.append(Line(_role_id(session, "inventory"), debit=inv_total))
     if asset_total > 0:
-        lines.append(Line(get_account_by_role(session, "fixed_asset").id, debit=asset_total))
-    lines.append(Line(get_account_by_role(session, "gr_ir").id, credit=total))
+        lines.append(Line(_role_id(session, "fixed_asset"), debit=asset_total))
+    lines.append(Line(_role_id(session, "gr_ir"), credit=total))
 
     post_journal(
         session,
@@ -83,14 +103,8 @@ def on_outbound_posted(event: OutboundPosted, session: Session) -> None:
         return
 
     # consumption: group debits by expense account (fallback to supplies_expense)
-    fallback = get_account_by_role(session, "supplies_expense").id
-    by_acct: dict[int, Decimal] = {}
-    for ln in event.lines:
-        acct = ln.get("expense_account_id") or fallback
-        by_acct[acct] = by_acct.get(acct, Decimal("0")) + Decimal(str(ln["amount"]))
-
-    lines = [Line(acct, debit=amt) for acct, amt in by_acct.items()]
-    lines.append(Line(get_account_by_role(session, "inventory").id, credit=total))
+    lines, _ = _grouped_debit_lines(session, event.lines, fallback_role="supplies_expense")
+    lines.append(Line(_role_id(session, "inventory"), credit=total))
     post_journal(
         session,
         entry_date=event.entry_date,
@@ -129,14 +143,10 @@ def on_reclassified(event: Reclassified, session: Session) -> None:
         )
     else:
         # asset_to_inventory: Dr Inventory (NBV) + Dr Accum Deprec / Cr Fixed Asset (cost)
-        lines = [Line(get_account_by_role(session, "inventory").id, debit=event.amount)]
+        lines = [Line(_role_id(session, "inventory"), debit=event.amount)]
         if event.accum_depreciation > 0:
-            lines.append(
-                Line(get_account_by_role(session, "accum_deprec").id, debit=event.accum_depreciation)
-            )
-        lines.append(
-            Line(get_account_by_role(session, "fixed_asset").id, credit=event.acquisition_cost)
-        )
+            lines.append(Line(_role_id(session, "accum_deprec"), debit=event.accum_depreciation))
+        lines.append(Line(_role_id(session, "fixed_asset"), credit=event.acquisition_cost))
         post_journal(
             session,
             entry_date=event.entry_date,
@@ -150,11 +160,11 @@ def on_reclassified(event: Reclassified, session: Session) -> None:
 def on_ar_invoice_posted(event: ARInvoicePosted, session: Session) -> None:
     """Dr Accounts Receivable / Cr Revenue (+ Cr Sales Tax Payable)."""
     lines = [
-        Line(get_account_by_role(session, "ar").id, debit=event.total),
-        Line(get_account_by_role(session, "revenue").id, credit=event.subtotal),
+        Line(_role_id(session, "ar"), debit=event.total),
+        Line(_role_id(session, "revenue"), credit=event.subtotal),
     ]
     if event.tax_amount > 0:
-        lines.append(Line(get_account_by_role(session, "sales_tax").id, credit=event.tax_amount))
+        lines.append(Line(_role_id(session, "sales_tax"), credit=event.tax_amount))
     post_journal(
         session,
         entry_date=event.entry_date,
@@ -181,16 +191,10 @@ def on_receipt_posted(event: ReceiptPosted, session: Session) -> None:
 def on_expense_approved(event: ExpenseApproved, session: Session) -> None:
     """Dr expense account(s) / Cr Employee Payable. Per-category accounts;
     falls back to supplies_expense when a category has no mapped account."""
-    fallback = get_account_by_role(session, "supplies_expense").id
-    by_acct: dict[int, Decimal] = {}
-    for ln in event.lines:
-        acct = ln.get("expense_account_id") or fallback
-        by_acct[acct] = by_acct.get(acct, Decimal("0")) + Decimal(str(ln["amount"]))
-    total = sum(by_acct.values(), Decimal("0")).quantize(_CENTS)
+    lines, total = _grouped_debit_lines(session, event.lines, fallback_role="supplies_expense")
     if total <= 0:
         return
-    lines = [Line(acct, debit=amt) for acct, amt in by_acct.items()]
-    lines.append(Line(get_account_by_role(session, "employee_payable").id, credit=total))
+    lines.append(Line(_role_id(session, "employee_payable"), credit=total))
     post_journal(
         session,
         entry_date=event.entry_date,

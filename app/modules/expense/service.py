@@ -6,13 +6,15 @@ handler books Dr expense / Cr Employee Payable; reimburse() pays the employee.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...core.events import bus
+from ...core.money import CENTS as _CENTS
+from ...core.money import current_year
 from ...core.sequences import next_number
 from ..approval import service as approval
 from ..approval.service import RequestType  # public contract (not approval.models)
@@ -25,8 +27,6 @@ from .models import (
     ExpenseType,
     Reimbursement,
 )
-
-_CENTS = Decimal("0.01")
 
 
 def create_expense_claim(
@@ -110,7 +110,7 @@ def reimburse(
         raise ValueError("claim not approved")
     pdate = payment_date or date.today()
     reimb = Reimbursement(
-        reimbursement_no=next_number(session, "RBM", datetime.now(timezone.utc).year),
+        reimbursement_no=next_number(session, "RBM", current_year()),
         employee_id=claim.employee_id,
         expense_claim_id=claim.id,
         payment_date=pdate,

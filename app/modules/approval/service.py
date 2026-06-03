@@ -142,13 +142,16 @@ def submit_request(session: Session, request_id: int) -> Request:
     if not approvers:
         _finalize_approved(session, req)
     else:
-        notify.notify(session, user_id=approvers[0], type="approval",
-                      title=f"Approval needed: {req.title}",
-                      body=f"{req.request_no} (${req.total_amount})", link=f"/requests/{req.id}")
+        _notify_pending(session, req, approvers[0])
     return req
 
 
 # ---- approve / reject ---------------------------------------------------
+
+def _notify_pending(session: Session, req: Request, approver_user_id: int) -> None:
+    notify.notify(session, user_id=approver_user_id, type="approval",
+                  title=f"Approval needed: {req.title}",
+                  body=f"{req.request_no} (${req.total_amount})", link=f"/requests/{req.id}")
 
 def _lines(session: Session, request_id: int) -> list[ApprovalLine]:
     return list(
@@ -184,9 +187,7 @@ def approve(session: Session, request_id: int, approver_user_id: int, *, comment
     if nxt is None:  # no more pending
         _finalize_approved(session, req)
     else:
-        notify.notify(session, user_id=nxt.approver_id, type="approval",
-                      title=f"Approval needed: {req.title}",
-                      body=f"{req.request_no} (${req.total_amount})", link=f"/requests/{req.id}")
+        _notify_pending(session, req, nxt.approver_id)
     return req
 
 

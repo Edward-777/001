@@ -1,12 +1,14 @@
 """procurement.service — vendor master (M3) + purchase orders (M6)."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...core.money import CENTS as _CENTS
+from ...core.money import current_year
 from ...core.sequences import next_number
 from .models import PaymentTerms, POLine, POStatus, PurchaseOrder, Vendor
 
@@ -45,7 +47,6 @@ def list_vendors(session: Session, *, active_only: bool = True) -> list[Vendor]:
 
 # ---- purchase orders (M6) ----------------------------------------------
 
-_CENTS = Decimal("0.01")
 
 
 def create_po_from_request(
@@ -55,7 +56,7 @@ def create_po_from_request(
     Vendor is assigned later via issue_po (approval authorizes the spend; procurement
     places the actual order)."""
     po = PurchaseOrder(
-        po_no=next_number(session, "PO", datetime.now(timezone.utc).year),
+        po_no=next_number(session, "PO", current_year()),
         request_id=request_id,
         status=str(POStatus.DRAFT),
     )

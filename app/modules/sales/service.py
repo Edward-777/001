@@ -5,13 +5,15 @@ COGS is booked separately on the goods issue (inventory outbound, type=sale).
 Cash is booked on receipt (Dr Cash / Cr AR). accounting reacts to the events."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...core.events import bus
+from ...core.money import CENTS as _CENTS
+from ...core.money import current_year as _year
 from ...core.sequences import next_number
 from .events import ARInvoicePosted, ReceiptPosted
 from .models import (
@@ -25,12 +27,6 @@ from .models import (
     SOLine,
     SOStatus,
 )
-
-_CENTS = Decimal("0.01")
-
-
-def _year() -> int:
-    return datetime.now(timezone.utc).year
 
 
 def create_customer(
@@ -97,7 +93,7 @@ def post_ar_invoice(
 ) -> ARInvoice:
     """lines: [{description, qty, unit_price, product_id?}]. tax_rate is a percent."""
     idate = invoice_date or date.today()
-    inv = ARInvoice(
+    invoice = ARInvoice(
         invoice_no=next_number(session, "INV", _year()),
         customer_id=customer_id,
         so_id=so_id,
@@ -105,7 +101,7 @@ def post_ar_invoice(
         due_date=due_date,
         status=str(ARStatus.OPEN),
     )
-    session.add(inv)
+    session.add(invoice)
     session.flush()
 
     subtotal = Decimal("0")
@@ -116,21 +112,21 @@ def post_ar_invoice(
         subtotal += amount
         session.add(
             ARInvoiceLine(
-                ar_invoice_id=inv.id, product_id=ln.get("product_id"),
+                ar_invoice_id=invoice.id, product_id=ln.get("product_id"),
                 description=ln.get("description"), qty=qty, unit_price=price, amount=amount,
             )
         )
     tax = (subtotal * Decimal(str(tax_rate)) / Decimal("100")).quantize(_CENTS)
     total = (subtotal + tax).quantize(_CENTS)
-    inv.subtotal, inv.tax_amount, inv.total, inv.balance = subtotal, tax, total, total
+    invoice.subtotal, invoice.tax_amount, invoice.total, invoice.balance = subtotal, tax, total, total
     session.flush()
 
     bus.emit(
-        ARInvoicePosted(invoice_id=inv.id, entry_date=idate, subtotal=subtotal,
+        ARInvoicePosted(invoice_id=invoice.id, entry_date=idate, subtotal=subtotal,
                         tax_amount=tax, total=total),
         session,
     )
-    return inv
+    return invoice
 
 
 def get_invoice(session: Session, invoice_id: int) -> ARInvoice | None:

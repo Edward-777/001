@@ -54,7 +54,9 @@ class Product(PKMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
-class InboundStatus(StrEnum):
+class PostingStatus(StrEnum):
+    """Draft -> posted lifecycle shared by inbound and outbound documents."""
+
     DRAFT = "draft"
     POSTED = "posted"
 
@@ -71,7 +73,7 @@ class Inbound(PKMixin, TimestampMixin, Base):
     inbound_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
     po_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_orders.id"), nullable=True)
     received_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default=InboundStatus.DRAFT)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default=PostingStatus.DRAFT)
 
     lines: Mapped[list[InboundLine]] = relationship(
         back_populates="inbound", cascade="all, delete-orphan"
@@ -106,7 +108,7 @@ class Outbound(PKMixin, TimestampMixin, Base):
     ref_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # e.g. 'sales_order'
     ref_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     memo: Mapped[str | None] = mapped_column(String(400), nullable=True)
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default=InboundStatus.DRAFT)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default=PostingStatus.DRAFT)
 
     lines: Mapped[list[OutboundLine]] = relationship(
         back_populates="outbound", cascade="all, delete-orphan"

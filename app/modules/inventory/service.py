@@ -4,19 +4,21 @@ post_inbound updates moving-average stock and emits InboundPosted; accounting
 reacts to post the journal entry (Dr Inventory/Fixed Asset, Cr GR-IR)."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...core.events import bus
+from ...core.money import CENTS as _CENTS
+from ...core.money import current_year
 from ...core.sequences import next_number
 from .events import InboundPosted, OutboundPosted
 from .models import (
     Inbound,
     InboundLine,
-    InboundStatus,
+    PostingStatus,
     MovementType,
     Outbound,
     OutboundLine,
@@ -27,8 +29,6 @@ from .models import (
     StockBalance,
     StockMovement,
 )
-
-_CENTS = Decimal("0.01")
 
 
 def create_category(
@@ -125,10 +125,10 @@ def create_inbound(
 ) -> Inbound:
     """lines: [{product_id, qty, unit_cost, po_line_id?}]."""
     inb = Inbound(
-        inbound_no=next_number(session, "INB", datetime.now(timezone.utc).year),
+        inbound_no=next_number(session, "INB", current_year()),
         po_id=po_id,
         received_date=received_date or date.today(),
-        status=str(InboundStatus.DRAFT),
+        status=str(PostingStatus.DRAFT),
     )
     session.add(inb)
     session.flush()
@@ -150,7 +150,7 @@ def post_inbound(session: Session, inbound_id: int) -> Inbound:
     """Post a goods receipt: update stock for inventory items, then emit
     InboundPosted so accounting books it (same transaction = all-or-nothing)."""
     inb = session.get(Inbound, inbound_id)
-    if inb is None or inb.status != InboundStatus.DRAFT:
+    if inb is None or inb.status != PostingStatus.DRAFT:
         raise ValueError("inbound not in draft")
 
     snapshot: list[dict] = []
@@ -184,7 +184,7 @@ def post_inbound(session: Session, inbound_id: int) -> Inbound:
             }
         )
 
-    inb.status = str(InboundStatus.POSTED)
+    inb.status = str(PostingStatus.POSTED)
     session.flush()
     bus.emit(
         InboundPosted(inbound_id=inb.id, entry_date=inb.received_date, lines=snapshot),
@@ -246,13 +246,13 @@ def create_outbound(
 ) -> Outbound:
     """lines: [{product_id, qty}]. unit_cost is set at posting from moving average."""
     ob = Outbound(
-        outbound_no=next_number(session, "OUT", datetime.now(timezone.utc).year),
+        outbound_no=next_number(session, "OUT", current_year()),
         type=str(type),
         issue_date=issue_date or date.today(),
         ref_type=ref_type,
         ref_id=ref_id,
         memo=memo,
-        status=str(InboundStatus.DRAFT),
+        status=str(PostingStatus.DRAFT),
     )
     session.add(ob)
     session.flush()
@@ -270,7 +270,7 @@ def post_outbound(session: Session, outbound_id: int) -> Outbound:
     """Issue stock at moving-average cost and emit OutboundPosted (accounting books
     COGS / expense / shrinkage per outbound type)."""
     ob = session.get(Outbound, outbound_id)
-    if ob is None or ob.status != InboundStatus.DRAFT:
+    if ob is None or ob.status != PostingStatus.DRAFT:
         raise ValueError("outbound not in draft")
     if ob.type == OutboundType.TRANSFER:
         raise ValueError("transfer (multi-warehouse) not supported in Phase 1")
@@ -292,7 +292,7 @@ def post_outbound(session: Session, outbound_id: int) -> Outbound:
             }
         )
 
-    ob.status = str(InboundStatus.POSTED)
+    ob.status = str(PostingStatus.POSTED)
     session.flush()
     bus.emit(
         OutboundPosted(

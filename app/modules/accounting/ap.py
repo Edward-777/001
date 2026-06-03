@@ -7,11 +7,13 @@ Payment then settles the payable:  Dr Accounts Payable / Cr Cash.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from ...core.money import CENTS as _CENTS
+from ...core.money import current_year as _year
 from ...core.sequences import next_number
 from ..inventory import service as inv
 from .ap_models import (
@@ -25,12 +27,6 @@ from .ap_models import (
 )
 from .ledger_models import JournalSource
 from .posting import apply_rule
-
-_CENTS = Decimal("0.01")
-
-
-def _year() -> int:
-    return datetime.now(timezone.utc).year
 
 
 def create_ap_bill(

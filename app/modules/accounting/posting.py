@@ -8,7 +8,7 @@ lands here, so AI postings obey the exact same rules as human ones (AI-AGENT §3
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -25,8 +25,7 @@ from .ledger_models import (
     PeriodStatus,
     PostingRule,
 )
-
-_CENTS = Decimal("0.01")
+from ...core.money import CENTS as _CENTS
 
 
 class PostingError(Exception):
@@ -71,8 +70,6 @@ def ensure_period_open(session: Session, entry_date: date) -> None:
 
 
 def close_period(session: Session, period: str, *, closed_by: int | None = None) -> AccountingPeriod:
-    from datetime import datetime, timezone
-
     p = get_or_create_period(session, period)
     p.status = str(PeriodStatus.CLOSED)
     p.closed_at = datetime.now(timezone.utc)
@@ -103,8 +100,6 @@ def post_journal(
         raise PostingError("zero-amount entry")
 
     ensure_period_open(session, entry_date)
-
-    from datetime import datetime, timezone
 
     je = JournalEntry(
         je_no=next_number(session, "JE", entry_date.year),

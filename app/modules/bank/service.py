@@ -12,6 +12,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...core.money import CENTS as _CENTS
 from ..accounting import service as acct
 from ..accounting.service import Line
 from .models import (
@@ -21,8 +22,6 @@ from .models import (
     LineMatchStatus,
     StatementStatus,
 )
-
-_CENTS = Decimal("0.01")
 
 
 def create_bank_account(

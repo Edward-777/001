@@ -6,13 +6,16 @@ Reclassified) and accounting books them. Stock moves via inventory.service
 (command calls; inventory never depends on assets, so no cycle)."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+import calendar
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...core.events import bus
+from ...core.money import CENTS as _CENTS
+from ...core.money import current_year as _now_year
 from ...core.sequences import next_number
 from ..inventory import service as inv
 from .events import DepreciationPosted, Reclassified
@@ -24,16 +27,11 @@ from .models import (
     ReclassType,
 )
 
-_CENTS = Decimal("0.01")
-
-
-def _now_year() -> int:
-    return datetime.now(timezone.utc).year
-
 
 def _period_date(period: str) -> date:
-    y, m = period.split("-")
-    return date(int(y), int(m), 28)
+    """Last day of the period — depreciation is posted at month-end."""
+    y, m = (int(x) for x in period.split("-"))
+    return date(y, m, calendar.monthrange(y, m)[1])
 
 
 # ---- asset creation (called by the inbound handler) ---------------------
