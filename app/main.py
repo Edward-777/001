@@ -14,6 +14,11 @@ from .core import audit as _audit  # noqa: F401
 from .core import sequences as _sequences  # noqa: F401
 from .modules import auth as _auth  # noqa: F401
 from .modules import hr as _hr  # noqa: F401
+from .modules import accounting as _accounting  # noqa: F401
+from .modules import procurement as _procurement  # noqa: F401
+from .modules import sales as _sales  # noqa: F401
+from .modules import inventory as _inventory  # noqa: F401
+from .modules import expense as _expense  # noqa: F401
 
 
 def create_app() -> FastAPI:
