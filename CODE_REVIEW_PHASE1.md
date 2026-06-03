@@ -35,6 +35,17 @@
 
 **총괄:** 15개 영역 중 **fundamental 오해 0건.** P1-2 한 건만 "read-dependency는 의도였다"는 명확화가 필요하고, 이마저 리뷰어가 이미 hedge함. → 리뷰 신뢰. P0부터 순서대로 처리.
 
+### 처리 현황 (2026-06-03, 107 tests green)
+
+| 묶음 | 커밋 | 상태 |
+|---|---|---|
+| **P0 전부** (1–5) | `6b67b68` | ✅ 완료 (권한게이트 연결+역할기본scope, 채번race savepoint, 은행잔액검증, 보조원장↔GL, 부팅가드, +timing/grant_scope) |
+| **P1 전부** (1–8) | `0d50c54`, `f89d543` | ✅ 완료 (캡슐화/auth.service 계약타입, read-dep 문서화, **현금흐름표**, reports_to 검증, **Alembic 베이스라인**, 날짜윈도우, **백업 강화**, 마감 문서화) |
+| **P2 핵심** | `f89d543` | ✅ Money/Qty 공용화(9파일), events `.get`, notify 벌크update, FIXED_ROLE 결정적, 더미해시 |
+| P2 잔여 (저위험 cosmetic) | — | ◻ `_CENTS`/`current_year` 전면 치환, aging/line-sum 헬퍼화, classify 파라미터(→Phase3), UserScope CheckConstraint, httpx 핀 등. **동작 무관**, 점진 정리 |
+
+→ **P0+P1 = "믿을 수 있는 회계 엔진" 달성.** Phase 2(AI) 진입 안전.
+
 ---
 
 ## P0 — Phase 2 전 필수 (보안 / 정합성)
