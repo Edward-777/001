@@ -19,6 +19,7 @@ from .modules import procurement as _procurement  # noqa: F401
 from .modules import sales as _sales  # noqa: F401
 from .modules import inventory as _inventory  # noqa: F401
 from .modules import expense as _expense  # noqa: F401
+from .modules import approval as _approval  # noqa: F401
 
 
 def create_app() -> FastAPI:
