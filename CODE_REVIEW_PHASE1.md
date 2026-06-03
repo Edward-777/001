@@ -41,10 +41,10 @@
 |---|---|---|
 | **P0 전부** (1–5) | `6b67b68` | ✅ 완료 (권한게이트 연결+역할기본scope, 채번race savepoint, 은행잔액검증, 보조원장↔GL, 부팅가드, +timing/grant_scope) |
 | **P1 전부** (1–8) | `0d50c54`, `f89d543` | ✅ 완료 (캡슐화/auth.service 계약타입, read-dep 문서화, **현금흐름표**, reports_to 검증, **Alembic 베이스라인**, 날짜윈도우, **백업 강화**, 마감 문서화) |
-| **P2 핵심** | `f89d543` | ✅ Money/Qty 공용화(9파일), events `.get`, notify 벌크update, FIXED_ROLE 결정적, 더미해시 |
-| P2 잔여 (저위험 cosmetic) | — | ◻ `_CENTS`/`current_year` 전면 치환, aging/line-sum 헬퍼화, classify 파라미터(→Phase3), UserScope CheckConstraint, httpx 핀 등. **동작 무관**, 점진 정리 |
+| **P2 거의 전부** | `f89d543`, `61353f2` | ✅ Money/Qty 공용화(9파일), `_CENTS`/`_ZERO`/`current_year` 전면 core 치환, **aging/net_income/role_id/debit_by_account/notify_pending 헬퍼 추출**, posting datetime 상단화, `_period_date` 월말(monthrange), sales `inv→invoice`, InboundStatus→PostingStatus, events `.get`, notify 벌크update, FIXED_ROLE 결정적, 더미해시 |
+| P2 의도적 보류 (3건) | — | ◻ accounts.py 분리(순환 lazy import 1개 — 동작OK, 주석처리됨), UserScope CheckConstraint(스키마/마이그레이션 사안), documents.classify 파라미터(→Phase3 분류객체), httpx 경고(starlette 라이브러리 deprecation, 우리 코드 아님) |
 
-→ **P0+P1 = "믿을 수 있는 회계 엔진" 달성.** Phase 2(AI) 진입 안전.
+→ **P0+P1+P2 거의 전부 완료. "믿을 수 있는 회계 엔진" 달성.** 107 tests green, ruff clean, LOC 순감소. Phase 2(AI) 진입 안전.
 
 ---
 
