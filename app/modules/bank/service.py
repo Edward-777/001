@@ -109,7 +109,7 @@ def reconcile(session: Session, statement_id: int) -> dict:
             continue
         jl = acct.find_journal_line_match(
             session, account_id=bank.gl_account_id, amount=Decimal(str(line.amount)),
-            exclude_ids=used,
+            exclude_ids=used, near_date=line.txn_date,
         )
         if jl is not None:
             line.matched_journal_line_id = jl.id

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import DataBoundary, Role, Scope, User, UserScope
-from .permissions import ScopeGrant, can_access, require_access
+from .permissions import BoundaryResolver, Forbidden, ScopeGrant, can_access, require_access
 from .security import hash_password, verify_password
 
 
@@ -73,6 +73,17 @@ def authenticate(session: Session, email: str, password: str) -> User | None:
     return user if verify_password(password, user.password_hash) else None
 
 
+def get_user(session: Session, user_id: int) -> User | None:
+    return session.get(User, user_id)
+
+
+def find_users_by_role(session: Session, role: str) -> list[User]:
+    """Active users holding a role — used by fixed-role approval routing."""
+    return list(
+        session.scalars(select(User).where(User.role == str(role), User.is_active.is_(True)))
+    )
+
+
 def grant_scope(
     session: Session,
     user: User,
@@ -105,9 +116,18 @@ def get_grants(user: User) -> dict[str, ScopeGrant]:
 __all__ = [
     "create_user",
     "authenticate",
+    "get_user",
+    "find_users_by_role",
     "grant_scope",
     "apply_default_scopes",
     "get_grants",
     "can_access",
     "require_access",
+    # public contract types (other modules import these from the service)
+    "DataBoundary",
+    "Role",
+    "Scope",
+    "BoundaryResolver",
+    "ScopeGrant",
+    "Forbidden",
 ]

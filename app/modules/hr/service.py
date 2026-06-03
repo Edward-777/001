@@ -13,8 +13,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth.models import DataBoundary
-from ..auth.permissions import BoundaryResolver
+from ..auth.service import BoundaryResolver, DataBoundary  # public contract
 from .models import Department, Employee, EmployeeStatus
 
 _MAX_DEPTH = 50  # cycle guard for malformed reports_to chains
@@ -42,6 +41,8 @@ def create_employee(
     hire_date: date | None = None,
     user_id: int | None = None,
 ) -> Employee:
+    if reports_to_id is not None and session.get(Employee, reports_to_id) is None:
+        raise ValueError("reports_to_id does not exist")
     emp = Employee(
         employee_no=employee_no,
         name=name,
@@ -53,6 +54,25 @@ def create_employee(
         user_id=user_id,
     )
     session.add(emp)
+    session.flush()
+    return emp
+
+
+def set_manager(session: Session, employee_id: int, reports_to_id: int | None) -> Employee:
+    """Reassign an employee's manager, rejecting self-reference and cycles
+    (a bad reporting line = an approval-routing + permission-boundary leak)."""
+    emp = session.get(Employee, employee_id)
+    if emp is None:
+        raise ValueError("employee not found")
+    if reports_to_id is not None:
+        if reports_to_id == employee_id:
+            raise ValueError("an employee cannot report to themselves")
+        if session.get(Employee, reports_to_id) is None:
+            raise ValueError("reports_to_id does not exist")
+        # walking up from the proposed manager must not lead back to emp
+        if any(m.id == employee_id for m in get_manager_chain(session, reports_to_id)):
+            raise ValueError("reporting cycle detected")
+    emp.reports_to_id = reports_to_id
     session.flush()
     return emp
 

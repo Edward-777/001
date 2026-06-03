@@ -115,6 +115,28 @@ def test_period_isolation_in_income_statement(session, month):
     assert is_feb["net_income"] == Decimal("0.00")
 
 
+def test_cash_flow_net_change(session):
+    """Cash sale 100 + rent payment 60 -> ending cash 40, net change 40."""
+    cash = acct.get_account_by_role(session, "cash").id
+    rev = acct.get_account_by_code(session, "4000").id
+    rent = acct.get_account_by_code(session, "6100").id
+    from app.modules.accounting.posting import Line
+    acct.post_journal(session, entry_date=JAN, lines=[Line(cash, debit=100), Line(rev, credit=100)])
+    acct.post_journal(session, entry_date=JAN, lines=[Line(rent, debit=60), Line(cash, credit=60)])
+
+    cf = acct.cash_flow(session, start=date(2026, 1, 1), end=JAN_END)
+    assert cf["beginning_cash"] == Decimal("0.00")
+    assert cf["ending_cash"] == Decimal("40.00")
+    assert cf["net_change"] == Decimal("40.00")
+    assert cf["operating"] == Decimal("40.00")  # net income 40, no WC changes
+
+
+def test_generate_financials_includes_cf_and_tb(session, month):
+    fin = acct.generate_financials(session, "2026-01")
+    assert "cash_flow" in fin and "trial_balance" in fin
+    assert fin["trial_balance"]["balanced"]
+
+
 def test_subledger_ties_to_gl_control_accounts(session, month):
     """AP/AR/Inventory subledgers must equal their GL control accounts (P0-4)."""
     chk = acct.subledger_check(session, as_of=JAN_END)

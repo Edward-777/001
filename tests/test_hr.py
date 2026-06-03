@@ -47,6 +47,23 @@ def org(session):
     return dict(ceo=ceo, dir=dir_, mgr=mgr, staff=staff, other=other)
 
 
+def test_create_employee_rejects_missing_manager(session):
+    with pytest.raises(ValueError, match="does not exist"):
+        hr_svc.create_employee(session, employee_no="X", name="X", reports_to_id=9999)
+
+
+def test_set_manager_rejects_self_and_cycles(session, org):
+    # self-reference
+    with pytest.raises(ValueError, match="themselves"):
+        hr_svc.set_manager(session, org["mgr"].id, org["mgr"].id)
+    # cycle: make CEO report to Staff (who is under CEO) -> cycle
+    with pytest.raises(ValueError, match="cycle"):
+        hr_svc.set_manager(session, org["ceo"].id, org["staff"].id)
+    # valid reassignment is fine
+    hr_svc.set_manager(session, org["staff"].id, org["dir"].id)
+    assert org["staff"].reports_to_id == org["dir"].id
+
+
 def test_manager_chain(session, org):
     chain = hr_svc.get_manager_chain(session, org["staff"].id)
     assert [e.name for e in chain] == ["Mgr", "Dir", "CEO"]

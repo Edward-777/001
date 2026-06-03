@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from ...core.events import bus
 from ...core.sequences import next_number
 from ..approval import service as approval
-from ..approval.models import RequestType
+from ..approval.service import RequestType  # public contract (not approval.models)
 from .events import ReimbursementPosted
 from .models import (
     ExpenseCategory,

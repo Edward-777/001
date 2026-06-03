@@ -38,13 +38,18 @@ def get_account_by_role(session: Session, role: str) -> Account | None:
     return session.scalar(select(Account).where(Account.system_role == role))
 
 
-def find_journal_line_match(session: Session, *, account_id: int, amount, exclude_ids):
+def find_journal_line_match(
+    session: Session, *, account_id: int, amount, exclude_ids,
+    near_date=None, window_days: int = 5,
+):
     """Find a posted journal line on `account_id` whose movement equals a bank
     statement line (M12). amount>0 = a debit (deposit); amount<0 = a credit
-    (withdrawal). Skips lines already reconciled (exclude_ids)."""
+    (withdrawal). Skips already-reconciled lines, and (when near_date is given)
+    only matches entries within ±window_days to avoid coincidental amount matches."""
+    from datetime import timedelta
     from decimal import Decimal as _D
 
-    from .ledger_models import JournalLine
+    from .ledger_models import JournalEntry, JournalLine
 
     amt = _D(str(amount))
     stmt = select(JournalLine).where(JournalLine.account_id == account_id)
@@ -54,6 +59,11 @@ def find_journal_line_match(session: Session, *, account_id: int, amount, exclud
         stmt = stmt.where(JournalLine.debit == amt)
     else:
         stmt = stmt.where(JournalLine.credit == -amt)
+    if near_date is not None:
+        lo, hi = near_date - timedelta(days=window_days), near_date + timedelta(days=window_days)
+        stmt = stmt.join(JournalEntry, JournalLine.je_id == JournalEntry.id).where(
+            JournalEntry.entry_date >= lo, JournalEntry.entry_date <= hi
+        )
     return session.scalars(stmt).first()
 
 
@@ -130,6 +140,7 @@ from .reports import (  # noqa: E402
     ap_aging,
     ar_aging,
     balance_sheet,
+    cash_flow,
     general_ledger,
     generate_financials,
     income_statement,
@@ -138,7 +149,7 @@ from .reports import (  # noqa: E402
     trial_balance,
 )
 
-__all__ += ["subledger_check"]
+__all__ += ["subledger_check", "cash_flow"]
 
 __all__ += [
     "trial_balance",

@@ -84,6 +84,8 @@ inventory.post_inbound()  ─emit→  InboundPosted{lines:[{product_type, qty, c
 
 **트랜잭션 경계:** 이벤트는 **동일 DB 트랜잭션 안에서 동기 디스패치**한다. 입고+전표+자산등록이 **all-or-nothing**으로 커밋. (Celery/Redis 같은 비동기 큐 불필요 — 경량 유지, 정합성 보장.)
 
+> **명확화 (read vs post):** "회계는 재고를 모른다"는 **자동분개(posting)** 한정 원칙이다. 회계가 도메인 이벤트를 받아 *전표를 만드는* 방향만 이벤트로 디커플한다. 반대로 **회계가 도메인 데이터를 *읽는* 의도적 command/query는 허용**한다 — AP 3-way match(입고수량 조회)·리포트(재고평가·미수 조회)가 그 예. 읽기는 순환을 만들지 않으므로(도메인은 회계를 import 안 함) 안전하다.
+
 ---
 
 ## 4. Posting 엔진 — 회계 연동의 단일 지점

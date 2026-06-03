@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from ...core.events import bus
 from ...core.sequences import next_number
-from ..auth.models import User
+from ..auth import service as auth
 from ..hr import service as hr
 from ..notifications import service as notify
 from .events import RequestApproved
@@ -110,10 +110,9 @@ def _resolve_approvers(session: Session, req: Request, rule: ApprovalRule | None
         return [emp.user_id] if emp and emp.user_id else []
 
     if routing == Routing.FIXED_ROLE and rule.fixed_role:
-        users = session.scalars(
-            select(User).where(User.role == rule.fixed_role, User.is_active.is_(True))
-        ).all()
-        return [u.id for u in users[:1]]
+        # deterministic: lowest user id holding the role
+        users = sorted(auth.find_users_by_role(session, rule.fixed_role), key=lambda u: u.id)
+        return [users[0].id] if users else []
 
     return []
 

@@ -4,6 +4,14 @@ AI's "give me the January close" request.
 
 Sign convention: net = Σdebit - Σcredit (debit-positive). Normal balances:
   asset/expense = +net,  liability/equity/revenue = -net.
+
+Scope notes (acknowledged limitations):
+  - No year-end CLOSE entry is posted (net income -> Retained Earnings). The
+    balance sheet folds current net income into equity on the fly, which is
+    correct for interim/period statements; a formal annual close is future work.
+  - reporting reads other modules (inventory/sales) directly. That is an
+    intentional exception to the "accounting reacts via events" rule, which
+    governs POSTING only; read-only reporting/queries are allowed (ARCHITECTURE §3).
 """
 from __future__ import annotations
 
@@ -113,13 +121,49 @@ def balance_sheet(session: Session, *, as_of: date) -> dict:
     }
 
 
+def cash_flow(session: Session, *, start: date, end: date) -> dict:
+    """Statement of cash flows — indirect method (simplified): net income + non-cash
+    (depreciation) ± working-capital changes ≈ operating; the rest is investing/
+    financing. Net change always equals the movement in the cash/bank accounts."""
+    from datetime import timedelta
+
+    accts = _accounts(session)
+    cash_ids = [a.id for a in accts.values() if a.type == "asset" and a.subtype == "bank"]
+
+    def cash_balance(as_of: date) -> Decimal:
+        nets = _net_by_account(session, end=as_of)
+        return sum((nets.get(i, _ZERO) for i in cash_ids), _ZERO).quantize(_ZERO)
+
+    beginning = cash_balance(start - timedelta(days=1))
+    ending = cash_balance(end)
+    net_change = (ending - beginning).quantize(_ZERO)
+
+    period = _net_by_account(session, start=start, end=end)
+    by_role = {a.system_role: period.get(a.id, _ZERO) for a in accts.values() if a.system_role}
+    net_income = income_statement(session, start=start, end=end)["net_income"]
+    deprec_addback = -by_role.get("accum_deprec", _ZERO)       # non-cash expense add-back
+    operating = (
+        net_income + deprec_addback
+        - by_role.get("ar", _ZERO)            # AR increase uses cash
+        - by_role.get("inventory", _ZERO)     # inventory increase uses cash
+        - by_role.get("ap", _ZERO)            # AP increase (net is negative) sources cash
+    ).quantize(_ZERO)
+    return {
+        "beginning_cash": beginning, "ending_cash": ending, "net_change": net_change,
+        "operating": operating, "investing_financing": (net_change - operating).quantize(_ZERO),
+        "method": "indirect (simplified)",
+    }
+
+
 def generate_financials(session: Session, period: str) -> dict:
-    """The "give me the January close" entrypoint: IS for the month + BS as of month-end."""
+    """The "give me the January close" entrypoint: IS + BS + TB + cash flow."""
     start, end = _month_bounds(period)
     return {
         "period": period,
         "income_statement": income_statement(session, start=start, end=end),
         "balance_sheet": balance_sheet(session, as_of=end),
+        "trial_balance": trial_balance(session, as_of=end),
+        "cash_flow": cash_flow(session, start=start, end=end),
     }
 
 
