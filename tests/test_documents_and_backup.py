@@ -45,23 +45,33 @@ def test_uncategorized_stays_quarantined_never_indexed(session):
 
 # ---- backup ------------------------------------------------------------
 
-def test_backup_copies_sqlite_file(tmp_path):
+def _make_sqlite(path):
+    import sqlite3
+    with sqlite3.connect(path) as con:
+        con.execute("create table t(x int)")
+        con.execute("insert into t values (42)")
+
+
+def test_backup_produces_valid_verified_snapshot(tmp_path):
     src = tmp_path / "dev.db"
-    src.write_bytes(b"SQLite format 3\x00fake")
+    _make_sqlite(src)
     dest = tmp_path / "backups"
-    out = backup.run_backup(dest_dir=dest, database_url=f"sqlite:///{src}", keep=7)
+    out = backup.run_backup(dest_dir=dest, database_url=f"sqlite:///{src}")
     assert out.exists()
-    assert out.read_bytes() == src.read_bytes()
+    import sqlite3
+    with sqlite3.connect(out) as con:  # backup is a usable sqlite db with the data
+        assert con.execute("select x from t").fetchone()[0] == 42
 
 
-def test_backup_retention_prunes_old(tmp_path):
+def test_backup_retention_keeps_most_recent_daily(tmp_path):
     src = tmp_path / "dev.db"
-    src.write_bytes(b"x")
+    _make_sqlite(src)
     dest = tmp_path / "backups"
-    # pre-seed 5 fake old backups
     dest.mkdir()
-    for i in range(5):
+    # pre-seed 5 valid-named old backups across different days
+    for i in range(1, 6):
         (dest / f"erp_2026010{i}_000000.db").write_bytes(b"old")
-    backup.run_backup(dest_dir=dest, database_url=f"sqlite:///{src}", keep=3)
-    remaining = sorted(dest.glob("erp_*"))
-    assert len(remaining) == 3  # pruned to keep=3
+    backup.run_backup(dest_dir=dest, database_url=f"sqlite:///{src}",
+                      daily=3, weekly=0, monthly=0)
+    remaining = sorted(dest.glob("erp_*.db"))
+    assert len(remaining) == 3  # only the 3 most recent kept

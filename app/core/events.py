@@ -46,7 +46,7 @@ class EventBus:
         Handlers run inline; if any raises, it propagates so the caller's
         transaction rolls back (all-or-nothing).
         """
-        for handler in self._subscribers[type(event)]:
+        for handler in self._subscribers.get(type(event), ()):  # .get: don't create empty keys
             handler(event, session)
 
     def clear(self) -> None:

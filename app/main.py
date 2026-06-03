@@ -55,8 +55,10 @@ def create_app() -> FastAPI:
 
     register_all_handlers()
 
-    # NOTE: dev-only convenience. Production uses Alembic migrations (M0+).
-    Base.metadata.create_all(bind=engine)
+    # Dev convenience: bootstrap the schema directly. Production runs the
+    # Alembic baseline instead (`alembic upgrade head`); set auto_create=False.
+    if settings.auto_create_tables:
+        Base.metadata.create_all(bind=engine)
 
     # Module routers are mounted here as they come online (M1+):
     #   from .modules.auth.routes import router as auth_router

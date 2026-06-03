@@ -8,13 +8,13 @@ from __future__ import annotations
 from datetime import date, datetime
 from enum import StrEnum
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...core.base import PKMixin, TimestampMixin
 from ...core.db import Base
 
-Money = Numeric(15, 2)
+from ...core.money import Money  # noqa: E402
 
 
 class JournalStatus(StrEnum):

@@ -19,5 +19,8 @@ class Settings(BaseSettings):
     enable_scheduler: bool = False
     backup_dir: str = "backups"
 
+    # Dev bootstraps tables via create_all; production uses Alembic migrations.
+    auto_create_tables: bool = True
+
 
 settings = Settings()

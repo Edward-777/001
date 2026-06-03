@@ -9,14 +9,13 @@ from __future__ import annotations
 from datetime import date
 from enum import StrEnum
 
-from sqlalchemy import Date, ForeignKey, Numeric, String
+from sqlalchemy import Date, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...core.base import PKMixin, TimestampMixin
 from ...core.db import Base
 
-Money = Numeric(15, 2)
-Qty = Numeric(15, 3)
+from ...core.money import Money, Qty  # noqa: E402
 
 
 class APMatchStatus(StrEnum):

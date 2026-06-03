@@ -49,8 +49,12 @@ def mark_read(session: Session, notification_id: int) -> None:
 
 
 def mark_all_read(session: Session, user_id: int) -> int:
-    items = list_for_user(session, user_id, unread_only=True, limit=10_000)
-    for n in items:
-        n.is_read = True
+    from sqlalchemy import update
+
+    result = session.execute(
+        update(Notification)
+        .where(Notification.user_id == user_id, Notification.is_read.is_(False))
+        .values(is_read=True)
+    )
     session.flush()
-    return len(items)
+    return result.rowcount or 0

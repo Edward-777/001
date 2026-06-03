@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ...core.base import PKMixin, TimestampMixin
 from ...core.db import Base
 
-Money = Numeric(15, 2)
+from ...core.money import Money  # noqa: E402
 
 
 class AssetStatus(StrEnum):
