@@ -13,6 +13,7 @@ from .core import Base, engine, settings
 from .core import audit as _audit  # noqa: F401
 from .core import sequences as _sequences  # noqa: F401
 from .modules import auth as _auth  # noqa: F401
+from .modules import hr as _hr  # noqa: F401
 
 
 def create_app() -> FastAPI:
