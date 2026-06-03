@@ -60,3 +60,36 @@ def create_tax_code(
     session.add(tc)
     session.flush()
     return tc
+
+
+# ---- M4 posting engine (re-exported as the module's public API) ----------
+# Imported at end to avoid a cycle (posting.py imports get_account_by_role above).
+from .posting import (  # noqa: E402
+    Line,
+    PostingError,
+    apply_rule,
+    close_period,
+    ensure_period_open,
+    get_or_create_period,
+    post_journal,
+    reverse_journal,
+    seed_posting_rules,
+)
+
+__all__ = [
+    "create_account",
+    "get_account_by_code",
+    "get_account_by_role",
+    "seed_coa",
+    "create_tax_code",
+    # posting engine
+    "Line",
+    "PostingError",
+    "post_journal",
+    "apply_rule",
+    "reverse_journal",
+    "seed_posting_rules",
+    "get_or_create_period",
+    "ensure_period_open",
+    "close_period",
+]
