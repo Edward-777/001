@@ -76,6 +76,21 @@
 
 **GR/IR=0 단언 테스트 존재 확인:** `tests/test_ap.py::test_matched_bill_clears_gr_ir`(매칭 후 `_gr_ir_balance==0`), `::test_full_procure_to_pay_nets_to_cash_and_inventory`(receive→match→pay 후 GR/IR=0, AP=0)로 **명시적으로 단언됨.**
 
+### ✅ 최종 사인오프 (final reviewer, `a0d462c`)
+
+**평결: Phase 1 닫아도 된다. "믿을 수 있는 회계 엔진" 달성 — 단 "읽기 + green tests" 수준의 신뢰까지.**
+
+**보증함:** P0 5 + P1 8 코드로 실재 확인(요약 신뢰 아님), 수정이 제대로 된 패턴. 핵심 불변식 테스트 단언(GR/IR=0, 보조원장↔GL tie-out, BS/TB balanced). 아키텍처 건전 → Phase 2 기반 단단.
+
+**⚠️ 보증의 경계 (검증 안 된 것 — Phase 2 들고 갈 체크리스트):**
+1. **실 부하 미검증** — 채번 race 수정은 코드상 정석이나 실제 Postgres 동시 30명으로 안 밟아봄(dev=SQLite). "읽어서 맞다" ≠ "전장 검증."
+2. **테스트는 작성자가 씀** — green = "의도 경로 동작" 증거지 "엣지케이스 없음" 증거 아님. 적대적 커버리지 미지수.
+3. **"AI 적용" 검증 불가** — AI 레이어 부재(Phase 2). 현재 게이트는 UI에만 실재.
+
+**의식적 보류(빚, 버그 아님):** P1-2 reporting 분리, P1-1 라인 DTO, accounts.py 순환 정리, UserScope CheckConstraint, 연도 클로징 분개.
+
+**출고(GTM) 전 최종 관문 3가지:** (a) 실 Postgres 동시성 테스트, (b) 독립 보안 리뷰(권한 게이트가 *모든 미래 라우트*에 강제되는지), (c) 회계사 1명의 실데이터 마감 검증.
+
 ---
 
 ## P0 — Phase 2 전 필수 (보안 / 정합성)
