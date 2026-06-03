@@ -91,6 +91,43 @@ class InboundLine(PKMixin, Base):
     inbound: Mapped[Inbound] = relationship(back_populates="lines")
 
 
+class OutboundType(StrEnum):
+    SALE = "sale"
+    CONSUMPTION = "consumption"
+    DISPOSAL = "disposal"
+    TRANSFER = "transfer"
+
+
+class Outbound(PKMixin, TimestampMixin, Base):
+    __tablename__ = "outbounds"
+
+    outbound_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    type: Mapped[str] = mapped_column(String(12), nullable=False, default=OutboundType.SALE)
+    issue_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ref_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # e.g. 'sales_order'
+    ref_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    memo: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default=InboundStatus.DRAFT)
+
+    lines: Mapped[list[OutboundLine]] = relationship(
+        back_populates="outbound", cascade="all, delete-orphan"
+    )
+
+
+class OutboundLine(PKMixin, Base):
+    __tablename__ = "outbound_lines"
+
+    outbound_id: Mapped[int] = mapped_column(ForeignKey("outbounds.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    qty: Mapped[float] = mapped_column(Qty, nullable=False, default=0)
+    unit_cost: Mapped[float] = mapped_column(Money, nullable=False, default=0)  # set at posting
+    inventory_serial_id: Mapped[int | None] = mapped_column(
+        ForeignKey("inventory_serials.id"), nullable=True
+    )
+
+    outbound: Mapped[Outbound] = relationship(back_populates="lines")
+
+
 class StockMovement(PKMixin, Base):
     """Append-only inventory ledger (one row per stock change)."""
 

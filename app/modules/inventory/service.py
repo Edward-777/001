@@ -12,12 +12,15 @@ from sqlalchemy.orm import Session
 
 from ...core.events import bus
 from ...core.sequences import next_number
-from .events import InboundPosted
+from .events import InboundPosted, OutboundPosted
 from .models import (
     Inbound,
     InboundLine,
     InboundStatus,
     MovementType,
+    Outbound,
+    OutboundLine,
+    OutboundType,
     Product,
     ProductCategory,
     ProductType,
@@ -217,3 +220,75 @@ def adjust_in(
             qty=qty, unit_cost=unit_cost, ref_type=ref_type, ref_id=ref_id,
         )
     )
+
+
+# ---- outbound (goods issue) ---------------------------------------------
+
+def create_outbound(
+    session: Session,
+    *,
+    type: OutboundType = OutboundType.SALE,
+    issue_date: date | None = None,
+    lines: list[dict],
+    ref_type: str | None = None,
+    ref_id: int | None = None,
+    memo: str | None = None,
+) -> Outbound:
+    """lines: [{product_id, qty}]. unit_cost is set at posting from moving average."""
+    ob = Outbound(
+        outbound_no=next_number(session, "OUT", datetime.now(timezone.utc).year),
+        type=str(type),
+        issue_date=issue_date or date.today(),
+        ref_type=ref_type,
+        ref_id=ref_id,
+        memo=memo,
+        status=str(InboundStatus.DRAFT),
+    )
+    session.add(ob)
+    session.flush()
+    for ln in lines:
+        session.add(
+            OutboundLine(
+                outbound_id=ob.id, product_id=ln["product_id"], qty=Decimal(str(ln["qty"]))
+            )
+        )
+    session.flush()
+    return ob
+
+
+def post_outbound(session: Session, outbound_id: int) -> Outbound:
+    """Issue stock at moving-average cost and emit OutboundPosted (accounting books
+    COGS / expense / shrinkage per outbound type)."""
+    ob = session.get(Outbound, outbound_id)
+    if ob is None or ob.status != InboundStatus.DRAFT:
+        raise ValueError("outbound not in draft")
+    if ob.type == OutboundType.TRANSFER:
+        raise ValueError("transfer (multi-warehouse) not supported in Phase 1")
+
+    snapshot: list[dict] = []
+    for line in ob.lines:
+        unit_cost = adjust_out(session, line.product_id, Decimal(str(line.qty)),
+                               ref_type="outbound", ref_id=ob.id)
+        line.unit_cost = unit_cost
+        amount = (Decimal(str(line.qty)) * unit_cost).quantize(_CENTS)
+        product = session.get(Product, line.product_id)
+        snapshot.append(
+            {
+                "product_id": line.product_id,
+                "qty": Decimal(str(line.qty)),
+                "unit_cost": unit_cost,
+                "amount": amount,
+                "expense_account_id": product.default_expense_account_id if product else None,
+            }
+        )
+
+    ob.status = str(InboundStatus.POSTED)
+    session.flush()
+    bus.emit(
+        OutboundPosted(
+            outbound_id=ob.id, entry_date=ob.issue_date,
+            outbound_type=str(ob.type), lines=snapshot,
+        ),
+        session,
+    )
+    return ob

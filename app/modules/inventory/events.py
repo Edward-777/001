@@ -17,3 +17,12 @@ class InboundPosted(Event):
     inbound_id: int
     entry_date: date
     lines: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class OutboundPosted(Event):
+    outbound_id: int
+    entry_date: date
+    outbound_type: str  # sale | consumption | disposal | transfer
+    # [{product_id, qty, unit_cost, amount, expense_account_id}]
+    lines: list[dict] = field(default_factory=list)

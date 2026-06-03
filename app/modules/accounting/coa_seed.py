@@ -34,7 +34,7 @@ DEFAULT_COA: list[tuple[str, str, str, str | None, str | None]] = [
     ("6000", "Payroll Expenses",         T.EXPENSE, "expense", None),
     ("6100", "Rent Expense",             T.EXPENSE, "expense", None),
     ("6200", "Travel Expense",           T.EXPENSE, "expense", "travel_expense"),
-    ("6300", "Office Supplies",          T.EXPENSE, "expense", None),
+    ("6300", "Office Supplies",          T.EXPENSE, "expense", "supplies_expense"),
     ("6400", "Bank Service Charges",     T.EXPENSE, "expense", "bank_fees"),
     ("6900", "Depreciation Expense",     T.EXPENSE, "expense", "deprec_expense"),
 ]
