@@ -124,3 +124,26 @@ from .ap import (  # noqa: E402
     get_ap_bill,
     match_ap_bill,
 )
+
+# ---- M13 reports (re-exported as public API) -----------------------------
+from .reports import (  # noqa: E402
+    ap_aging,
+    ar_aging,
+    balance_sheet,
+    general_ledger,
+    generate_financials,
+    income_statement,
+    inventory_valuation,
+    trial_balance,
+)
+
+__all__ += [
+    "trial_balance",
+    "balance_sheet",
+    "income_statement",
+    "generate_financials",
+    "general_ledger",
+    "ap_aging",
+    "ar_aging",
+    "inventory_valuation",
+]

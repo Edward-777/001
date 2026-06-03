@@ -137,6 +137,11 @@ def get_invoice(session: Session, invoice_id: int) -> ARInvoice | None:
     return session.get(ARInvoice, invoice_id)
 
 
+def list_open_invoices(session: Session) -> list[ARInvoice]:
+    """Unpaid customer invoices — for AR aging (M13)."""
+    return list(session.scalars(select(ARInvoice).where(ARInvoice.balance > 0)))
+
+
 # ---- receipts (cash collection) -----------------------------------------
 
 def post_receipt(

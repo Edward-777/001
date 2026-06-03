@@ -86,6 +86,11 @@ def get_inbound_line(session: Session, inbound_line_id: int) -> InboundLine | No
     return session.get(InboundLine, inbound_line_id)
 
 
+def inventory_valuation(session: Session) -> list[StockBalance]:
+    """On-hand balances with moving-average value — for the inventory report (M13)."""
+    return list(session.scalars(select(StockBalance).where(StockBalance.qty_on_hand != 0)))
+
+
 def _receive_into_stock(session: Session, product_id: int, qty: Decimal, unit_cost: Decimal) -> None:
     """Apply moving average: new_avg = (old_qty*old_avg + in_qty*in_cost)/new_qty."""
     bal = get_stock(session, product_id)
