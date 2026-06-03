@@ -91,4 +91,17 @@ __all__ = [
     "get_or_create_period",
     "ensure_period_open",
     "close_period",
+    # AP (M10)
+    "create_ap_bill",
+    "match_ap_bill",
+    "get_ap_bill",
+    "create_payment",
 ]
+
+# ---- M10 Accounts Payable (re-exported as public API) --------------------
+from .ap import (  # noqa: E402
+    create_ap_bill,
+    create_payment,
+    get_ap_bill,
+    match_ap_bill,
+)

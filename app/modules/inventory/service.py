@@ -81,6 +81,11 @@ def get_stock(session: Session, product_id: int) -> StockBalance | None:
     return session.scalar(select(StockBalance).where(StockBalance.product_id == product_id))
 
 
+def get_inbound_line(session: Session, inbound_line_id: int) -> InboundLine | None:
+    """Receipt detail (qty_received, unit_cost) — used by AP 3-way match (M10)."""
+    return session.get(InboundLine, inbound_line_id)
+
+
 def _receive_into_stock(session: Session, product_id: int, qty: Decimal, unit_cost: Decimal) -> None:
     """Apply moving average: new_avg = (old_qty*old_avg + in_qty*in_cost)/new_qty."""
     bal = get_stock(session, product_id)
