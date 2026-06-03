@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+
+# Local DB / data
+*.db
+*.sqlite3
+/uploads/
+/backups/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Claude local settings (machine-specific)
+.claude/settings.local.json
