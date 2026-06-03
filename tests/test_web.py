@@ -15,7 +15,7 @@ from app.modules import (  # noqa: F401  register all tables
 from app.modules.accounting import service as acct
 from app.modules.approval import service as appr
 from app.modules.auth import service as auth_svc
-from app.modules.auth.models import Role
+from app.modules.auth.models import DataBoundary, Role, Scope
 from app.modules.hr import service as hr_svc
 
 
@@ -28,9 +28,12 @@ def client():
     with TestSession() as s:
         acct.seed_coa(s)
         appr.seed_approval_rules(s)
-        # CEO is admin (sees financials); staff is a plain employee (no finance scope)
+        # CEO is admin (finance 3 -> sees financials); staff is a plain employee (finance 1).
         ceo = auth_svc.create_user(s, name="CEO", email="ceo@x", password="pw", role=Role.ADMIN)
         staff = auth_svc.create_user(s, name="Staff", email="staff@x", password="pw")
+        # A finance-LEVEL-2 user (e.g. AR/AP clerk): must NOT see GL/financials (level 3).
+        clerk = auth_svc.create_user(s, name="Clerk", email="clerk@x", password="pw")
+        auth_svc.grant_scope(s, clerk, Scope.FINANCE, 2, DataBoundary.ALL)
         s.flush()
         ce = hr_svc.create_employee(s, employee_no="E1", name="CEO", user_id=ceo.id)
         hr_svc.create_employee(s, employee_no="E2", name="Staff", reports_to_id=ce.id, user_id=staff.id)
@@ -124,6 +127,13 @@ def test_financials_denied_to_employee(client):
     _login(client, "staff@x")  # employee -> no finance scope
     r = client.get("/reports/financials?period=2026-01")
     assert r.status_code == 403
+
+
+def test_financials_requires_level_3_not_2(client):
+    """DESIGN §8.5: financials/ledger = finance level 3. A finance-level-2 user
+    (AP/AR clerk) must be denied — the gate enforces the spec'd level, not just >=1."""
+    _login(client, "clerk@x")  # finance level 2
+    assert client.get("/reports/financials?period=2026-01").status_code == 403
 
 
 def test_health_still_ok(client):

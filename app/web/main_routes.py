@@ -110,7 +110,8 @@ async def notifications_stream(user=Depends(require_login)):
 
 @router.get("/reports/financials", response_class=HTMLResponse)
 def financials(request: Request, period: str | None = None,
-               user=Depends(require_scope("finance", 2)), session: Session = Depends(get_session)):
+               user=Depends(require_scope("finance", 3)),  # DESIGN §8.5: ledger/financials = level 3
+               session: Session = Depends(get_session)):
     period = period or date.today().strftime("%Y-%m")
     fin = acct.generate_financials(session, period)
     return templates.TemplateResponse(request, "financials.html", {"user": user, "fin": fin, "period": period})

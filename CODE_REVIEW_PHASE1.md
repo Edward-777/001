@@ -46,6 +46,36 @@
 
 → **P0+P1+P2 거의 전부 완료. "믿을 수 있는 회계 엔진" 달성.** 107 tests green, ruff clean, LOC 순감소. Phase 2(AI) 진입 안전.
 
+### 독립 재검증 스탬프 (리뷰어, 2026-06-03 · `82446ce`)
+
+요약을 신뢰하지 않고 **코드로 전수 재확인**함. 빌드: 로컬=원격 `82446ce` 일치, 107 green, ruff clean, `alembic/versions/5cfd965794f6_baseline_schema.py` 존재.
+
+**코드로 확인된 완료(제대로 구현, 카고컬트 아님):**
+- P0-2 `sequences.py` `begin_nested()` savepoint + `IntegrityError`→락 재select ✅
+- P0-3 `bank/service.py:81` `balance_check()` → `_refresh_status:94`가 잔액 tie될 때만 RECONCILED ✅ (단순함수 아니라 실제 wired) · `near_date` 매칭(P1-6) ✅
+- P0-5 `main.py:34` 기본시크릿+prod플래그 → RuntimeError ✅
+- P1-1 캡슐화: 남의 `models`/`permissions` cross-import **4건 전부 제거**(grep 0건, service 재export) ✅
+- P1-3 `reports.py:127` `cash_flow()` 실재 ✅ · P1-4 `create_employee`/`set_manager` 자기참조·순환·존재 검증 ✅ · P2 `core/money.py` 통합 ✅
+
+**Final 리뷰어 집중 확인 요망 — 부분/미흡 2.5건:**
+1. ⚠️ **P0-1 게이트 레벨 오류(실질 발견):** `main_routes.py:113` 재무제표를 `require_scope("finance", 2)`로 막음. **DESIGN §8.5는 "finance 3=원장·재무제표"** → AP/AR(level 2)가 BS/IS를 봄. 구조는 정확(단일 `can_access`), **값을 `finance, 3`으로 수정 필요.** 부가: 민감 라우트가 `/reports/financials` 1개뿐(opt-in, 중앙강제 없음 → 향후 GL·AP·은행 UI 추가 시 누락주의), "AI 적용"은 AI 레이어 부재로 검증 불가(Phase 2).
+2. ⚠️ **P0-4는 "구현"이 아니라 "위험 완화":** `ap_aging`이 posted bill만 집계해 발산 *원인*은 줄였으나, 실제 tie-out(`aging.total == GL AP 잔액`) 검증 함수는 **없음**. §0.5의 P1 강등은 정직한 결정 — 단 "통제 추가"로 오인 금지.
+3. ◑ **P1-1 절반:** 캡슐화는 완료, 그러나 같은 항목의 **라인 `list[dict]`→타입 DTO 승격은 미완**(schemas.py 파일 없음, 라인 여전히 dict). AI 도구 자동생성 enabler라 Phase 2 직전 숙제.
+
+**GR/IR·posting 정합성:** 이번 커밋은 posting/이벤트 로직 변경 없이 DRY만 적용. inbound `Cr gr_ir` + `ap_bill.matched` `Dr gr_ir/Cr ap` → 둘 다 처리 시 GR/IR 잔액 0(구조적 정합, 107 테스트 지지). "GR/IR=0 단언 테스트" 존재 여부만 final이 확인 권장.
+
+**총평:** §0.5 자가검증은 정직·정확. 한 것은 제대로, 보류는 근거 명시. Final은 위 **①게이트 레벨 2→3** 과 **②P0-4=완화임** 두 곳만 집중하면 됨. 나머지 신뢰 가능.
+
+### 코더 후속 처리 (스탬프 직후, `<next commit>` · 108 tests green)
+
+스탬프 2.5건을 코드로 재확인 후 처리:
+
+1. ✅ **게이트 레벨 수정됨:** `main_routes.py` 재무제표 `require_scope("finance", 3)`로 변경(DESIGN §8.5 준수). **회귀 테스트 추가** `test_financials_requires_level_3_not_2`(finance level-2 사용자 → 403). (라우트 중앙강제/AI 적용은 스탬프대로 Phase 2 숙제로 유효.)
+2. ⚠️→✅ **스탬프 #2 부정확 정정 + 처리:** tie-out 검증 함수는 **이미 존재함** — `reports.py:260 subledger_check()`가 `aging.total ↔ GL 통제계정`을 대조하고 `tests/test_reports.py::test_subledger_ties_to_gl_control_accounts`로 검증됨. 스탬프의 "함수 없음"은 부정확; 정확한 상태는 "**존재하나 미연결**"이었음. → **`generate_financials`에 연결 + 재무제표 화면에 'Controls: subledger↔GL tie-out' 표로 노출**. 이제 마감 리포트가 실제로 통제를 수행(완화→통제 승격).
+3. ◑ **P1-1 라인 DTO:** 스탬프대로 미완(Phase 2 직전 숙제) — 변경 없음.
+
+**GR/IR=0 단언 테스트 존재 확인:** `tests/test_ap.py::test_matched_bill_clears_gr_ir`(매칭 후 `_gr_ir_balance==0`), `::test_full_procure_to_pay_nets_to_cash_and_inventory`(receive→match→pay 후 GR/IR=0, AP=0)로 **명시적으로 단언됨.**
+
 ---
 
 ## P0 — Phase 2 전 필수 (보안 / 정합성)

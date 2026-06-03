@@ -34,4 +34,20 @@
     </table>
   </div>
 </div>
+
+<div class="bg-white rounded-xl shadow p-5 mt-6">
+  <h2 class="font-semibold mb-3">Controls — subledger ↔ GL tie-out</h2>
+  {% set sc = fin.subledger_check %}
+  <table class="w-full text-sm">
+    <thead class="text-slate-500"><tr><th class="text-left">Control</th><th class="text-right">GL</th>
+      <th class="text-right">Subledger</th><th class="text-right">Status</th></tr></thead>
+    {% for c in sc.checks %}
+    <tr class="border-t">
+      <td>{{ c.control }}</td><td class="text-right">${{ c.gl }}</td><td class="text-right">${{ c.subledger }}</td>
+      <td class="text-right {% if c.ok %}text-emerald-700{% else %}text-rose-700{% endif %}">
+        {{ 'tie' if c.ok else 'DIFF ' ~ c.diff }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
 {% endblock %}

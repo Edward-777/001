@@ -159,7 +159,8 @@ def cash_flow(session: Session, *, start: date, end: date) -> dict:
 
 
 def generate_financials(session: Session, period: str) -> dict:
-    """The "give me the January close" entrypoint: IS + BS + TB + cash flow."""
+    """The "give me the January close" entrypoint: IS + BS + TB + cash flow, plus
+    the subledger->GL tie-out control so the close report flags any divergence."""
     start, end = _month_bounds(period)
     return {
         "period": period,
@@ -167,6 +168,7 @@ def generate_financials(session: Session, period: str) -> dict:
         "balance_sheet": balance_sheet(session, as_of=end),
         "trial_balance": trial_balance(session, as_of=end),
         "cash_flow": cash_flow(session, start=start, end=end),
+        "subledger_check": subledger_check(session, as_of=end),
     }
 
 
