@@ -15,6 +15,7 @@ from app.modules import (  # noqa: F401  register all tables
 from app.modules.accounting import service as acct
 from app.modules.approval import service as appr
 from app.modules.auth import service as auth_svc
+from app.modules.auth.models import Role
 from app.modules.hr import service as hr_svc
 
 
@@ -27,7 +28,8 @@ def client():
     with TestSession() as s:
         acct.seed_coa(s)
         appr.seed_approval_rules(s)
-        ceo = auth_svc.create_user(s, name="CEO", email="ceo@x", password="pw")
+        # CEO is admin (sees financials); staff is a plain employee (no finance scope)
+        ceo = auth_svc.create_user(s, name="CEO", email="ceo@x", password="pw", role=Role.ADMIN)
         staff = auth_svc.create_user(s, name="Staff", email="staff@x", password="pw")
         s.flush()
         ce = hr_svc.create_employee(s, employee_no="E1", name="CEO", user_id=ceo.id)
@@ -110,11 +112,18 @@ def test_notifications_visible_to_approver(client):
     assert "Approval needed" in notes.text
 
 
-def test_financials_page(client):
-    _login(client, "staff@x")
+def test_financials_visible_to_finance_role(client):
+    _login(client, "ceo@x")  # admin -> has finance scope
     r = client.get("/reports/financials?period=2026-01")
     assert r.status_code == 200
     assert "Income Statement" in r.text and "Balance Sheet" in r.text
+
+
+def test_financials_denied_to_employee(client):
+    """The permission gate is wired at the door: an employee cannot view GL (P0-1)."""
+    _login(client, "staff@x")  # employee -> no finance scope
+    r = client.get("/reports/financials?period=2026-01")
+    assert r.status_code == 403
 
 
 def test_health_still_ok(client):

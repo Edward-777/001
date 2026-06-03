@@ -50,6 +50,7 @@ def test_statement_auto_matches_existing_entries(session):
     ba = bank_svc.create_bank_account(session, name="Checking", gl_account_id=_cash(session))
     stmt = bank_svc.import_statement(
         session, bank_account_id=ba.id, period="2026-01",
+        opening_balance=0, closing_balance=40,  # 0 + 100 - 60
         lines=[
             {"txn_date": JAN, "description": "Customer deposit", "amount": 100},
             {"txn_date": JAN, "description": "Rent ACH", "amount": -60},
@@ -58,8 +59,25 @@ def test_statement_auto_matches_existing_entries(session):
     result = bank_svc.reconcile(session, stmt.id)
     assert result["matched"] == 2
     assert result["unmatched"] == []
+    assert result["balance"]["ok"]
     assert all(ln.match_status == LineMatchStatus.MATCHED for ln in stmt.lines)
     assert stmt.status == StatementStatus.RECONCILED
+
+
+def test_balance_mismatch_blocks_reconciliation(session):
+    """A statement whose opening + lines != closing has a missing txn -> not reconciled."""
+    _seed_cash_activity(session)
+    ba = bank_svc.create_bank_account(session, name="Checking", gl_account_id=_cash(session))
+    stmt = bank_svc.import_statement(
+        session, bank_account_id=ba.id, period="2026-01",
+        opening_balance=0, closing_balance=999,  # wrong on purpose
+        lines=[{"txn_date": JAN, "description": "Customer deposit", "amount": 100}],
+    )
+    result = bank_svc.reconcile(session, stmt.id)
+    assert result["matched"] == 1
+    assert result["balance"]["ok"] is False
+    assert result["balance"]["discrepancy"] == Decimal("899.00")
+    assert stmt.status != StatementStatus.RECONCILED  # arithmetic doesn't tie out
 
 
 def test_unmatched_fee_booked_as_new_je(session):
@@ -67,6 +85,7 @@ def test_unmatched_fee_booked_as_new_je(session):
     ba = bank_svc.create_bank_account(session, name="Checking", gl_account_id=_cash(session))
     stmt = bank_svc.import_statement(
         session, bank_account_id=ba.id, period="2026-01",
+        opening_balance=0, closing_balance=95,  # 0 + 100 - 5
         lines=[
             {"txn_date": JAN, "description": "Customer deposit", "amount": 100},
             {"txn_date": JAN, "description": "Monthly service charge", "amount": -5},
@@ -97,6 +116,7 @@ def test_same_amount_lines_match_distinct_entries(session):
     ba = bank_svc.create_bank_account(session, name="Checking", gl_account_id=_cash(session))
     stmt = bank_svc.import_statement(
         session, bank_account_id=ba.id, period="2026-01",
+        opening_balance=0, closing_balance=100,
         lines=[{"amount": 50, "description": "dep1"}, {"amount": 50, "description": "dep2"}],
     )
     result = bank_svc.reconcile(session, stmt.id)
@@ -110,6 +130,7 @@ def test_reconcile_is_idempotent(session):
     ba = bank_svc.create_bank_account(session, name="Checking", gl_account_id=_cash(session))
     stmt = bank_svc.import_statement(
         session, bank_account_id=ba.id, period="2026-01",
+        opening_balance=0, closing_balance=100,
         lines=[{"amount": 100, "description": "dep"}],
     )
     assert bank_svc.reconcile(session, stmt.id)["matched"] == 1

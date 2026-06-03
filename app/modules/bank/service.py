@@ -79,14 +79,26 @@ def _used_journal_line_ids(session: Session) -> set[int]:
     return set(rows)
 
 
+def balance_check(stmt: BankStatement) -> dict:
+    """Verify opening_balance + Σ(line amounts) == closing_balance. This is the
+    whole point of a reconciliation: if the statement's own arithmetic doesn't
+    tie out, a transaction is missing or mis-keyed (P0-3)."""
+    line_sum = sum((Decimal(str(ln.amount)) for ln in stmt.lines), Decimal("0"))
+    expected = (Decimal(str(stmt.opening_balance)) + line_sum).quantize(_CENTS)
+    closing = Decimal(str(stmt.closing_balance)).quantize(_CENTS)
+    return {"ok": expected == closing, "expected_closing": expected,
+            "stated_closing": closing, "discrepancy": (closing - expected).quantize(_CENTS)}
+
+
 def _refresh_status(session: Session, stmt: BankStatement) -> None:
-    if all(ln.match_status != LineMatchStatus.UNMATCHED for ln in stmt.lines):
+    all_lines_done = all(ln.match_status != LineMatchStatus.UNMATCHED for ln in stmt.lines)
+    if all_lines_done and balance_check(stmt)["ok"]:
         stmt.status = str(StatementStatus.RECONCILED)
 
 
 def reconcile(session: Session, statement_id: int) -> dict:
     """Auto-match statement lines to existing journal lines on the bank's GL
-    account. Returns {matched, unmatched:[line_ids]}."""
+    account. Returns {matched, unmatched, balance}."""
     stmt = session.get(BankStatement, statement_id)
     bank = session.get(BankAccount, stmt.bank_account_id)
     used = _used_journal_line_ids(session)
@@ -108,7 +120,7 @@ def reconcile(session: Session, statement_id: int) -> dict:
             unmatched.append(line.id)
     session.flush()
     _refresh_status(session, stmt)
-    return {"matched": matched, "unmatched": unmatched}
+    return {"matched": matched, "unmatched": unmatched, "balance": balance_check(stmt)}
 
 
 def categorize_unmatched(

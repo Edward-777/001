@@ -26,7 +26,20 @@ from .modules import documents as _documents  # noqa: F401
 from .modules import notifications as _notifications  # noqa: F401
 
 
+_DEFAULT_SECRET = "dev-secret-change-me"
+
+
+def _check_production_config() -> None:
+    """Refuse to boot with an unsafe production config (P0-5)."""
+    if settings.secret_key == _DEFAULT_SECRET and (settings.secure_cookies or settings.enable_scheduler):
+        raise RuntimeError(
+            "SECRET_KEY is still the default. Set a real SECRET_KEY before "
+            "running with secure_cookies/scheduler (production)."
+        )
+
+
 def create_app() -> FastAPI:
+    _check_production_config()
     app = FastAPI(title=settings.app_name)
 
     # Session cookie auth (M1 builds login on top of this).

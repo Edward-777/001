@@ -162,7 +162,13 @@ def _bucket(as_of: date, due: date | None) -> str:
 
 
 def ap_aging(session: Session, *, as_of: date) -> dict:
-    bills = session.scalars(select(APBill).where(APBill.balance > 0)).all()
+    # Only POSTED bills (open/partially_paid) — draft/exception bills aren't in the
+    # GL yet, so excluding them keeps the aging tied to the AP control account.
+    bills = session.scalars(
+        select(APBill).where(
+            APBill.balance > 0, APBill.status.in_(["open", "partially_paid"])
+        )
+    ).all()
     buckets = {b: _ZERO for b in _BUCKETS}
     rows = []
     for b in bills:
@@ -202,3 +208,23 @@ def inventory_valuation(session: Session) -> dict:
         rows.append({"product_id": bal.product_id, "qty": bal.qty_on_hand,
                      "avg_unit_cost": bal.avg_unit_cost, "value": value})
     return {"rows": rows, "total_value": total.quantize(_ZERO)}
+
+
+def subledger_check(session: Session, *, as_of: date) -> dict:
+    """Reconcile each subledger to its GL control account (P0-4). A mismatch =
+    a rounding error or rogue manual entry — the first thing an accountant checks."""
+    nets = _net_by_account(session, end=as_of)
+    by_role = {a.system_role: nets.get(a.id, _ZERO) for a in _accounts(session).values()
+               if a.system_role}
+
+    def chk(name, gl, sub):
+        gl, sub = gl.quantize(_ZERO), sub.quantize(_ZERO)
+        return {"control": name, "gl": gl, "subledger": sub, "ok": gl == sub,
+                "diff": (gl - sub).quantize(_ZERO)}
+
+    checks = [
+        chk("AP", -by_role.get("ap", _ZERO), ap_aging(session, as_of=as_of)["total"]),       # liability: -net
+        chk("AR", by_role.get("ar", _ZERO), ar_aging(session, as_of=as_of)["total"]),         # asset: +net
+        chk("Inventory", by_role.get("inventory", _ZERO), inventory_valuation(session)["total_value"]),
+    ]
+    return {"as_of": as_of, "checks": checks, "all_ok": all(c["ok"] for c in checks)}

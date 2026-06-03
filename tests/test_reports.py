@@ -113,3 +113,13 @@ def test_period_isolation_in_income_statement(session, month):
     """February has no activity -> zero P&L."""
     is_feb = acct.income_statement(session, start=date(2026, 2, 1), end=date(2026, 2, 28))
     assert is_feb["net_income"] == Decimal("0.00")
+
+
+def test_subledger_ties_to_gl_control_accounts(session, month):
+    """AP/AR/Inventory subledgers must equal their GL control accounts (P0-4)."""
+    chk = acct.subledger_check(session, as_of=JAN_END)
+    assert chk["all_ok"], chk
+    by = {c["control"]: c for c in chk["checks"]}
+    assert by["AP"]["gl"] == by["AP"]["subledger"] == Decimal("100.00")
+    assert by["AR"]["gl"] == by["AR"]["subledger"] == Decimal("100.00")
+    assert by["Inventory"]["gl"] == by["Inventory"]["subledger"] == Decimal("60.00")

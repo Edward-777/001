@@ -134,8 +134,11 @@ from .reports import (  # noqa: E402
     generate_financials,
     income_statement,
     inventory_valuation,
+    subledger_check,
     trial_balance,
 )
+
+__all__ += ["subledger_check"]
 
 __all__ += [
     "trial_balance",

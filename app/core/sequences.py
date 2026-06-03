@@ -6,6 +6,7 @@ on rollback. Used by PO, JE, INV, EXP, ... (see POLICIES §G10 prefix list).
 from __future__ import annotations
 
 from sqlalchemy import Integer, String, UniqueConstraint
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .base import PKMixin
@@ -26,16 +27,27 @@ def next_number(session: Session, doc_type: str, year: int) -> str:
 
     Locks the counter row (FOR UPDATE on Postgres) for the duration of the
     transaction. On SQLite (dev) the global write lock provides the same safety.
+    The first allocation of a (type, year) races on the INSERT: two concurrent
+    transactions both see no row and both insert. We resolve it with a savepoint —
+    the loser catches the unique violation and re-selects the now-existing row
+    with a lock (so numbering stays gapless).
     """
-    row = (
-        session.query(DocSequence)
-        .filter_by(doc_type=doc_type, year=year)
-        .with_for_update()
-        .one_or_none()
-    )
+    def _locked_row():
+        return (
+            session.query(DocSequence)
+            .filter_by(doc_type=doc_type, year=year)
+            .with_for_update()
+            .one_or_none()
+        )
+
+    row = _locked_row()
     if row is None:
-        row = DocSequence(doc_type=doc_type, year=year, last_no=0)
-        session.add(row)
-        session.flush()
+        try:
+            with session.begin_nested():  # savepoint
+                row = DocSequence(doc_type=doc_type, year=year, last_no=0)
+                session.add(row)
+                session.flush()
+        except IntegrityError:
+            row = _locked_row()  # another txn created it first; take the lock
     row.last_no += 1
     return f"{doc_type}-{year}-{row.last_no:04d}"
