@@ -220,6 +220,15 @@ def list_requests_for_user(session: Session, requester_id: int, *, limit: int = 
     )
 
 
+def list_all_requests(session: Session, *, status: str | None = None, limit: int = 50) -> list[Request]:
+    """Company-wide requests (newest first) — for managers/finance/admin who need
+    visibility beyond their own. The tool that exposes this is permission-gated."""
+    stmt = select(Request).order_by(Request.id.desc()).limit(limit)
+    if status:
+        stmt = select(Request).where(Request.status == status).order_by(Request.id.desc()).limit(limit)
+    return list(session.scalars(stmt))
+
+
 def pending_for_user(session: Session, approver_user_id: int) -> list[Request]:
     """Requests currently awaiting THIS user's approval (their step is next)."""
     subs = session.scalars(

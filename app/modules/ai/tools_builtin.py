@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..accounting import service as acct
 from ..approval import service as appr
 from ..approval.service import RequestType
+from ..auth import service as auth
 from ..auth.models import User
 from ..inventory import service as inv
 from ..inventory.models import OutboundType
@@ -60,6 +61,14 @@ def _list_my_requests(session: Session, user: User, args: dict) -> list[dict]:
     return [{"request_no": r.request_no, "type": r.type, "title": r.title,
              "amount": str(r.total_amount), "status": r.status}
             for r in appr.list_requests_for_user(session, user.id, limit=20)]
+
+
+def _list_company_requests(session: Session, user: User, args: dict) -> dict:
+    rows = appr.list_all_requests(session, status=args.get("status"), limit=50)
+    items = [{"request_no": r.request_no, "type": r.type, "title": r.title,
+              "requester": (auth.get_user(session, r.requester_id) or user).name,
+              "amount": str(r.total_amount), "status": r.status} for r in rows]
+    return {"count": len(items), "requests": items}
 
 
 def _list_products(session: Session, user: User, args: dict) -> list[dict]:
@@ -328,6 +337,16 @@ _BUILTIN = [
         description="List the current user's own requests (purchase/expense/trip) with status.",
         parameters={"type": "object", "properties": {}},
         handler=_list_my_requests,
+    ),
+    Tool(
+        name="list_company_requests",
+        description=("List ALL company requests (everyone's purchase/expense/trip), newest "
+                     "first, optionally filtered by status. Use this for 'how many requests "
+                     "company-wide', 'all pending requests', total spend requested, etc."),
+        parameters={"type": "object", "properties": {
+            "status": {"type": "string",
+                       "enum": ["draft", "submitted", "approved", "rejected", "canceled"]}}},
+        handler=_list_company_requests, scope="procurement", level=2,
     ),
     Tool(
         name="list_products",
