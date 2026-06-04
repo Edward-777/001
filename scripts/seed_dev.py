@@ -17,6 +17,7 @@ from app.modules.accounting import service as acct
 from app.modules.approval import service as appr
 from app.modules.approval.models import RequestType
 from app.modules.auth import service as auth_svc
+from app.modules.bank import service as bank_svc
 from app.modules.auth.models import Role
 from app.modules.hr import service as hr_svc
 from app.modules.inventory import service as inv
@@ -47,6 +48,9 @@ def main() -> None:
 
         proc.create_vendor(s, name="Acme Supplies", is_1099=True)
         sls.create_customer(s, name="Beta Corp")
+        cash = acct.get_account_by_role(s, "cash")
+        bank_svc.create_bank_account(s, name="Checking", gl_account_id=cash.id,
+                                     account_no_masked="****1234")
         widget = inv.create_product(s, sku="WIDGET-1", name="Widget",
                                     type=ProductType.INVENTORY, standard_cost=5)
         s.flush()

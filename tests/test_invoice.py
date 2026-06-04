@@ -26,7 +26,7 @@ def test_extract_json_rejects_non_json():
 
 
 def test_parse_invoice_returns_structured_fields(monkeypatch):
-    monkeypatch.setattr(invoice, "_load_images", lambda path: [b"fakepng"])
+    monkeypatch.setattr(invoice, "load_images", lambda path: [b"fakepng"])
     monkeypatch.setattr(llm, "vision_chat", lambda prompt, images: _SAMPLE)
     d = invoice.parse_invoice("anything.pdf")
     assert d["invoice_no"] == "0335662565"

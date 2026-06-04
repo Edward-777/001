@@ -39,13 +39,35 @@ def _pdf_to_images(path: str, *, max_pages: int = 2, dpi: int = 170) -> list[byt
     return images
 
 
-def _load_images(path: str) -> list[bytes]:
+def load_images(path: str) -> list[bytes]:
     ext = Path(path).suffix.lower()
     if ext == ".pdf":
         return _pdf_to_images(path)
     if ext in (".png", ".jpg", ".jpeg", ".webp"):
         return [Path(path).read_bytes()]
     raise ValueError(f"unsupported invoice file type: {ext}")
+
+
+_load_images = load_images  # back-compat alias
+
+
+def extract_text(path: str) -> str:
+    """Plain text of a document (for RAG ingest of policies/contracts)."""
+    ext = Path(path).suffix.lower()
+    if ext == ".pdf":
+        import fitz
+
+        doc = fitz.open(path)
+        text = "\n".join(page.get_text() for page in doc)
+        doc.close()
+        return text
+    if ext in (".txt", ".md"):
+        return Path(path).read_text(encoding="utf-8", errors="ignore")
+    if ext == ".docx":
+        import docx
+
+        return "\n".join(p.text for p in docx.Document(path).paragraphs if p.text.strip())
+    return ""
 
 
 def _extract_json(raw: str) -> dict:
@@ -55,8 +77,10 @@ def _extract_json(raw: str) -> dict:
     return json.loads(raw[i:j + 1])
 
 
+def parse_from_images(images: list[bytes]) -> dict:
+    return _extract_json(llm.vision_chat(_PROMPT, images))
+
+
 def parse_invoice(path: str) -> dict:
     """Render the invoice and extract structured fields with the vision model."""
-    images = _load_images(path)
-    raw = llm.vision_chat(_PROMPT, images)
-    return _extract_json(raw)
+    return parse_from_images(load_images(path))

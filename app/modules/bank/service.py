@@ -122,6 +122,36 @@ def reconcile(session: Session, statement_id: int) -> dict:
     return {"matched": matched, "unmatched": unmatched, "balance": balance_check(stmt)}
 
 
+def import_and_reconcile(session: Session, parsed: dict) -> dict:
+    """Import a parsed bank statement into a bank account and auto-reconcile it.
+    Returns a summary (matched / unmatched / balance tie-out)."""
+    from datetime import date
+
+    ba = session.scalar(select(BankAccount))  # single-org: the configured account
+    if ba is None:
+        return {"error": "no bank account is set up yet"}
+
+    def _d(s):
+        try:
+            return date.fromisoformat(s) if s else None
+        except (TypeError, ValueError):
+            return None
+
+    lines = [{"txn_date": _d(ln.get("txn_date")), "description": ln.get("description"),
+              "amount": ln.get("amount", 0)} for ln in (parsed.get("lines") or [])]
+    stmt = import_statement(
+        session, bank_account_id=ba.id, period=parsed.get("period") or "unknown",
+        lines=lines, opening_balance=parsed.get("opening_balance") or 0,
+        closing_balance=parsed.get("closing_balance") or 0,
+    )
+    result = reconcile(session, stmt.id)
+    return {
+        "bank": ba.name, "period": stmt.period, "line_count": len(lines),
+        "matched": result["matched"], "unmatched": len(result["unmatched"]),
+        "balance_ok": result["balance"]["ok"], "status": stmt.status,
+    }
+
+
 def categorize_unmatched(
     session: Session,
     line_id: int,

@@ -12,9 +12,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..core.db import get_session
-from ..modules.ai import agent
+from ..modules.ai import agent, classify, statement
 from ..modules.ai import conversations as convo
 from ..modules.ai import invoice as invoice_parser
+from ..modules.ai import rag
+from ..modules.bank import service as bank
 from ..modules.documents import service as docs
 from .deps import require_login, templates
 
@@ -80,6 +82,37 @@ def assistant_message(
     )
 
 
+def _route_document(session, *, route, category, dest, doc, acl_scope, acl_level) -> str:
+    """Act on a classified document (DESIGN §8.4): the category drives both the
+    ACL (already set on doc) and the workflow it routes to."""
+    header = f"📄 Detected: **{category}** (access: {acl_scope} L{acl_level}).\n\n"
+    if route == "ap_bill":
+        data = invoice_parser.parse_invoice(str(dest))
+        doc.extracted_text = json.dumps(data)
+        return header + _format_invoice(data)
+    if route == "reconcile":
+        parsed = statement.parse_statement(str(dest))
+        doc.extracted_text = json.dumps(parsed)
+        r = bank.import_and_reconcile(session, parsed)
+        if "error" in r:
+            return header + r["error"]
+        tie = "ties out ✅" if r["balance_ok"] else "does NOT tie out ⚠️"
+        return header + (
+            f"Imported {r['line_count']} lines for {r['bank']} ({r['period']}).\n"
+            f"Auto-matched {r['matched']} to existing entries; {r['unmatched']} unmatched "
+            f"(fees/interest — tell me how to categorize them). Statement balance {tie}."
+        )
+    if route == "rag":
+        text = invoice_parser.extract_text(str(dest))
+        if text.strip():
+            n = rag.ingest(session, source=doc.filename or "document", text=text,
+                           acl_scope=acl_scope, acl_level=acl_level)
+            doc.is_indexed = True
+            return header + f"Indexed into the knowledge base ({n} chunks) — ask me about it."
+        return header + "Stored, but I couldn't extract text to index it."
+    return header + "Stored for reference (not indexed)."
+
+
 @router.post("/assistant/upload", response_class=HTMLResponse)
 def assistant_upload(
     request: Request,
@@ -87,27 +120,31 @@ def assistant_upload(
     user=Depends(require_login),
     session: Session = Depends(get_session),
 ):
-    """Upload an invoice → read it locally with the vision model → show the parsed
-    fields in the chat and keep them in context for the agent to act on."""
+    """Upload any document → classify it locally (§8.4) → ACL-tag + route: invoices
+    are parsed, policies are indexed for RAG, statements are reconciled, else stored."""
     _UPLOAD_DIR.mkdir(exist_ok=True)
     dest = _UPLOAD_DIR / (file.filename or "upload.bin")
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
     conv = convo.get_or_create_active(session, user.id)
-    note = f"[Uploaded invoice: {file.filename}]"
+    note = f"[Uploaded: {file.filename}]"
     try:
-        data = invoice_parser.parse_invoice(str(dest))
-        docs.store_document(session, file_path=str(dest), filename=file.filename,
-                            mime=file.content_type, extracted_text=json.dumps(data))
-        reply, error = _format_invoice(data), None
+        category = classify.classify_file(str(dest))
+        acl_scope, acl_level, route, _ = classify.routing_for(category)
+        doc = docs.store_document(session, file_path=str(dest), filename=file.filename,
+                                  mime=file.content_type)
+        doc.acl_scope, doc.acl_level, doc.classified_by = acl_scope, acl_level, "ai"
+        reply = _route_document(session, route=route, category=category, dest=dest,
+                                doc=doc, acl_scope=acl_scope, acl_level=acl_level)
+        error = None
         convo.add_message(session, conv, "user", note)
         convo.add_message(session, conv, "assistant", reply)
     except Exception as exc:
-        reply, error = "", f"Couldn't read that invoice: {type(exc).__name__}"
+        reply, error = "", f"Couldn't read that file: {type(exc).__name__}"
     return templates.TemplateResponse(
         request, "_chat_turn.html",
-        {"message": note, "reply": reply, "tools": ["read_invoice"], "error": error},
+        {"message": note, "reply": reply, "tools": ["classify_document"], "error": error},
     )
 
 
