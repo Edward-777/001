@@ -76,6 +76,26 @@ def test_amount_comes_from_receipt_not_fabricated(session, setup):
     assert float(r["amount"]) == 70  # 10 * 7, from the receipt — not 99999
 
 
+def test_direct_bill_posts_to_chosen_account(session, setup):
+    """A vendor bill with no receipt books to the account the user chose
+    (here Equipment, since a server is a capital asset) — Dr 1500 / Cr AP 2000."""
+    r = _run(session, setup.admin, "record_direct_bill",
+             {"vendor": "Acme", "amount": 1000, "account_code": "1500", "description": "Dell server"})
+    assert float(r["amount"]) == 1000
+    assert "1500" in r["booked_to"]
+
+    from datetime import date
+    by = {row["code"]: row for row in acct.trial_balance(session, as_of=date.today())["rows"]}
+    assert float(by["1500"]["debit"]) == 1000   # Equipment
+    assert float(by["2000"]["credit"]) == 1000  # Accounts Payable
+
+
+def test_direct_bill_rejects_unknown_account(session, setup):
+    r = _run(session, setup.admin, "record_direct_bill",
+             {"vendor": "Acme", "amount": 1000, "account_code": "9999"})
+    assert "account_code not found" in r["error"]
+
+
 def test_p2p_tools_require_finance_and_inventory_scopes(session, setup):
     emp = auth_svc.create_user(session, name="Emp", email="e@x", password="pw")  # employee
     names = {t["function"]["name"] for t in registry.schemas_for(emp)}

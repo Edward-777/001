@@ -27,7 +27,8 @@ from .ap_models import (
     PaymentApplication,
 )
 from .ledger_models import JournalSource
-from .posting import apply_rule
+from .models import Account
+from .posting import Line, apply_rule, post_journal
 
 
 def create_ap_bill(
@@ -121,6 +122,30 @@ def get_ap_bill(session: Session, bill_id: int) -> APBill | None:
 
 def get_ap_bill_by_no(session: Session, bill_no: str) -> APBill | None:
     return session.scalar(select(APBill).where(APBill.bill_no == bill_no))
+
+
+def post_direct_bill(session: Session, bill_id: int, debit_account_id: int) -> APBill:
+    """Post a NON-PO vendor bill (services, or a direct purchase) that has no goods
+    receipt to 3-way match: Dr <chosen account> / Cr Accounts Payable. The debit
+    account is chosen by the user/agent (e.g. an expense category, or Equipment for
+    a capital asset) — never guessed, since it determines expense vs asset."""
+    bill = session.get(APBill, bill_id)
+    if bill is None or bill.status != APBillStatus.DRAFT:
+        raise ValueError("bill not in draft")
+    ap_acct = session.scalar(select(Account).where(Account.system_role == "ap"))
+    if ap_acct is None:
+        raise ValueError("AP account not found (seed the COA)")
+    post_journal(
+        session,
+        entry_date=bill.bill_date or date.today(),
+        lines=[Line(debit_account_id, debit=bill.amount), Line(ap_acct.id, credit=bill.amount)],
+        description=f"Vendor bill {bill.bill_no}",
+        source_type=JournalSource.AP_BILL,
+        source_id=bill.id,
+    )
+    bill.status = str(APBillStatus.OPEN)
+    session.flush()
+    return bill
 
 
 def list_open_bills(session: Session) -> list[APBill]:

@@ -38,6 +38,15 @@ def get_account_by_role(session: Session, role: str) -> Account | None:
     return session.scalar(select(Account).where(Account.system_role == role))
 
 
+def list_accounts(session: Session, *, active_only: bool = True) -> list[Account]:
+    """The chart of accounts — so the agent can pick a debit account for a
+    direct vendor bill (expense vs asset)."""
+    stmt = select(Account).order_by(Account.code)
+    if active_only:
+        stmt = stmt.where(Account.is_active.is_(True))
+    return list(session.scalars(stmt))
+
+
 def find_journal_line_match(
     session: Session, *, account_id: int, amount, exclude_ids,
     near_date=None, window_days: int = 5,
@@ -126,6 +135,7 @@ __all__ = [
     "get_ap_bill",
     "get_ap_bill_by_no",
     "list_open_bills",
+    "post_direct_bill",
     "create_payment",
 ]
 
@@ -137,6 +147,7 @@ from .ap import (  # noqa: E402
     get_ap_bill_by_no,
     list_open_bills,
     match_ap_bill,
+    post_direct_bill,
 )
 
 # ---- M13 reports (re-exported as public API) -----------------------------

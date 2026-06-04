@@ -148,6 +148,35 @@ def _list_open_bills(session: Session, user: User, args: dict) -> list[dict]:
     return out
 
 
+def _list_accounts(session: Session, user: User, args: dict) -> list[dict]:
+    return [{"code": a.code, "name": a.name, "type": a.type}
+            for a in acct.list_accounts(session)]
+
+
+def _record_direct_bill(session: Session, user: User, args: dict) -> dict:
+    """A vendor bill with NO goods receipt (services, or a direct purchase). Posts
+    Dr <account_code> / Cr AP — the account_code must be chosen (expense vs asset),
+    not guessed, so the agent should confirm it with the user first."""
+    v = proc.find_vendor_by_name(session, args.get("vendor", ""))
+    if v is None:
+        return {"error": f"vendor '{args.get('vendor')}' not found — call list_vendors"}
+    amount = float(args.get("amount") or 0)
+    if amount <= 0:
+        return {"error": "need a positive amount — ask the user"}
+    account = acct.get_account_by_code(session, str(args.get("account_code", "")))
+    if account is None:
+        return {"error": "account_code not found — call list_accounts and confirm which "
+                         "account to book it to (expense vs asset)"}
+    bill = acct.create_ap_bill(
+        session, vendor_id=v.id, vendor_invoice_no=args.get("invoice_no"),
+        lines=[{"description": args.get("description") or "vendor bill", "qty": 1,
+                "unit_price": amount}],
+    )
+    acct.post_direct_bill(session, bill.id, account.id)
+    return {"bill_no": bill.bill_no, "vendor": v.name, "amount": str(bill.amount),
+            "booked_to": f"{account.code} {account.name}", "status": bill.status}
+
+
 def _pay_vendor(session: Session, user: User, args: dict) -> dict:
     """Pay a vendor bill (Dr Accounts Payable / Cr Cash). Defaults to the full
     remaining balance unless a smaller amount is given."""
@@ -328,6 +357,27 @@ _BUILTIN = [
         description="List unpaid vendor bills (Accounts Payable) with balances.",
         parameters={"type": "object", "properties": {}},
         handler=_list_open_bills, scope="finance", level=2,
+    ),
+    Tool(
+        name="list_accounts",
+        description="List the chart of accounts (code, name, type) — use it to pick the "
+                    "debit account for a direct vendor bill (expense vs asset).",
+        parameters={"type": "object", "properties": {}},
+        handler=_list_accounts, scope="finance", level=2,
+    ),
+    Tool(
+        name="record_direct_bill",
+        description=("Record a vendor bill that has NO goods receipt (services, or a direct "
+                     "purchase like a parsed invoice with no matching receipt). Posts Dr the "
+                     "given account / Cr Accounts Payable. You MUST confirm account_code with the "
+                     "user (e.g. an expense account, or Equipment 1500 for a capital asset) — "
+                     "call list_accounts and ask; never guess expense vs asset."),
+        parameters={"type": "object", "properties": {
+            "vendor": {"type": "string"}, "amount": {"type": "number"},
+            "account_code": {"type": "string"}, "description": {"type": "string"},
+            "invoice_no": {"type": "string"}},
+            "required": ["vendor", "amount", "account_code"]},
+        handler=_record_direct_bill, scope="finance", level=2,
     ),
     Tool(
         name="pay_vendor",
