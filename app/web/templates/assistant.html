@@ -11,13 +11,22 @@
   </div>
 </div>
 
+<div id="thinking" class="htmx-indicator max-w-3xl mb-3">
+  <div class="bg-white rounded-xl shadow px-4 py-3 text-slate-500 inline-block">
+    <span class="animate-pulse">● Assistant is thinking…</span>
+  </div>
+</div>
+
 <form class="max-w-3xl flex gap-2" hx-post="/assistant/message"
       hx-target="#messages" hx-swap="beforeend"
+      hx-indicator="#thinking" hx-disabled-elt="find button"
       hx-on::after-request="this.reset(); document.getElementById('msg').focus()">
   <input id="msg" name="message" required autocomplete="off"
          placeholder="Ask the assistant…" class="flex-1 border rounded px-3 py-2">
-  <button class="bg-slate-900 text-white rounded px-5 py-2 hover:bg-slate-700">Send</button>
+  <button class="bg-slate-900 text-white rounded px-5 py-2 hover:bg-slate-700 disabled:opacity-50">
+    Send</button>
 </form>
+<style>#thinking{display:none}.htmx-request#thinking{display:block}</style>
 
 <script>
   // keep the latest turn in view

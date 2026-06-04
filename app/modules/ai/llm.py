@@ -18,6 +18,7 @@ def chat(messages: list[dict], *, tools: list[dict] | None = None,
         "model": model or settings.ollama_model,
         "messages": messages,
         "stream": False,
+        "keep_alive": "30m",  # keep the model warm in VRAM between turns
         "options": {"temperature": temperature},
     }
     if tools:

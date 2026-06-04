@@ -39,6 +39,14 @@ def _arguments(call: dict) -> dict:
     return args or {}
 
 
+def _language_directive(message: str) -> str:
+    """Detect the user's language from their message and force the reply language
+    (the system prompt alone isn't reliable — the model sometimes drifts)."""
+    if any("가" <= ch <= "힣" for ch in message):  # Hangul syllables
+        return "The user wrote in Korean. You MUST write your reply in Korean."
+    return "The user wrote in English. You MUST write your reply in English."
+
+
 def run(session: Session, user: User, message: str, *, max_iters: int | None = None,
         chat=None) -> dict:
     """Run one user turn. Returns {reply, tool_calls:[...]}.
@@ -47,7 +55,11 @@ def run(session: Session, user: User, message: str, *, max_iters: int | None = N
     chat = chat or llm.chat
     max_iters = max_iters or settings.ai_max_tool_iters
     tools = registry.schemas_for(user)
-    messages = [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": message}]
+    messages = [
+        {"role": "system", "content": _SYSTEM},
+        {"role": "system", "content": _language_directive(message)},
+        {"role": "user", "content": message},
+    ]
     used: list[dict] = []
 
     for _ in range(max_iters):
