@@ -243,6 +243,21 @@ def pending_for_user(session: Session, approver_user_id: int) -> list[Request]:
     return out
 
 
+def get_request_by_no(session: Session, request_no: str) -> Request | None:
+    return session.scalar(select(Request).where(Request.request_no == request_no))
+
+
+def approval_lines(session: Session, request_id: int) -> list[ApprovalLine]:
+    """The approval steps (ordered) for a request — real routing, not a guess."""
+    return _lines(session, request_id)
+
+
+def current_approver_id(session: Session, request_id: int) -> int | None:
+    """User id of whoever's turn it is to approve right now (None if done)."""
+    cur = _current_step(_lines(session, request_id))
+    return cur.approver_id if cur else None
+
+
 def get_request(session: Session, request_id: int) -> Request | None:
     return session.get(Request, request_id)
 

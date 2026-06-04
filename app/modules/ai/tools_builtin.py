@@ -14,6 +14,7 @@ from ..approval import service as appr
 from ..approval.service import RequestType
 from ..auth import service as auth
 from ..auth.models import User
+from ..notifications import service as notify
 from ..inventory import service as inv
 from ..inventory.models import OutboundType
 from ..procurement import service as proc
@@ -61,6 +62,46 @@ def _list_my_requests(session: Session, user: User, args: dict) -> list[dict]:
     return [{"request_no": r.request_no, "type": r.type, "title": r.title,
              "amount": str(r.total_amount), "status": r.status}
             for r in appr.list_requests_for_user(session, user.id, limit=20)]
+
+
+def _get_approval_status(session: Session, user: User, args: dict) -> dict:
+    """The REAL approval chain for a request (steps, approvers, current turn) —
+    so the model never guesses who approves or whether a step can be skipped."""
+    req = appr.get_request_by_no(session, args.get("request_no", ""))
+    if req is None:
+        return {"error": "request not found — call list_company_requests"}
+    steps = []
+    for ln in appr.approval_lines(session, req.id):
+        approver = auth.get_user(session, ln.approver_id)
+        steps.append({"step": ln.step_no, "approver": approver.name if approver else "?",
+                      "status": ln.status})
+    current = appr.current_approver_id(session, req.id)
+    cur_name = (auth.get_user(session, current).name if current else None)
+    return {"request_no": req.request_no, "title": req.title, "status": req.status,
+            "steps": steps, "current_approver": cur_name,
+            "note": "Approvals are sequential — only the current approver can act; steps cannot be skipped."}
+
+
+def _nudge_approvers(session: Session, user: User, args: dict) -> dict:
+    """Actually notify the current approver(s) to review. Works only through the
+    notifications system — so the assistant can truthfully say it sent something."""
+    if args.get("request_no"):
+        reqs = [r for r in [appr.get_request_by_no(session, args["request_no"])] if r]
+    else:
+        reqs = appr.list_all_requests(session, status="submitted", limit=50)
+    notified = []
+    for req in reqs:
+        approver_id = appr.current_approver_id(session, req.id)
+        if not approver_id:
+            continue
+        notify.notify(session, user_id=approver_id, type="approval",
+                      title=f"Please review: {req.title}",
+                      body=f"{req.request_no} (${req.total_amount}) is awaiting your approval.",
+                      link=f"/requests/{req.id}")
+        who = auth.get_user(session, approver_id)
+        notified.append({"request_no": req.request_no, "notified": who.name if who else "?"})
+    return {"sent": len(notified), "notifications": notified} if notified else \
+        {"sent": 0, "note": "nothing pending to nudge"}
 
 
 def _list_company_requests(session: Session, user: User, args: dict) -> dict:
@@ -347,6 +388,24 @@ _BUILTIN = [
             "status": {"type": "string",
                        "enum": ["draft", "submitted", "approved", "rejected", "canceled"]}}},
         handler=_list_company_requests, scope="procurement", level=2,
+    ),
+    Tool(
+        name="get_approval_status",
+        description=("Show the REAL approval chain for a request by request_no: each step's "
+                     "approver and status, and whose turn it is now. Use this to answer 'who "
+                     "approves this?' or 'can I approve it?' — never guess the routing."),
+        parameters={"type": "object", "properties": {"request_no": {"type": "string"}},
+                    "required": ["request_no"]},
+        handler=_get_approval_status, scope="procurement", level=2,
+    ),
+    Tool(
+        name="nudge_approvers",
+        description=("Send an in-app notification to the current approver(s) asking them to "
+                     "review. Pass request_no for one request, or omit it to nudge all pending. "
+                     "This is the ONLY way to actually notify someone — if you didn't call it, "
+                     "you did NOT send anything."),
+        parameters={"type": "object", "properties": {"request_no": {"type": "string"}}},
+        handler=_nudge_approvers, scope="procurement", level=2,
     ),
     Tool(
         name="list_products",
