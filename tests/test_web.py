@@ -136,5 +136,24 @@ def test_financials_requires_level_3_not_2(client):
     assert client.get("/reports/financials?period=2026-01").status_code == 403
 
 
+def test_assistant_page_renders(client):
+    _login(client, "staff@x")
+    r = client.get("/assistant")
+    assert r.status_code == 200 and "Assistant" in r.text
+
+
+def test_assistant_message_renders_turn(client, monkeypatch):
+    """POST a chat message; the agent is mocked so no Ollama is needed in CI."""
+    from app.modules.ai import agent
+    monkeypatch.setattr(agent, "run", lambda session, user, message: {
+        "reply": "You have 7 W1 widgets.", "tool_calls": [{"tool": "get_stock"}]})
+    _login(client, "staff@x")
+    r = client.post("/assistant/message", data={"message": "how many W1?"})
+    assert r.status_code == 200
+    assert "how many W1?" in r.text          # user bubble
+    assert "You have 7 W1 widgets." in r.text  # assistant reply
+    assert "get_stock" in r.text             # tool chip
+
+
 def test_health_still_ok(client):
     assert client.get("/health").json()["status"] == "ok"

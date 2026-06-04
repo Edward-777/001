@@ -1,0 +1,17 @@
+<div class="flex justify-end">
+  <div class="bg-slate-900 text-white rounded-xl px-4 py-2 max-w-2xl">{{ message }}</div>
+</div>
+<div class="flex justify-start">
+  <div class="bg-white rounded-xl shadow px-4 py-3 max-w-2xl">
+    {% if error %}
+      <span class="text-rose-600">{{ error }}</span>
+    {% else %}
+      <div class="whitespace-pre-wrap">{{ reply }}</div>
+      {% if tools %}
+        <div class="mt-2 text-xs text-slate-400">
+          {% for t in tools %}<span class="bg-slate-100 rounded px-2 py-0.5 mr-1">{{ t }}</span>{% endfor %}
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>

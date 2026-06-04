@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{% block title %}Assistant — 001 ERP{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-2">Assistant</h1>
+<p class="text-slate-500 mb-4 text-sm">Ask in any language. The assistant only sees what you're allowed to.</p>
+
+<div id="messages" class="space-y-3 mb-4 max-w-3xl">
+  <div class="bg-white rounded-xl shadow p-4 text-slate-600">
+    Try: <em>"How many W1 widgets are in stock?"</em> · <em>"내 결재 대기 보여줘"</em> ·
+    <em>"Create a purchase request for 10 widgets at $5"</em>
+  </div>
+</div>
+
+<form class="max-w-3xl flex gap-2" hx-post="/assistant/message"
+      hx-target="#messages" hx-swap="beforeend"
+      hx-on::after-request="this.reset(); document.getElementById('msg').focus()">
+  <input id="msg" name="message" required autocomplete="off"
+         placeholder="Ask the assistant…" class="flex-1 border rounded px-3 py-2">
+  <button class="bg-slate-900 text-white rounded px-5 py-2 hover:bg-slate-700">Send</button>
+</form>
+
+<script>
+  // keep the latest turn in view
+  document.body.addEventListener('htmx:afterSwap', e => {
+    const m = document.getElementById('messages');
+    m.lastElementChild?.scrollIntoView({behavior: 'smooth', block: 'end'});
+  });
+</script>
+{% endblock %}
