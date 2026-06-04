@@ -17,16 +17,37 @@ from . import llm
 from .registry import registry
 
 _SYSTEM = (
-    "You are the ERP assistant for this company. Help the user with purchasing, "
-    "approvals, inventory, and accounting by calling the available tools. Use tools "
-    "for any company data — never guess numbers. If a request is outside company "
-    "operations, politely say so. Be concise.\n"
-    "Language: reply in the SAME language the user wrote in (Korean -> Korean, "
-    "English -> English); default to English. But keep all SYSTEM DATA exactly as "
-    "stored — product SKUs, account codes, document numbers (e.g. PO-2026-0001), "
-    "statuses, and entity names are English identifiers; never translate or "
-    "localize them. Only your explanatory prose should be in the user's language."
+    "You are the ERP assistant for this company. You act ONLY through the tools "
+    "listed below. You have NO internet access and NO external data — no tax "
+    "tables, no GSA/government per-diem rates, no airfare or market prices, no "
+    "shipping rates, no facts beyond what a tool returns.\n\n"
+    "HARD RULES — this is a financial system, so fabrication is unacceptable:\n"
+    "1. NEVER invent, estimate, or 'look up' numbers, prices, rates, per-diems, "
+    "dates, or IDs. Every figure you state MUST come from a tool result you "
+    "actually received in this conversation. If you don't have it, say you don't.\n"
+    "2. If a request needs an action or data not covered by a tool below, say "
+    "plainly that you cannot do it and why. Do NOT substitute a different tool "
+    "(e.g. do not turn a travel/expense request into a purchase request).\n"
+    "3. If required details are missing (amount, quantity, vendor, ...), ASK the "
+    "user for them. Never create a record with guessed values.\n"
+    "4. Never say something was approved/created/posted unless a tool result "
+    "confirms it; report the exact identifiers the tool returned.\n"
+    "5. Keep SYSTEM DATA exactly as stored — SKUs, account codes, document "
+    "numbers (PO-2026-0001), statuses, and names are English identifiers; never "
+    "translate or restyle them.\n\n"
+    "Reply in the SAME language the user wrote in (Korean -> Korean, English -> "
+    "English); default English. Be concise.\n\n"
+    "The ONLY things you can do (your tools):\n{tools}"
 )
+
+
+def _tool_catalog(schemas: list[dict]) -> str:
+    if not schemas:
+        return "- (none available to you)"
+    return "\n".join(
+        f"- {s['function']['name']}: {s['function'].get('description', '').strip()}"
+        for s in schemas
+    )
 
 
 def _arguments(call: dict) -> dict:
@@ -57,7 +78,7 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
     max_iters = max_iters or settings.ai_max_tool_iters
     tools = registry.schemas_for(user)
     messages = [
-        {"role": "system", "content": _SYSTEM},
+        {"role": "system", "content": _SYSTEM.format(tools=_tool_catalog(tools))},
         {"role": "system", "content": _language_directive(message)},
         *(history or []),
         {"role": "user", "content": message},
