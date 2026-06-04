@@ -47,10 +47,11 @@ def _language_directive(message: str) -> str:
     return "The user wrote in English. You MUST write your reply in English."
 
 
-def run(session: Session, user: User, message: str, *, max_iters: int | None = None,
-        chat=None) -> dict:
+def run(session: Session, user: User, message: str, *, history: list[dict] | None = None,
+        max_iters: int | None = None, chat=None) -> dict:
     """Run one user turn. Returns {reply, tool_calls:[...]}.
 
+    `history` = prior [{role, content}] turns of this conversation (memory).
     `chat` lets tests inject a fake LLM; production uses llm.chat (Ollama)."""
     chat = chat or llm.chat
     max_iters = max_iters or settings.ai_max_tool_iters
@@ -58,6 +59,7 @@ def run(session: Session, user: User, message: str, *, max_iters: int | None = N
     messages = [
         {"role": "system", "content": _SYSTEM},
         {"role": "system", "content": _language_directive(message)},
+        *(history or []),
         {"role": "user", "content": message},
     ]
     used: list[dict] = []

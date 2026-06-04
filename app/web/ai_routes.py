@@ -1,21 +1,33 @@
 """AI assistant chat (Phase 2). A logged-in user chats; the agent runs as that
-user so tools obey their permissions. HTMX posts a message and appends the turn."""
+user so tools obey their permissions. Conversations are persisted (2c) so the
+agent has memory and chats are reviewable (own; admins audit all)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..core.db import get_session
 from ..modules.ai import agent
+from ..modules.ai import conversations as convo
 from .deps import require_login, templates
 
 router = APIRouter()
 
 
 @router.get("/assistant", response_class=HTMLResponse)
-def assistant_page(request: Request, user=Depends(require_login)):
-    return templates.TemplateResponse(request, "assistant.html", {"user": user})
+def assistant_page(request: Request, user=Depends(require_login),
+                   session: Session = Depends(get_session)):
+    conv = convo.get_or_create_active(session, user.id)
+    msgs = convo.messages_of(session, conv.id)
+    return templates.TemplateResponse(request, "assistant.html",
+                                      {"user": user, "conversation": conv, "messages": msgs})
+
+
+@router.post("/assistant/new")
+def assistant_new(user=Depends(require_login), session: Session = Depends(get_session)):
+    convo.start_new(session, user.id)
+    return RedirectResponse("/assistant", status_code=303)
 
 
 @router.post("/assistant/message", response_class=HTMLResponse)
@@ -25,13 +37,43 @@ def assistant_message(
     user=Depends(require_login),
     session: Session = Depends(get_session),
 ):
+    conv = convo.get_or_create_active(session, user.id)
+    history = convo.history_for_llm(session, conv.id)
     try:
-        out = agent.run(session, user, message)
+        out = agent.run(session, user, message, history=history)
         reply, tools = out["reply"], [t["tool"] for t in out["tool_calls"]]
         error = None
     except Exception as exc:  # Ollama down, etc.
         reply, tools, error = "", [], f"Assistant unavailable: {type(exc).__name__}"
+
+    if error is None:
+        convo.add_message(session, conv, "user", message)
+        convo.add_message(session, conv, "assistant", reply, tools=tools)
     return templates.TemplateResponse(
         request, "_chat_turn.html",
         {"message": message, "reply": reply, "tools": tools, "error": error},
     )
+
+
+@router.get("/assistant/history", response_class=HTMLResponse)
+def assistant_history(request: Request, user=Depends(require_login),
+                      session: Session = Depends(get_session)):
+    from ..modules.auth import service as auth
+    convs = convo.list_conversations(session, user)
+    names = {u: (auth.get_user(session, u).name if auth.get_user(session, u) else f"#{u}")
+             for u in {c.user_id for c in convs}}
+    return templates.TemplateResponse(request, "conversations.html",
+                                      {"user": user, "conversations": convs, "names": names})
+
+
+@router.get("/assistant/c/{conversation_id}", response_class=HTMLResponse)
+def assistant_view(request: Request, conversation_id: int, user=Depends(require_login),
+                   session: Session = Depends(get_session)):
+    conv = convo.get_conversation(session, conversation_id, user)
+    if conv is None:
+        return RedirectResponse("/assistant/history", status_code=303)
+    msgs = convo.messages_of(session, conv.id)
+    owner_view = conv.user_id != user.id  # admin viewing someone else's
+    return templates.TemplateResponse(request, "conversation_view.html",
+                                      {"user": user, "conversation": conv,
+                                       "messages": msgs, "owner_view": owner_view})

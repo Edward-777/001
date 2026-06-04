@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block title %}Conversations — 001 ERP{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4 max-w-3xl">
+  <h1 class="text-2xl font-bold">Conversations</h1>
+  <a href="/assistant" class="text-sm px-3 py-1.5 rounded border hover:bg-slate-100">← Back to chat</a>
+</div>
+
+{% if user.role == 'admin' %}
+<p class="text-slate-500 text-sm mb-4 max-w-3xl">As an admin you can review every user's assistant conversations (audit).</p>
+{% endif %}
+
+<div class="max-w-3xl bg-white rounded-xl shadow divide-y">
+  {% for c in conversations %}
+  <a href="/assistant/c/{{ c.id }}" class="flex items-center justify-between px-4 py-3 hover:bg-slate-50">
+    <div>
+      <div class="font-medium">{{ c.title or "(empty conversation)" }}</div>
+      <div class="text-xs text-slate-400">#{{ c.id }} · {{ c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else "" }}</div>
+    </div>
+    {% if user.role == 'admin' %}
+      <span class="text-xs bg-slate-100 rounded px-2 py-0.5">{{ names.get(c.user_id, "?") }}</span>
+    {% endif %}
+  </a>
+  {% else %}
+  <div class="px-4 py-6 text-slate-500">No conversations yet.</div>
+  {% endfor %}
+</div>
+{% endblock %}

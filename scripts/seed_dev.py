@@ -1,8 +1,13 @@
-"""Seed a runnable dev database: COA, rules, an admin + a small org.
+"""Seed a runnable dev database: COA, rules, an org, and some live data so the
+assistant has things to report.
 
 Usage:  python -m scripts.seed_dev
-Login:  admin@001.local / admin   (approver: ceo@001.local / ceo)
+Logins:
+  admin@001.local / admin   (ADMIN — full access incl. financials)
+  alice@001.local / alice   (EMPLOYEE — submits requests that route to admin)
 """
+from datetime import date
+
 from app.core.db import Base, SessionLocal, engine
 from app.modules import (  # noqa: F401  register all tables
     accounting, approval, assets, auth, bank, documents, expense,
@@ -10,6 +15,7 @@ from app.modules import (  # noqa: F401  register all tables
 )
 from app.modules.accounting import service as acct
 from app.modules.approval import service as appr
+from app.modules.approval.models import RequestType
 from app.modules.auth import service as auth_svc
 from app.modules.auth.models import Role
 from app.modules.hr import service as hr_svc
@@ -29,17 +35,37 @@ def main() -> None:
         acct.seed_posting_rules(s)
         appr.seed_approval_rules(s)
 
-        ceo_u = auth_svc.create_user(s, name="CEO", email="ceo@001.local", password="ceo", role=Role.ADMIN)
-        admin_u = auth_svc.create_user(s, name="Admin", email="admin@001.local", password="admin", role=Role.MANAGER)
+        # admin = real ADMIN at the top of the org; alice reports to admin.
+        admin = auth_svc.create_user(s, name="Admin", email="admin@001.local",
+                                     password="admin", role=Role.ADMIN)
+        alice = auth_svc.create_user(s, name="Alice", email="alice@001.local",
+                                     password="alice", role=Role.EMPLOYEE)
         s.flush()
-        ceo_e = hr_svc.create_employee(s, employee_no="E1", name="CEO", user_id=ceo_u.id)
-        hr_svc.create_employee(s, employee_no="E2", name="Admin", reports_to_id=ceo_e.id, user_id=admin_u.id)
+        admin_e = hr_svc.create_employee(s, employee_no="E1", name="Admin", user_id=admin.id)
+        hr_svc.create_employee(s, employee_no="E2", name="Alice",
+                               reports_to_id=admin_e.id, user_id=alice.id)
 
         proc.create_vendor(s, name="Acme Supplies", is_1099=True)
         sls.create_customer(s, name="Beta Corp")
-        inv.create_product(s, sku="WIDGET-1", name="Widget", type=ProductType.INVENTORY, standard_cost=5)
+        widget = inv.create_product(s, sku="WIDGET-1", name="Widget",
+                                    type=ProductType.INVENTORY, standard_cost=5)
+        s.flush()
+
+        # some on-hand stock so "how much stock?" is interesting
+        inb = inv.create_inbound(s, received_date=date.today(),
+                                 lines=[{"product_id": widget.id, "qty": 100, "unit_cost": 5}])
+        inv.post_inbound(s, inb.id)
+
+        # a pending request from Alice -> lands in Admin's approval inbox
+        req = appr.create_request(
+            s, type=RequestType.PURCHASE, requester_id=alice.id,
+            title="Office chairs", description="ergonomic chairs",
+            lines=[{"description": "chair", "qty": 5, "unit_price": 120}],
+        )
+        appr.submit_request(s, req.id)
+
         s.commit()
-        print("Seeded. Login: admin@001.local / admin  (approver: ceo@001.local / ceo)")
+        print("Seeded. Logins: admin@001.local/admin (ADMIN), alice@001.local/alice (employee)")
 
 
 if __name__ == "__main__":

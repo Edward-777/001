@@ -24,6 +24,7 @@ from .modules import assets as _assets  # noqa: F401
 from .modules import bank as _bank  # noqa: F401
 from .modules import documents as _documents  # noqa: F401
 from .modules import notifications as _notifications  # noqa: F401
+from .modules import ai as _ai  # noqa: F401  (registers tools + conversation tables)
 
 
 _DEFAULT_SECRET = "dev-secret-change-me"
