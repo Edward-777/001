@@ -14,6 +14,7 @@ from ..approval import service as appr
 from ..approval.service import RequestType
 from ..auth.models import User
 from ..inventory import service as inv
+from ..inventory.models import OutboundType
 from ..procurement import service as proc
 from ..sales import service as sls
 from . import rag
@@ -118,6 +119,29 @@ def _receive_inventory(session: Session, user: User, args: dict) -> dict:
     bal = inv.get_stock(session, p.id)
     return {"inbound_no": inb.inbound_no, "sku": p.sku, "received_qty": str(qty),
             "qty_on_hand": str(bal.qty_on_hand) if bal else "0"}
+
+
+def _issue_inventory(session: Session, user: User, args: dict) -> dict:
+    """Issue stock OUT at moving-average cost. sale→COGS, consumption→expense,
+    disposal→write-off (accounting booked by the outbound event handler)."""
+    p = inv.get_product_by_sku(session, args.get("sku", ""))
+    if p is None:
+        return {"error": "product not found — call list_products"}
+    qty = float(args.get("qty") or 0)
+    if qty <= 0:
+        return {"error": "need qty > 0"}
+    try:
+        otype = OutboundType(args.get("type", "sale"))
+    except ValueError:
+        return {"error": "type must be one of: sale, consumption, disposal"}
+    ob = inv.create_outbound(session, type=otype, lines=[{"product_id": p.id, "qty": qty}])
+    try:
+        inv.post_outbound(session, ob.id)
+    except ValueError as exc:
+        return {"error": str(exc)}  # e.g. insufficient stock
+    bal = inv.get_stock(session, p.id)
+    return {"outbound_no": ob.outbound_no, "sku": p.sku, "issued_qty": str(qty),
+            "type": str(otype), "qty_on_hand": str(bal.qty_on_hand) if bal else "0"}
 
 
 def _record_vendor_bill(session: Session, user: User, args: dict) -> dict:
@@ -340,6 +364,16 @@ _BUILTIN = [
             "sku": {"type": "string"}, "qty": {"type": "number"}, "unit_cost": {"type": "number"}},
             "required": ["sku", "qty", "unit_cost"]},
         handler=_receive_inventory, scope="inventory", level=2,
+    ),
+    Tool(
+        name="issue_inventory",
+        description=("Issue stock OUT and book it: 'sale' (books COGS), 'consumption' (internal "
+                     "use, expensed), or 'disposal' (write-off). Needs SKU, quantity, and type."),
+        parameters={"type": "object", "properties": {
+            "sku": {"type": "string"}, "qty": {"type": "number"},
+            "type": {"type": "string", "enum": ["sale", "consumption", "disposal"]}},
+            "required": ["sku", "qty", "type"]},
+        handler=_issue_inventory, scope="inventory", level=2,
     ),
     Tool(
         name="record_vendor_bill",

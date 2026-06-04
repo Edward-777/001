@@ -10,9 +10,15 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from ..auth.models import Role, User
+from . import llm
 from .conversation_models import Conversation, Message
 
-_WINDOW = 20  # how many recent messages to re-send as context
+_WINDOW = 20  # how many recent messages to keep verbatim in context
+_SUMMARY_SYSTEM = (
+    "You maintain a running summary of an ERP assistant conversation. Update the "
+    "summary so it preserves key facts, decisions, names, numbers, document IDs, and "
+    "open items. Be concise (a short paragraph). Output only the updated summary."
+)
 
 
 def get_or_create_active(session: Session, user_id: int) -> Conversation:
@@ -48,14 +54,50 @@ def add_message(
     return msg
 
 
+def _fold_old_messages(session: Session, conversation: Conversation, window_start_id: int) -> None:
+    """Fold messages that have scrolled out of the live window into the rolling
+    summary (incremental — only the newly-dropped ones), so long chats keep their
+    earlier context without re-sending everything (memory scaling)."""
+    to_fold = session.scalars(
+        select(Message).where(
+            Message.conversation_id == conversation.id,
+            Message.id > conversation.summarized_upto_id,
+            Message.id < window_start_id,
+        ).order_by(Message.id)
+    ).all()
+    if not to_fold:
+        return
+    transcript = "\n".join(f"{m.role}: {m.content}" for m in to_fold)
+    prior = f"Current summary:\n{conversation.summary}\n\n" if conversation.summary else ""
+    try:
+        msg = llm.chat([
+            {"role": "system", "content": _SUMMARY_SYSTEM},
+            {"role": "user", "content": f"{prior}New turns to fold in:\n{transcript}"},
+        ])
+        conversation.summary = (msg.get("content") or conversation.summary or "").strip()
+        conversation.summarized_upto_id = to_fold[-1].id
+        session.flush()
+    except Exception:
+        pass  # summarization is best-effort; never break a chat turn
+
+
 def history_for_llm(session: Session, conversation_id: int) -> list[dict]:
-    """The last _WINDOW messages as LLM message dicts (oldest first). Re-sending
-    the assistant's own prior replies is what lets '그거 주문해줘' resolve."""
-    recent = session.scalars(
+    """Recent turns verbatim, prefixed by a rolling summary of older turns once the
+    conversation grows past the window. Re-sending prior turns is what makes the
+    assistant 'remember' (LLMs are stateless)."""
+    recent = list(reversed(session.scalars(
         select(Message).where(Message.conversation_id == conversation_id)
         .order_by(desc(Message.id)).limit(_WINDOW)
-    ).all()
-    return [{"role": m.role, "content": m.content} for m in reversed(recent)]
+    ).all()))
+    out: list[dict] = []
+    if recent:
+        conv = session.get(Conversation, conversation_id)
+        _fold_old_messages(session, conv, recent[0].id)
+        if conv.summary:
+            out.append({"role": "system",
+                        "content": f"Summary of earlier conversation: {conv.summary}"})
+    out.extend({"role": m.role, "content": m.content} for m in recent)
+    return out
 
 
 def messages_of(session: Session, conversation_id: int) -> list[Message]:

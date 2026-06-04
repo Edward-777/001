@@ -96,6 +96,19 @@ def test_direct_bill_rejects_unknown_account(session, setup):
     assert "account_code not found" in r["error"]
 
 
+def test_issue_inventory_reduces_stock(session, setup):
+    _run(session, setup.admin, "receive_inventory", {"sku": "W1", "qty": 10, "unit_cost": 5})
+    r = _run(session, setup.admin, "issue_inventory", {"sku": "W1", "qty": 4, "type": "sale"})
+    assert r["type"] == "sale"
+    assert float(r["qty_on_hand"]) == 6
+
+
+def test_issue_inventory_blocks_oversell(session, setup):
+    _run(session, setup.admin, "receive_inventory", {"sku": "W1", "qty": 2, "unit_cost": 5})
+    r = _run(session, setup.admin, "issue_inventory", {"sku": "W1", "qty": 99, "type": "sale"})
+    assert "insufficient" in r["error"]
+
+
 def test_p2p_tools_require_finance_and_inventory_scopes(session, setup):
     emp = auth_svc.create_user(session, name="Emp", email="e@x", password="pw")  # employee
     names = {t["function"]["name"] for t in registry.schemas_for(emp)}

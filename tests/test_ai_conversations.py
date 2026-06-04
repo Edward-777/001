@@ -69,6 +69,23 @@ def test_review_permissions(session):
     assert convo.get_conversation(session, conv.id, bob) is None         # other employee denied
 
 
+def test_long_conversation_folds_into_summary(session, user, monkeypatch):
+    """Once a chat grows past the window, older turns fold into a rolling summary
+    so memory scales without re-sending everything."""
+    from app.modules.ai import llm
+    monkeypatch.setattr(llm, "chat", lambda messages, **kw: {"content": "SUMMARY: widgets discussed"})
+
+    conv = convo.start_new(session, user.id)
+    for i in range(convo._WINDOW + 5):
+        convo.add_message(session, conv, "user", f"message number {i}")
+
+    hist = convo.history_for_llm(session, conv.id)
+    assert hist[0]["role"] == "system" and "SUMMARY" in hist[0]["content"]   # summary first
+    assert len(hist) == 1 + convo._WINDOW                                      # summary + window
+    assert conv.summary and "SUMMARY" in conv.summary
+    assert conv.summarized_upto_id > 0
+
+
 def test_list_scopes_by_role(session):
     admin = auth_svc.create_user(session, name="Admin", email="a2@x", password="pw", role=Role.ADMIN)
     alice = auth_svc.create_user(session, name="Alice", email="al2@x", password="pw")
