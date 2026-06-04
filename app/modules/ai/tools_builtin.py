@@ -12,6 +12,7 @@ from ..approval import service as appr
 from ..approval.service import RequestType
 from ..auth.models import User
 from ..inventory import service as inv
+from . import rag
 from .registry import Registry, Tool
 
 
@@ -45,6 +46,13 @@ def _get_stock(session: Session, user: User, args: dict) -> dict:
     return {"sku": p.sku, "name": p.name,
             "qty_on_hand": str(bal.qty_on_hand) if bal else "0",
             "avg_unit_cost": str(bal.avg_unit_cost) if bal else "0"}
+
+
+def _search_company_policy(session: Session, user: User, args: dict) -> dict:
+    hits = rag.search(session, args["query"], user=user, top_k=4)
+    if not hits:
+        return {"passages": [], "note": "no matching company document found"}
+    return {"passages": [{"source": h["source"], "text": h["content"]} for h in hits]}
 
 
 def _get_financials(session: Session, user: User, args: dict) -> dict:
@@ -89,6 +97,16 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {"period": {"type": "string"}},
                     "required": ["period"]},
         handler=_get_financials, scope="finance", level=3,  # GL access — inherits caller's scope
+    ),
+    Tool(
+        name="search_company_policy",
+        description=("Search the company's internal policies and documents (e.g. the Travel & "
+                     "Expense Policy) for relevant passages. ALWAYS use this to answer questions "
+                     "about company rules, policy, limits, or what is allowed — never answer "
+                     "policy questions from your own assumptions."),
+        parameters={"type": "object", "properties": {"query": {"type": "string"}},
+                    "required": ["query"]},
+        handler=_search_company_policy,  # company policy is readable by all staff (chunk ACL applies)
     ),
 ]
 

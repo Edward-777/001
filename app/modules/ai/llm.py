@@ -28,11 +28,12 @@ def chat(messages: list[dict], *, tools: list[dict] | None = None,
     return resp.json()["message"]
 
 
-def embed(text: str, *, model: str | None = None, timeout: float = 60.0) -> list[float]:
-    """Embed a single string (RAG, Phase 3) via the embedding model."""
+def embed(text: str, *, model: str | None = None, timeout: float = 180.0) -> list[float]:
+    """Embed a single string (RAG, Phase 3) via the embedding model.
+    Generous timeout: the first call cold-loads the embedding model into VRAM."""
     resp = httpx.post(
         f"{settings.ollama_base_url}/api/embeddings",
-        json={"model": model or settings.ollama_embed_model, "prompt": text},
+        json={"model": model or settings.ollama_embed_model, "prompt": text, "keep_alive": "30m"},
         timeout=timeout,
     )
     resp.raise_for_status()
