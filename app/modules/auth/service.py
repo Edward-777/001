@@ -112,6 +112,26 @@ def get_grants(user: User) -> dict[str, ScopeGrant]:
     }
 
 
+def can_access_subject(session: Session, user: User, scope: str, level: int,
+                       subject_employee_id: int | None) -> bool:
+    """Full 3-axis check (scope × level × data_boundary) for a PER-SUBJECT record.
+
+    The registry/UI gate only sees scope × level — the *subject* of a record is
+    only known inside the handler. Any tool or query that returns one person's
+    data (salary, review, per-employee document) MUST call this so the boundary
+    (③) axis is enforced — otherwise a manager could read another team's data.
+    """
+    from ..hr import service as hr  # local import avoids an import-time cycle
+
+    actor = hr.get_employee_by_user(session, user.id)
+    return can_access(
+        get_grants(user), scope, level,
+        subject_employee_id=subject_employee_id,
+        actor_employee_id=actor.id if actor else None,
+        boundary_resolver=hr.make_boundary_resolver(session),
+    )
+
+
 # Re-export the gate so callers do `from auth.service import can_access, require_access`.
 __all__ = [
     "create_user",
@@ -122,6 +142,7 @@ __all__ = [
     "apply_default_scopes",
     "get_grants",
     "can_access",
+    "can_access_subject",
     "require_access",
     # public contract types (other modules import these from the service)
     "DataBoundary",

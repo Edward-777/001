@@ -55,8 +55,8 @@ def test_procure_to_pay_chain(session, setup):
     assert r["match_status"] == "matched"
     bill_no = r["bill_no"]
 
-    # 3. pay it -> Dr AP / Cr Cash
-    r = _run(session, setup.admin, "pay_vendor", {"bill_no": bill_no})
+    # 3. pay it -> Dr AP / Cr Cash (amount is now explicit; SoD requires finance L3)
+    r = _run(session, setup.admin, "pay_vendor", {"bill_no": bill_no, "amount": 500})
     assert float(r["paid"]) == 500
     assert r["bill_status"] == "paid"
 

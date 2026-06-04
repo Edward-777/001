@@ -26,6 +26,12 @@ class Tool:
     handler: Callable[[Session, User, dict], object]
     scope: str | None = None  # required permission scope (None = any logged-in user)
     level: int = 1
+    # CONTRACT: this gate enforces only scope × level (axes ① ②). The data_boundary
+    # (③ axis: self/team/dept/all) depends on WHOSE record is returned, which is only
+    # known inside the handler. Any tool returning PER-SUBJECT data (a person's
+    # salary, review, per-employee doc) MUST call auth.can_access_subject(session,
+    # user, scope, level, subject_employee_id) in its handler. (RAG already enforces
+    # this for per-subject chunks in rag._readable.)
 
 
 class Registry:

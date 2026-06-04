@@ -202,14 +202,18 @@ def _record_direct_bill(session: Session, user: User, args: dict) -> dict:
 
 
 def _pay_vendor(session: Session, user: User, args: dict) -> dict:
-    """Pay a vendor bill (Dr Accounts Payable / Cr Cash). Defaults to the full
-    remaining balance unless a smaller amount is given."""
+    """Pay a vendor bill (Dr Accounts Payable / Cr Cash). The amount must be
+    stated explicitly — money movement never defaults to 'the whole balance'."""
     bill = acct.get_ap_bill_by_no(session, args.get("bill_no", ""))
     if bill is None:
         return {"error": "bill not found — call list_open_bills"}
     if float(bill.balance) <= 0:
         return {"error": "that bill is already paid"}
-    amt = float(args.get("amount") or 0) or float(bill.balance)
+    amt = float(args.get("amount") or 0)
+    if amt <= 0:
+        return {"error": f"state the amount to pay (bill balance is {bill.balance}) — ask the user"}
+    if amt > float(bill.balance):
+        return {"error": f"amount {amt} exceeds the bill balance {bill.balance}"}
     pay = acct.create_payment(session, vendor_id=bill.vendor_id,
                               applications=[{"ap_bill_id": bill.id, "amount": amt}])
     return {"payment_no": pay.payment_no, "paid": str(amt),
@@ -415,11 +419,14 @@ _BUILTIN = [
     ),
     Tool(
         name="pay_vendor",
-        description=("Pay a vendor bill by its bill_no (Dr Accounts Payable / Cr Cash). Pays the "
-                     "full remaining balance unless a smaller amount is given."),
+        description=("Pay a vendor bill by its bill_no (Dr Accounts Payable / Cr Cash). The "
+                     "amount must be stated explicitly."),
         parameters={"type": "object", "properties": {
-            "bill_no": {"type": "string"}, "amount": {"type": "number"}}, "required": ["bill_no"]},
-        handler=_pay_vendor, scope="finance", level=2,
+            "bill_no": {"type": "string"}, "amount": {"type": "number"}},
+            "required": ["bill_no", "amount"]},
+        # Segregation of Duties: entering a bill is finance L2, but PAYING it
+        # requires L3 — so the maker (bill) cannot also be the payer at L2.
+        handler=_pay_vendor, scope="finance", level=3,
     ),
 ]
 
