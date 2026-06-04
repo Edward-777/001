@@ -7,6 +7,7 @@ journal entries as free text — it can only call the registered tools.
 from __future__ import annotations
 
 import json
+import re
 
 from sqlalchemy.orm import Session
 
@@ -38,7 +39,11 @@ _SYSTEM = (
     "5. Never say something was approved/created/posted unless a tool result "
     "confirms it; report the exact identifiers the tool returned. Do not create "
     "duplicate records — check list_my_requests if unsure.\n"
-    "6. Keep SYSTEM DATA exactly as stored — SKUs, account codes, document "
+    "6. MONEY MOVEMENT needs an explicit request. NEVER pay a bill, settle a "
+    "payable, or send money unless the user clearly asks you to PAY. Recording "
+    "or matching a vendor bill is NOT permission to pay it — stop after recording "
+    "and let the user decide.\n"
+    "7. Keep SYSTEM DATA exactly as stored — SKUs, account codes, document "
     "numbers (PO-2026-0001), statuses, and names are English identifiers; never "
     "translate or restyle them.\n\n"
     "Reply in the SAME language the user wrote in (Korean -> Korean, English -> "
@@ -75,16 +80,20 @@ def _language_directive(message: str) -> str:
 
 
 def _text_toolcalls(content: str) -> list[dict]:
-    """Recover a tool call that Qwen sometimes emits as plain-text JSON in the
-    content field instead of the structured tool_calls field. Returns [] if the
-    content is a normal reply (so we never mistake prose for a call)."""
-    text = (content or "").strip()
-    if text.startswith("```"):
-        text = text.strip("`").split("\n", 1)[-1].strip()  # strip a ```json fence
-    if not (text.startswith("{") and '"name"' in text and '"arguments"' in text):
+    """Recover a tool call that Qwen sometimes emits as text instead of the
+    structured tool_calls field. It can arrive wrapped in <tool_call> tags, a
+    ```json fence, or with stray leading tokens — so we extract the outermost
+    JSON object that has name+arguments. Returns [] for normal prose."""
+    text = content or ""
+    if '"name"' not in text or '"arguments"' not in text:
+        return []  # normal reply — never mistake prose for a call
+    text = text.replace("<tool_call>", " ").replace("</tool_call>", " ")
+    text = re.sub(r"```[a-zA-Z]*", " ", text)
+    i, j = text.find("{"), text.rfind("}")
+    if i == -1 or j <= i:
         return []
     try:
-        obj = json.loads(text)
+        obj = json.loads(text[i:j + 1])
     except json.JSONDecodeError:
         return []
     if isinstance(obj, dict) and "name" in obj and "arguments" in obj:

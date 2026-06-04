@@ -93,6 +93,10 @@ def get_inbound_line(session: Session, inbound_line_id: int) -> InboundLine | No
     return session.get(InboundLine, inbound_line_id)
 
 
+def get_inbound_by_no(session: Session, inbound_no: str) -> Inbound | None:
+    return session.scalar(select(Inbound).where(Inbound.inbound_no == inbound_no))
+
+
 def inventory_valuation(session: Session) -> list[StockBalance]:
     """On-hand balances with moving-average value — for the inventory report (M13)."""
     return list(session.scalars(select(StockBalance).where(StockBalance.qty_on_hand != 0)))

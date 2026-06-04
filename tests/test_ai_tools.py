@@ -77,3 +77,14 @@ def test_normal_prose_is_not_mistaken_for_a_tool_call(session, employee):
     out = agent.run(session, employee, "hi", chat=lambda m, tools=None: {"content": "Hello!"})
     assert out["reply"] == "Hello!"
     assert out["tool_calls"] == []
+
+
+def test_recovers_tool_call_wrapped_in_tags_and_garbage(session, employee):
+    """Qwen sometimes wraps the call in <tool_call> tags with stray leading tokens."""
+    turns = [
+        {"content": ' iNdEx\n{"name": "list_my_requests", "arguments": {}}\n</tool_call>'},
+        {"content": "Here you go."},
+    ]
+    out = agent.run(session, employee, "my requests?", chat=lambda m, tools=None: turns.pop(0))
+    assert [t["tool"] for t in out["tool_calls"]] == ["list_my_requests"]
+    assert out["reply"] == "Here you go."

@@ -45,6 +45,11 @@ def list_vendors(session: Session, *, active_only: bool = True) -> list[Vendor]:
     return list(session.scalars(stmt))
 
 
+def find_vendor_by_name(session: Session, name: str) -> Vendor | None:
+    """Case-insensitive name lookup so the AI can resolve 'Acme' to a vendor."""
+    return session.scalar(select(Vendor).where(Vendor.name.ilike(f"%{name}%")))
+
+
 # ---- purchase orders (M6) ----------------------------------------------
 
 

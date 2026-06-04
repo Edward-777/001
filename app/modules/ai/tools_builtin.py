@@ -103,6 +103,66 @@ def _get_trial_balance(session: Session, user: User, args: dict) -> dict:
                       "debit": str(r["debit"]), "credit": str(r["credit"])} for r in tb["rows"]]}
 
 
+# ---- procure-to-pay (operational writes) --------------------------------
+
+def _receive_inventory(session: Session, user: User, args: dict) -> dict:
+    """Record a goods receipt → updates stock + books Dr Inventory / Cr GR-IR."""
+    p = inv.get_product_by_sku(session, args.get("sku", ""))
+    if p is None:
+        return {"error": "product not found — call list_products for valid SKUs"}
+    qty, cost = float(args.get("qty") or 0), float(args.get("unit_cost") or 0)
+    if qty <= 0 or cost <= 0:
+        return {"error": "need qty AND unit_cost (both > 0) — ask the user first"}
+    inb = inv.create_inbound(session, lines=[{"product_id": p.id, "qty": qty, "unit_cost": cost}])
+    inv.post_inbound(session, inb.id)
+    bal = inv.get_stock(session, p.id)
+    return {"inbound_no": inb.inbound_no, "sku": p.sku, "received_qty": str(qty),
+            "qty_on_hand": str(bal.qty_on_hand) if bal else "0"}
+
+
+def _record_vendor_bill(session: Session, user: User, args: dict) -> dict:
+    """Record a vendor invoice against a goods receipt and 3-way match it
+    (clears GR/IR → Accounts Payable). The amount comes from the receipt, so it
+    is never fabricated; a mismatch is flagged as an exception, not posted."""
+    v = proc.find_vendor_by_name(session, args.get("vendor", ""))
+    if v is None:
+        return {"error": f"vendor '{args.get('vendor')}' not found — call list_vendors"}
+    inb = inv.get_inbound_by_no(session, args.get("against_inbound_no", ""))
+    if inb is None:
+        return {"error": "receipt (inbound_no) not found — receive the goods first"}
+    lines = [{"inbound_line_id": ln.id, "description": "received goods",
+              "qty": ln.qty_received, "unit_price": ln.unit_cost} for ln in inb.lines]
+    bill = acct.create_ap_bill(session, vendor_id=v.id, lines=lines, po_id=inb.po_id,
+                               vendor_invoice_no=args.get("invoice_no"))
+    acct.match_ap_bill(session, bill.id)
+    return {"bill_no": bill.bill_no, "vendor": v.name, "amount": str(bill.amount),
+            "match_status": bill.match_status, "status": bill.status}
+
+
+def _list_open_bills(session: Session, user: User, args: dict) -> list[dict]:
+    out = []
+    for b in acct.list_open_bills(session):
+        v = proc.get_vendor(session, b.vendor_id)
+        out.append({"bill_no": b.bill_no, "vendor": v.name if v else str(b.vendor_id),
+                    "balance": str(b.balance), "status": b.status})
+    return out
+
+
+def _pay_vendor(session: Session, user: User, args: dict) -> dict:
+    """Pay a vendor bill (Dr Accounts Payable / Cr Cash). Defaults to the full
+    remaining balance unless a smaller amount is given."""
+    bill = acct.get_ap_bill_by_no(session, args.get("bill_no", ""))
+    if bill is None:
+        return {"error": "bill not found — call list_open_bills"}
+    if float(bill.balance) <= 0:
+        return {"error": "that bill is already paid"}
+    amt = float(args.get("amount") or 0) or float(bill.balance)
+    pay = acct.create_payment(session, vendor_id=bill.vendor_id,
+                              applications=[{"ap_bill_id": bill.id, "amount": amt}])
+    return {"payment_no": pay.payment_no, "paid": str(amt),
+            "bill_no": bill.bill_no, "bill_status": bill.status}
+
+
 def _list_my_approvals(session: Session, user: User, args: dict) -> list[dict]:
     return [{"id": r.id, "request_no": r.request_no, "title": r.title,
              "amount": str(r.total_amount)} for r in appr.pending_for_user(session, user.id)]
@@ -241,6 +301,41 @@ _BUILTIN = [
         description="Trial balance (all account balances, debits and credits) as of today.",
         parameters={"type": "object", "properties": {}},
         handler=_get_trial_balance, scope="finance", level=3,
+    ),
+    Tool(
+        name="receive_inventory",
+        description=("Record a goods receipt: increases stock and books it. Needs the product "
+                     "SKU, quantity, and unit cost. Returns the inbound number (use it to record "
+                     "the vendor's bill)."),
+        parameters={"type": "object", "properties": {
+            "sku": {"type": "string"}, "qty": {"type": "number"}, "unit_cost": {"type": "number"}},
+            "required": ["sku", "qty", "unit_cost"]},
+        handler=_receive_inventory, scope="inventory", level=2,
+    ),
+    Tool(
+        name="record_vendor_bill",
+        description=("Record a vendor's invoice against a goods receipt and 3-way match it "
+                     "(clears GR/IR to Accounts Payable). Needs the vendor name and the "
+                     "inbound_no of the receipt it bills; invoice_no optional. The amount comes "
+                     "from the receipt — do not pass an amount."),
+        parameters={"type": "object", "properties": {
+            "vendor": {"type": "string"}, "against_inbound_no": {"type": "string"},
+            "invoice_no": {"type": "string"}}, "required": ["vendor", "against_inbound_no"]},
+        handler=_record_vendor_bill, scope="finance", level=2,
+    ),
+    Tool(
+        name="list_open_bills",
+        description="List unpaid vendor bills (Accounts Payable) with balances.",
+        parameters={"type": "object", "properties": {}},
+        handler=_list_open_bills, scope="finance", level=2,
+    ),
+    Tool(
+        name="pay_vendor",
+        description=("Pay a vendor bill by its bill_no (Dr Accounts Payable / Cr Cash). Pays the "
+                     "full remaining balance unless a smaller amount is given."),
+        parameters={"type": "object", "properties": {
+            "bill_no": {"type": "string"}, "amount": {"type": "number"}}, "required": ["bill_no"]},
+        handler=_pay_vendor, scope="finance", level=2,
     ),
 ]
 

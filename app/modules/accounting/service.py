@@ -124,6 +124,8 @@ __all__ = [
     "create_ap_bill",
     "match_ap_bill",
     "get_ap_bill",
+    "get_ap_bill_by_no",
+    "list_open_bills",
     "create_payment",
 ]
 
@@ -132,6 +134,8 @@ from .ap import (  # noqa: E402
     create_ap_bill,
     create_payment,
     get_ap_bill,
+    get_ap_bill_by_no,
+    list_open_bills,
     match_ap_bill,
 )
 

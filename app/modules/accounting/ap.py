@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...core.money import CENTS as _CENTS
@@ -116,6 +117,14 @@ def match_ap_bill(session: Session, bill_id: int) -> APBill:
 
 def get_ap_bill(session: Session, bill_id: int) -> APBill | None:
     return session.get(APBill, bill_id)
+
+
+def get_ap_bill_by_no(session: Session, bill_no: str) -> APBill | None:
+    return session.scalar(select(APBill).where(APBill.bill_no == bill_no))
+
+
+def list_open_bills(session: Session) -> list[APBill]:
+    return list(session.scalars(select(APBill).where(APBill.balance > 0)))
 
 
 def create_payment(
