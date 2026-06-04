@@ -47,21 +47,29 @@ def _dump_postgres(url: str, out: Path) -> None:
         subprocess.run(cmd, stdout=f, env=env, check=True)
 
 
-def _prune_tiered(dest: Path, *, daily: int, weekly: int, monthly: int) -> list[Path]:
-    """Keep the most recent `daily` backups, plus one per ISO-week for `weekly`
-    weeks, plus one per month for `monthly` months. Delete the rest."""
-    backups = sorted(dest.glob(f"{_PREFIX}*"), key=lambda p: p.name, reverse=True)
-    keep: set[Path] = set(backups[:daily])
+def _stamp_of(p: Path) -> str:
+    return p.name[len(_PREFIX):len(_PREFIX) + 15]  # erp_YYYYMMDD_HHMMSS...
 
-    def _stamp(p: Path) -> datetime:
-        # erp_YYYYMMDD_HHMMSS.ext
-        return datetime.strptime(p.name[len(_PREFIX):len(_PREFIX) + 15], "%Y%m%d_%H%M%S")
+
+def _prune_tiered(dest: Path, *, daily: int, weekly: int, monthly: int) -> list[Path]:
+    """Keep the most recent `daily` DB backups, plus one per ISO-week for `weekly`
+    weeks, plus one per month for `monthly` months. Delete the rest. The paired
+    `_uploads.zip` archives are tiered ALONGSIDE the DB backups (same stamps kept),
+    never counted against the DB quota."""
+    db_backups = sorted(
+        (p for p in dest.glob(f"{_PREFIX}*") if "_uploads" not in p.name),
+        key=lambda p: p.name, reverse=True,
+    )
+    keep: set[Path] = set(db_backups[:daily])
+
+    def _dt(p: Path) -> datetime:
+        return datetime.strptime(_stamp_of(p), "%Y%m%d_%H%M%S")
 
     seen_weeks: set = set()
     seen_months: set = set()
-    for p in backups:
+    for p in db_backups:
         try:
-            d = _stamp(p)
+            d = _dt(p)
         except ValueError:
             continue
         wk = d.isocalendar()[:2]
@@ -74,10 +82,16 @@ def _prune_tiered(dest: Path, *, daily: int, weekly: int, monthly: int) -> list[
             keep.add(p)
 
     removed = []
-    for p in backups:
+    for p in db_backups:
         if p not in keep:
             p.unlink()
             removed.append(p)
+    # prune upload archives whose DB backup was pruned (keep them in parallel)
+    kept_stamps = {_stamp_of(p) for p in keep}
+    for z in dest.glob(f"{_PREFIX}*_uploads.zip"):
+        if _stamp_of(z) not in kept_stamps:
+            z.unlink()
+            removed.append(z)
     return removed
 
 

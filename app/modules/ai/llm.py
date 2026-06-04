@@ -28,6 +28,27 @@ def chat(messages: list[dict], *, tools: list[dict] | None = None,
     return resp.json()["message"]
 
 
+def vision_chat(prompt: str, images: list[bytes], *, model: str | None = None,
+                temperature: float = 0.0, timeout: float = 300.0) -> str:
+    """Ask a vision model (qwen2.5-vl) about one or more images (PNG bytes).
+    Used to read invoices/documents. Returns the model's text reply."""
+    import base64
+
+    payload = {
+        "model": model or settings.ollama_vision_model,
+        "messages": [{
+            "role": "user", "content": prompt,
+            "images": [base64.b64encode(im).decode() for im in images],
+        }],
+        "stream": False,
+        "keep_alive": "30m",
+        "options": {"temperature": temperature},
+    }
+    resp = httpx.post(f"{settings.ollama_base_url}/api/chat", json=payload, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()["message"]["content"]
+
+
 def embed(text: str, *, model: str | None = None, timeout: float = 180.0) -> list[float]:
     """Embed a single string (RAG, Phase 3) via the embedding model.
     Generous timeout: the first call cold-loads the embedding model into VRAM."""
