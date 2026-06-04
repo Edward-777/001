@@ -5,6 +5,8 @@ model reads back. `get_financials` carries scope=(finance,3) — an employee ask
 the AI for the GL is denied exactly like the UI route (permission inheritance)."""
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from ..accounting import service as acct
@@ -12,20 +14,93 @@ from ..approval import service as appr
 from ..approval.service import RequestType
 from ..auth.models import User
 from ..inventory import service as inv
+from ..procurement import service as proc
+from ..sales import service as sls
 from . import rag
 from .registry import Registry, Tool
 
 
 def _create_purchase_request(session: Session, user: User, args: dict) -> dict:
+    # Require concrete amounts — never create a record with guessed/empty values.
+    qty = float(args.get("qty") or 0)
+    price = float(args.get("unit_price") or 0)
+    if qty <= 0 or price <= 0:
+        return {"error": "need quantity AND unit_price (both > 0) before creating — "
+                         "ask the user for the missing values first"}
     req = appr.create_request(
         session, type=RequestType.PURCHASE, requester_id=user.id,
         title=args["title"], description=args.get("description", ""),
         lines=[{"description": args.get("description") or args["title"],
-                "qty": args.get("qty", 1), "unit_price": args.get("unit_price", 0)}],
+                "qty": qty, "unit_price": price}],
     )
     appr.submit_request(session, req.id)
     return {"request_no": req.request_no, "status": req.status,
             "total_amount": str(req.total_amount)}
+
+
+def _create_expense_request(session: Session, user: User, args: dict) -> dict:
+    """Travel/expense reimbursement request — so a trip is NOT a purchase order."""
+    amount = float(args.get("amount") or 0)
+    if amount <= 0:
+        return {"error": "need a total amount (> 0) — ask the user for the figure first"}
+    kind = RequestType.TRIP if args.get("kind") == "trip" else RequestType.EXPENSE
+    req = appr.create_request(
+        session, type=kind, requester_id=user.id, title=args["title"],
+        description=args.get("description", ""),
+        lines=[{"description": args.get("description") or args["title"], "qty": 1,
+                "unit_price": amount}],
+    )
+    appr.submit_request(session, req.id)
+    return {"request_no": req.request_no, "type": req.type, "status": req.status,
+            "total_amount": str(req.total_amount)}
+
+
+def _list_my_requests(session: Session, user: User, args: dict) -> list[dict]:
+    return [{"request_no": r.request_no, "type": r.type, "title": r.title,
+             "amount": str(r.total_amount), "status": r.status}
+            for r in appr.list_requests_for_user(session, user.id, limit=20)]
+
+
+def _list_products(session: Session, user: User, args: dict) -> list[dict]:
+    out = []
+    for p in inv.list_products(session):
+        bal = inv.get_stock(session, p.id)
+        out.append({"sku": p.sku, "name": p.name, "type": p.type,
+                    "qty_on_hand": str(bal.qty_on_hand) if bal else "0"})
+    return out
+
+
+def _list_vendors(session: Session, user: User, args: dict) -> list[dict]:
+    return [{"name": v.name, "terms": v.payment_terms} for v in proc.list_vendors(session)]
+
+
+def _list_customers(session: Session, user: User, args: dict) -> list[dict]:
+    return [{"name": c.name, "terms": c.payment_terms} for c in sls.list_customers(session)]
+
+
+def _get_ap_aging(session: Session, user: User, args: dict) -> dict:
+    a = acct.ap_aging(session, as_of=date.today())
+    return {"total": str(a["total"]), "buckets": {k: str(v) for k, v in a["buckets"].items()}}
+
+
+def _get_ar_aging(session: Session, user: User, args: dict) -> dict:
+    a = acct.ar_aging(session, as_of=date.today())
+    return {"total": str(a["total"]), "buckets": {k: str(v) for k, v in a["buckets"].items()}}
+
+
+def _get_inventory_valuation(session: Session, user: User, args: dict) -> dict:
+    v = acct.inventory_valuation(session)
+    return {"total_value": str(v["total_value"]),
+            "items": [{"product_id": r["product_id"], "qty": str(r["qty"]),
+                       "value": str(r["value"])} for r in v["rows"]]}
+
+
+def _get_trial_balance(session: Session, user: User, args: dict) -> dict:
+    tb = acct.trial_balance(session, as_of=date.today())
+    return {"balanced": tb["balanced"], "total_debit": str(tb["total_debit"]),
+            "total_credit": str(tb["total_credit"]),
+            "rows": [{"code": r["code"], "name": r["name"],
+                      "debit": str(r["debit"]), "credit": str(r["credit"])} for r in tb["rows"]]}
 
 
 def _list_my_approvals(session: Session, user: User, args: dict) -> list[dict]:
@@ -107,6 +182,65 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {"query": {"type": "string"}},
                     "required": ["query"]},
         handler=_search_company_policy,  # company policy is readable by all staff (chunk ACL applies)
+    ),
+    Tool(
+        name="create_expense_request",
+        description=("Submit a travel or expense reimbursement request for approval. Use this "
+                     "for trips, meals, and out-of-pocket costs — NOT for buying goods (that is "
+                     "create_purchase_request). Requires a concrete total amount."),
+        parameters={"type": "object", "properties": {
+            "title": {"type": "string"}, "amount": {"type": "number"},
+            "description": {"type": "string"},
+            "kind": {"type": "string", "enum": ["expense", "trip"]}}, "required": ["title", "amount"]},
+        handler=_create_expense_request,
+    ),
+    Tool(
+        name="list_my_requests",
+        description="List the current user's own requests (purchase/expense/trip) with status.",
+        parameters={"type": "object", "properties": {}},
+        handler=_list_my_requests,
+    ),
+    Tool(
+        name="list_products",
+        description="List products with SKU, name, type, and on-hand quantity.",
+        parameters={"type": "object", "properties": {}},
+        handler=_list_products, scope="inventory", level=1,
+    ),
+    Tool(
+        name="list_vendors",
+        description="List active vendors (suppliers).",
+        parameters={"type": "object", "properties": {}},
+        handler=_list_vendors, scope="procurement", level=1,
+    ),
+    Tool(
+        name="list_customers",
+        description="List active customers.",
+        parameters={"type": "object", "properties": {}},
+        handler=_list_customers, scope="finance", level=1,
+    ),
+    Tool(
+        name="get_ap_aging",
+        description="Accounts Payable aging (what we owe vendors) by due bucket.",
+        parameters={"type": "object", "properties": {}},
+        handler=_get_ap_aging, scope="finance", level=3,
+    ),
+    Tool(
+        name="get_ar_aging",
+        description="Accounts Receivable aging (what customers owe us) by due bucket.",
+        parameters={"type": "object", "properties": {}},
+        handler=_get_ar_aging, scope="finance", level=3,
+    ),
+    Tool(
+        name="get_inventory_valuation",
+        description="Total inventory value on hand (moving average) and per-product breakdown.",
+        parameters={"type": "object", "properties": {}},
+        handler=_get_inventory_valuation, scope="inventory", level=2,
+    ),
+    Tool(
+        name="get_trial_balance",
+        description="Trial balance (all account balances, debits and credits) as of today.",
+        parameters={"type": "object", "properties": {}},
+        handler=_get_trial_balance, scope="finance", level=3,
     ),
 ]
 

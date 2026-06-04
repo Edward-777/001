@@ -75,6 +75,13 @@ def get_product_by_sku(session: Session, sku: str) -> Product | None:
     return session.scalar(select(Product).where(Product.sku == sku))
 
 
+def list_products(session: Session, *, active_only: bool = True) -> list[Product]:
+    stmt = select(Product)
+    if active_only:
+        stmt = stmt.where(Product.is_active.is_(True))
+    return list(session.scalars(stmt))
+
+
 # ---- stock balances (moving average) ------------------------------------
 
 def get_stock(session: Session, product_id: int) -> StockBalance | None:

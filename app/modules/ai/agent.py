@@ -25,14 +25,20 @@ _SYSTEM = (
     "1. NEVER invent, estimate, or 'look up' numbers, prices, rates, per-diems, "
     "dates, or IDs. Every figure you state MUST come from a tool result you "
     "actually received in this conversation. If you don't have it, say you don't.\n"
-    "2. If a request needs an action or data not covered by a tool below, say "
-    "plainly that you cannot do it and why. Do NOT substitute a different tool "
-    "(e.g. do not turn a travel/expense request into a purchase request).\n"
-    "3. If required details are missing (amount, quantity, vendor, ...), ASK the "
-    "user for them. Never create a record with guessed values.\n"
-    "4. Never say something was approved/created/posted unless a tool result "
-    "confirms it; report the exact identifiers the tool returned.\n"
-    "5. Keep SYSTEM DATA exactly as stored — SKUs, account codes, document "
+    "2. This applies to TOOL ARGUMENTS too: never pass an amount, price, or "
+    "quantity to a tool that the user did not explicitly give you. If a required "
+    "value is missing, do NOT call the tool — ASK the user for it first. Inventing "
+    "a value (e.g. a laptop price) just to complete a tool call is forbidden.\n"
+    "3. All money amounts are in US DOLLARS (USD). Never convert to or display "
+    "another currency (no won/₩, euro, etc.). Pass numbers exactly as the user "
+    "stated them in dollars.\n"
+    "4. If a request needs an action or data not covered by a tool below, say "
+    "plainly that you cannot do it. Do NOT substitute a different tool (e.g. do "
+    "not turn a travel/expense request into a purchase request).\n"
+    "5. Never say something was approved/created/posted unless a tool result "
+    "confirms it; report the exact identifiers the tool returned. Do not create "
+    "duplicate records — check list_my_requests if unsure.\n"
+    "6. Keep SYSTEM DATA exactly as stored — SKUs, account codes, document "
     "numbers (PO-2026-0001), statuses, and names are English identifiers; never "
     "translate or restyle them.\n\n"
     "Reply in the SAME language the user wrote in (Korean -> Korean, English -> "
@@ -68,6 +74,24 @@ def _language_directive(message: str) -> str:
     return "The user wrote in English. You MUST write your reply in English."
 
 
+def _text_toolcalls(content: str) -> list[dict]:
+    """Recover a tool call that Qwen sometimes emits as plain-text JSON in the
+    content field instead of the structured tool_calls field. Returns [] if the
+    content is a normal reply (so we never mistake prose for a call)."""
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`").split("\n", 1)[-1].strip()  # strip a ```json fence
+    if not (text.startswith("{") and '"name"' in text and '"arguments"' in text):
+        return []
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(obj, dict) and "name" in obj and "arguments" in obj:
+        return [{"function": {"name": obj["name"], "arguments": obj["arguments"]}}]
+    return []
+
+
 def run(session: Session, user: User, message: str, *, history: list[dict] | None = None,
         max_iters: int | None = None, chat=None) -> dict:
     """Run one user turn. Returns {reply, tool_calls:[...]}.
@@ -90,7 +114,12 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
         messages.append(msg)
         calls = msg.get("tool_calls") or []
         if not calls:
-            return {"reply": msg.get("content", ""), "tool_calls": used}
+            # Qwen sometimes writes the tool call as text — recover it instead of
+            # leaking raw JSON to the user.
+            recovered = _text_toolcalls(msg.get("content", ""))
+            if not recovered:
+                return {"reply": msg.get("content", ""), "tool_calls": used}
+            calls = recovered
 
         for call in calls:
             name = call.get("function", {}).get("name", "")
