@@ -400,8 +400,22 @@ def _search_company_policy(session: Session, user: User, args: dict) -> dict:
 def _get_financials(session: Session, user: User, args: dict) -> dict:
     fin = acct.generate_financials(session, args["period"])
     is_, bs = fin["income_statement"], fin["balance_sheet"]
-    return {"period": fin["period"], "net_income": str(is_["net_income"]),
-            "total_assets": str(bs["total_assets"]), "balanced": bs["balanced"]}
+    return {"period_MONTH": fin["period"], "net_income_for_that_month": str(is_["net_income"]),
+            "total_assets": str(bs["total_assets"]), "balanced": bs["balanced"],
+            "note": "This net income is for ONE MONTH. For a fiscal year / YTD / 'this year', "
+                    "use get_income_statement instead."}
+
+
+def _get_income_statement(session: Session, user: User, args: dict) -> dict:
+    """Full-fiscal-year P&L (Jan 1 - Dec 31) — for 'this year / 이번 회계연도 / YTD /
+    annual' questions. (get_financials is a single month.)"""
+    from datetime import date
+
+    year = int(args.get("year") or acct.latest_active_period(session)[:4])
+    is_ = acct.income_statement(session, start=date(year, 1, 1), end=date(year, 12, 31))
+    return {"fiscal_year": year, "total_revenue": str(is_["total_revenue"]),
+            "total_expenses": str(is_["total_expenses"]), "net_income": str(is_["net_income"]),
+            "basis": "full calendar year Jan-Dec (assumes calendar fiscal year)"}
 
 
 _BUILTIN = [
@@ -434,8 +448,18 @@ _BUILTIN = [
         handler=_get_stock, scope="inventory", level=1,
     ),
     Tool(
+        name="get_income_statement",
+        description=("Profit & loss for a FULL FISCAL YEAR (revenue, expenses, net income). USE "
+                     "THIS for 'this year / 올해 / 이번 회계연도 / annual / YTD net income / 연간 "
+                     "손익'. Optional 'year' (YYYY); defaults to the latest year with data. "
+                     "(get_financials is a single MONTH — do not use it for a year.)"),
+        parameters={"type": "object", "properties": {"year": {"type": "string"}}},
+        handler=_get_income_statement, scope="finance", level=3,
+    ),
+    Tool(
         name="get_financials",
-        description="Get the financial close for a period (YYYY-MM): net income, total assets.",
+        description=("Financial close for a single MONTH (period=YYYY-MM): that month's net "
+                     "income + total assets. For a fiscal YEAR / YTD use get_income_statement."),
         parameters={"type": "object", "properties": {"period": {"type": "string"}},
                     "required": ["period"]},
         handler=_get_financials, scope="finance", level=3,  # GL access — inherits caller's scope

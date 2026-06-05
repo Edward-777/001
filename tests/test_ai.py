@@ -72,7 +72,7 @@ def test_employee_cannot_execute_financials_even_if_forced(session, users):
 def test_admin_can_execute_financials(session, users):
     out = registry.execute("get_financials", {"period": "2026-01"},
                            session=session, user=users["admin"])
-    assert out["result"]["period"] == "2026-01"
+    assert out["result"]["period_MONTH"] == "2026-01"
     assert out["result"]["balanced"] is True
 
 
