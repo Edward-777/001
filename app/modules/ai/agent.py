@@ -120,10 +120,14 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
     `chat` lets tests inject a fake LLM; production uses llm.chat (Ollama)."""
     chat = chat or llm.chat
     max_iters = max_iters or settings.ai_max_tool_iters
+    from datetime import date
+
     tools = registry.schemas_for(user)
     messages = [
         {"role": "system", "content": _SYSTEM.format(tools=_tool_catalog(tools))},
         {"role": "system", "content": _language_directive(message)},
+        {"role": "system", "content": f"Today's date is {date.today().isoformat()}. "
+         "Resolve 'now', 'current', 'this month', 'as of today' against it."},
         *(history or []),
         {"role": "user", "content": message},
     ]

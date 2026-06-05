@@ -64,6 +64,46 @@ def _list_my_requests(session: Session, user: User, args: dict) -> list[dict]:
             for r in appr.list_requests_for_user(session, user.id, limit=20)]
 
 
+_REPORT_PERMS = {
+    "financials": ("finance", 3), "trial_balance": ("finance", 3),
+    "ap_aging": ("finance", 3), "ar_aging": ("finance", 3),
+    "inventory": ("inventory", 2),
+}
+
+
+def _generate_report(session: Session, user: User, args: dict) -> dict:
+    """Summarize a report AND return a download_url for the full .xlsx file.
+    Defaults the period to the latest month with activity, so 'current' works."""
+    from datetime import date
+
+    kind = (args.get("kind") or "financials").strip()
+    if kind not in _REPORT_PERMS:
+        return {"error": f"unknown report; choose one of {list(_REPORT_PERMS)}"}
+    scope, level = _REPORT_PERMS[kind]
+    if not auth.can_access(auth.get_grants(user), scope, level):
+        return {"error": f"permission denied: requires {scope} level {level}"}
+
+    period = args.get("period") or acct.latest_active_period(session)
+    as_of = date(int(period[:4]), int(period[5:7]), 28)
+    if kind == "financials":
+        fin = acct.generate_financials(session, period)
+        summary = {"net_income": str(fin["income_statement"]["net_income"]),
+                   "total_assets": str(fin["balance_sheet"]["total_assets"]),
+                   "total_liabilities": str(fin["balance_sheet"]["total_liabilities"]),
+                   "total_equity": str(fin["balance_sheet"]["total_equity"])}
+    elif kind in ("ap_aging", "ar_aging"):
+        ag = (acct.ap_aging if kind == "ap_aging" else acct.ar_aging)(session, as_of=as_of)
+        summary = {"total": str(ag["total"]), "buckets": {k: str(v) for k, v in ag["buckets"].items()}}
+    elif kind == "inventory":
+        summary = {"total_value": str(acct.inventory_valuation(session)["total_value"])}
+    else:  # trial_balance
+        tb = acct.trial_balance(session, as_of=as_of)
+        summary = {"total_debit": str(tb["total_debit"]), "balanced": tb["balanced"]}
+
+    return {"kind": kind, "period": period, "summary": summary,
+            "download_url": f"/reports/export?kind={kind}&period={period}"}
+
+
 def _get_approval_status(session: Session, user: User, args: dict) -> dict:
     """The REAL approval chain for a request (steps, approvers, current turn) —
     so the model never guesses who approves or whether a step can be skipped."""
@@ -388,6 +428,19 @@ _BUILTIN = [
             "status": {"type": "string",
                        "enum": ["draft", "submitted", "approved", "rejected", "canceled"]}}},
         handler=_list_company_requests, scope="procurement", level=2,
+    ),
+    Tool(
+        name="generate_report",
+        description=("Generate a downloadable .xlsx report and a short summary. kinds: "
+                     "financials, trial_balance, ap_aging, ar_aging, inventory. period is "
+                     "YYYY-MM (defaults to the latest month with activity — use this for "
+                     "'current' or 'as of now'). ALWAYS give the user the returned download_url "
+                     "so they can download the full report."),
+        parameters={"type": "object", "properties": {
+            "kind": {"type": "string",
+                     "enum": ["financials", "trial_balance", "ap_aging", "ar_aging", "inventory"]},
+            "period": {"type": "string"}}, "required": ["kind"]},
+        handler=_generate_report,  # per-kind permission enforced inside the handler
     ),
     Tool(
         name="get_approval_status",

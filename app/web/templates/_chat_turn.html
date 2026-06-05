@@ -7,6 +7,11 @@
       <span class="text-rose-600">{{ error }}</span>
     {% else %}
       <div class="whitespace-pre-wrap">{{ reply }}</div>
+      {% if download %}
+        <a href="{{ download }}"
+           class="inline-flex items-center gap-1 mt-3 bg-emerald-600 text-white rounded px-3 py-1.5 text-sm hover:bg-emerald-700">
+          ⬇ Download report (.xlsx)</a>
+      {% endif %}
       {% if tools %}
         <div class="mt-2 text-xs text-slate-400">
           {% for t in tools %}<span class="bg-slate-100 rounded px-2 py-0.5 mr-1">{{ t }}</span>{% endfor %}

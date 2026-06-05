@@ -115,3 +115,34 @@ def financials(request: Request, period: str | None = None,
     period = period or date.today().strftime("%Y-%m")
     fin = acct.generate_financials(session, period)
     return templates.TemplateResponse(request, "financials.html", {"user": user, "fin": fin, "period": period})
+
+
+# Required permission per report kind (DESIGN §8.5) — the export route enforces it.
+_REPORT_PERMS = {
+    "financials": ("finance", 3), "trial_balance": ("finance", 3),
+    "ap_aging": ("finance", 3), "ar_aging": ("finance", 3),
+    "inventory": ("inventory", 2),
+}
+
+
+@router.get("/reports/export")
+def report_export(kind: str, period: str | None = None,
+                  user=Depends(require_login), session: Session = Depends(get_session)):
+    """Download a report as an .xlsx file. Permission-gated per kind (same gate
+    the AI tool uses), so a download link can't bypass authorization."""
+    from fastapi import HTTPException
+    from fastapi.responses import StreamingResponse
+
+    if kind not in _REPORT_PERMS:
+        raise HTTPException(status_code=404, detail="unknown report")
+    scope, level = _REPORT_PERMS[kind]
+    from ..modules.auth import service as auth
+    if not auth.can_access(auth.get_grants(user), scope, level):
+        raise HTTPException(status_code=403, detail=f"requires {scope} level {level}")
+
+    filename, data = acct.build_report_xlsx(session, kind, period)
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

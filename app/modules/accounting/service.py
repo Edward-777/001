@@ -166,6 +166,15 @@ from .reports import (  # noqa: E402
 
 __all__ += ["subledger_check", "cash_flow"]
 
+# ---- downloadable report files (xlsx) ------------------------------------
+from .export import (  # noqa: E402
+    REPORT_KINDS,
+    build_report_xlsx,
+    latest_active_period,
+)
+
+__all__ += ["REPORT_KINDS", "build_report_xlsx", "latest_active_period"]
+
 __all__ += [
     "trial_balance",
     "balance_sheet",
