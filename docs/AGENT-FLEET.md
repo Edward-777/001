@@ -47,14 +47,58 @@
 결과 큰 행동(지급·발송) → '승인대기'로 CEO에게
 ```
 
-- **작업큐 테이블:** `tasks(from_role, to_role, payload, status, bounce_count, created_at)`
-- **상태 도장(= 중복방지/idempotency):** 대기 / 처리중 / 완료 / 승인대기 / 반송
-  - 주간 루프가 또 돌아도 **이미 처리된 건 안 집음** (status로 필터).
+### 작업큐 테이블 `tasks` (확정, D6)
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | PK | |
+| created_at / updated_at | datetime | |
+| source | enum | upload·email·bank_feed·ceo_chat·agent |
+| source_ref | str? | document_id / email_id / conversation_id |
+| category | str | 디스패처 분류 결과 |
+| from_role | enum | dispatcher·accounting·procurement·hr·policy·comms·itasset·ceo·system |
+| to_role | enum | 배정된 담당 롤 (위와 동일 enum) |
+| title | str | 사람이 읽을 한 줄 요약 |
+| payload | JSON | 작업 데이터(파싱 인보이스·지시문 등) |
+| status | enum | queued·in_progress·needs_approval·bounced·done·failed |
+| bounce_count | int | 반송 횟수(기본 0) |
+| bounce_reason | str? | 마지막 반송 사유 |
+| result | JSON? | 산출물(드래프트 청구서 id·드래프트 메일 id …) |
+| approval_id | FK? | needs_approval일 때 기존 승인모듈 연결 |
+| idempotency_key | str? unique | hash(source_ref+category) — 루프 재실행 시 중복 생성 차단 |
+
+**상태 전이:**
+```
+queued ─(롤 루프가 집음)→ in_progress
+in_progress → done
+            → needs_approval ─(CEO OK)→ done   ─(거절)→ failed
+            → bounced ─(디스패처 재배정)→ queued  (bounce_count++)
+            → failed
+bounce_count ≥ 3 → needs_approval  (CEO 에스컬레이션)
+```
+- **중복방지(idempotency):** `idempotency_key` unique + status 필터 → 주간 루프가 또 돌아도 이미 처리된 건 안 집음.
 - **반송(bounce-back):** 잘못 배정 시 사유와 함께 디스패처로 반송 → 재분류. 사유는 라우팅 로그로 남겨 분류 정확도 개선.
 - **모든 행동 = audit 로그** (이미 구현됨).
 - **결정(D6): 스케줄러 = APScheduler (인-프로세스).** FastAPI 앱 안에서 같이 돌며
   "10분/일간/주간/월간" 작업 등록. 외부 의존성·별도 서버 없음 (단일 로컬 어플라이언스에 최적).
   규모 커지면 별도 워커 프로세스로 분리 가능.
+
+### 디스패처 분류 → 롤 매핑 (확정, D6)
+| category | → 담당 롤 | 1차 액션 | 상태 |
+|----------|----------|---------|------|
+| invoice | 📒 회계 | 파싱 → 드래프트 청구서(입고 전이면 보류 안내) | ✅ 현재 분류기 |
+| bank_statement | 📒 회계 | 자동 대사 제안 | ✅ |
+| receipt(경비) | 📒 회계 | 경비 기표(정책 체크는 HR 후일) | ✅ |
+| policy(규정 질문) | 📚 정책 | RAG 답변 | ✅ |
+| contract | 📚 정책 | 요약·분류·보관(finance L3) | ✅ |
+| po_request/구매요청 | 📦 구매·재고 | PO 초안 | ⚠️ 분류기 확장 |
+| goods_receipt/입고 | 📦 구매·재고 | 입고 기록 → 3-way | ⚠️ 확장 |
+| hr_doc(급여·온보딩) | 👤 HR | 직원 기록 정리 | ⚠️ 확장 |
+| asset_doc(서버·노트북) | 🗂️ IT·자산 | 자산대장 등록 | ⚠️ 확장 |
+| customer_email/일반 | ✉️ 커뮤니케이션 | 답장 드래프트 | ⚠️ 확장 |
+| other/모호 | 🧭 디스패처 보류 | 모호하면 CEO 에스컬레이션 | ✅ |
+
+> 현 분류기(`classify.py`)는 문서 6종(invoice·bank_statement·receipt·policy·contract·other)만 인식.
+> **1단계는 ✅ 5종으로 충분**, `⚠️ 확장` 줄들은 2~3단계에서 분류기를 키우며 추가.
 
 ### 인입 채널
 출처 무관 — 디스패처엔 전부 "처리할 일 하나":
@@ -179,8 +223,12 @@
 - [x] egress guard 탐지 = **DB 실명목록 + 금액/계좌/EIN/이메일 패턴**
 - [x] 1단계 입력 = **업로드 문서함 + CEO 대화 지시 (둘 다)**
 
+**결정 완료 (D6, 추가):**
+- [x] tasks 테이블 스키마 + 상태 전이 (§2)
+- [x] 디스패처 분류 ↔ 롤 매핑 (§2)
+- [x] 반송 핑퐁 한계 = **3회 → CEO 에스컬레이션** (§2 상태 전이)
+
 **남은 질문:**
-- [ ] tasks 테이블 최종 스키마 확정 (payload 형식, 상태 전이 다이어그램)
-- [ ] 디스패처 분류 카테고리 ↔ 롤 매핑 표 (어떤 입력이 어느 롤로?)
-- [ ] 반송 핑퐁 한계 횟수 (기본 3회?) 및 에스컬레이션 메시지 형식
-- [ ] 회계 루프 "처리"의 1단계 범위 (어디까지 자동: 분류→드래프트 청구서까지?)
+- [ ] 1단계 회계 루프 "처리" 범위 (어디까지 자동: 분류→드래프트 청구서 생성까지, 승인은 CEO?)
+- [ ] payload JSON의 카테고리별 구체 형식 (invoice payload, ceo_chat payload …)
+- [ ] 분류기 확장 시점 — 6종 → +po_request/goods_receipt/hr_doc/asset_doc/customer_email
