@@ -214,6 +214,50 @@ bounce_count ≥ 3 → needs_approval  (CEO 에스컬레이션)
 
 ---
 
+## 9. 1단계 회계 루프 상세 (구현 사양, D6 확정)
+
+**원칙: 드래프트만 만든다. 장부 기표(posting)는 CEO 승인 후에만.** (돈은 안 나가도
+장부 변경은 결과가 큰 행동 — 초기엔 보수적. 신뢰 쌓이면 저위험 자동기표로 완화 가능.)
+
+```
+[10분 루프] 회계 큐 queued 집음 → in_progress
+  1. 인보이스 파싱(벤더·금액·품목)              ← 자동
+  2. 벤더 조회. 없으면 "신규 벤더 제안" 첨부       ← 자동
+  3. 입고 여부:
+       물품인데 입고 전 → 보류 + "입고증 대기" 안내
+       서비스/직접비 → 계정 추천(추측 아님)       ← 자동
+  4. 드래프트 청구서 생성(모든 칸 채움)           ← 자동
+  5. status=needs_approval → CEO                  ← 여기서 멈춤
+[CEO] 드래프트 승인 → 6. 실제 기표(posting) + (신규면)벤더 자동 생성
+```
+- **벤더 마스터 자동 채움:** 미등록 벤더는 드래프트에 "신규 벤더 등록"을 붙여, CEO가
+  청구서 승인 시 벤더도 함께 생성 → 기존 "벤더 마스터 비어있음" 문제가 자연 해소.
+- **자동 OK 범위:** 파싱·분류·벤더조회·계정추천·드래프트 생성·대사 *제안*.
+- **CEO 게이트:** 모든 posting, 모든 지급, 외부 발송.
+
+### payload JSON 형식 (카테고리별)
+```jsonc
+// invoice
+{ "document_id": 42, "goods_received": false,
+  "parsed": { "vendor_name": "INSIGHT DIRECT USA INC", "invoice_no": "...",
+              "date": "2024-03-27", "currency": "USD",
+              "lines": [{"description":"...","qty":1,"unit_price":16285.53}],
+              "subtotal": 16285.53, "tax": 1345.55, "total": 17655.29 } }
+// bank_statement
+{ "document_id": 51, "bank": "SVB", "period": "2025-12",
+  "lines": [{"date":"...","description":"...","amount":-1234.56}] }
+// ceo_chat
+{ "conversation_id": 19, "instruction": "이 인보이스 처리해줘",
+  "refers_to_task_id": 7 }
+```
+
+### 분류기 확장 시점
+- **1단계:** 현 6종(invoice·bank_statement·receipt·policy·contract·other) 그대로.
+- **2단계:** +`po_request` +`goods_receipt` +`hr_doc` +`asset_doc` (구매·HR·자산 롤 합류 시).
+- **3단계:** +`customer_email` 및 메일 트리아지 (이메일 커넥터 등장 시).
+
+---
+
 ## 8. 결정 로그 / 남은 질문
 
 **결정 완료 (D6):**
@@ -228,7 +272,10 @@ bounce_count ≥ 3 → needs_approval  (CEO 에스컬레이션)
 - [x] 디스패처 분류 ↔ 롤 매핑 (§2)
 - [x] 반송 핑퐁 한계 = **3회 → CEO 에스컬레이션** (§2 상태 전이)
 
-**남은 질문:**
-- [ ] 1단계 회계 루프 "처리" 범위 (어디까지 자동: 분류→드래프트 청구서 생성까지, 승인은 CEO?)
-- [ ] payload JSON의 카테고리별 구체 형식 (invoice payload, ceo_chat payload …)
-- [ ] 분류기 확장 시점 — 6종 → +po_request/goods_receipt/hr_doc/asset_doc/customer_email
+**결정 완료 (D6, 추가):**
+- [x] 1단계 회계 루프 = **드래프트만, 기표는 CEO 승인 후** (§9)
+- [x] payload JSON 카테고리별 형식 (§9)
+- [x] 분류기 확장 시점 — 1/2/3단계 (§9)
+
+> **설계 v1 완료.** 모든 핵심 결정이 박혔다. 다음은 구현(1단계 착수): tasks 테이블 +
+> APScheduler + 디스패처/회계 루프. 구현 중 드러나는 디테일만 이 문서에 추가.
