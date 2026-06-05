@@ -19,7 +19,7 @@ def chat(messages: list[dict], *, tools: list[dict] | None = None,
         "messages": messages,
         "stream": False,
         "keep_alive": "30m",  # keep the model warm in VRAM between turns
-        "options": {"temperature": temperature},
+        "options": {"temperature": temperature, "num_ctx": settings.ollama_num_ctx},
     }
     if tools:
         payload["tools"] = tools

@@ -78,8 +78,6 @@ _PACKAGE_SHEETS = ("Balance Sheet", "Income Statement", "Cash Flow", "Trial Bala
 def _generate_report(session: Session, user: User, args: dict) -> dict:
     """Summarize a report AND return a download_url for the full .xlsx file.
     Defaults the period to the latest month with activity, so 'current' works."""
-    from datetime import date
-
     kind = (args.get("kind") or "closing_package").strip()
     if kind not in _REPORT_PERMS:
         return {"error": f"unknown report; choose one of {list(_REPORT_PERMS)}"}
@@ -88,17 +86,22 @@ def _generate_report(session: Session, user: User, args: dict) -> dict:
         return {"error": f"permission denied: requires {scope} level {level}"}
 
     period = args.get("period") or acct.latest_active_period(session)
-    as_of = date(int(period[:4]), int(period[5:7]), 28)
+    start, end, label = acct.period_bounds(period)
+    as_of = end
     if kind in ("financials", "closing_package"):
-        fin = acct.generate_financials(session, period)
-        summary = {"net_income": str(fin["income_statement"]["net_income"]),
-                   "total_assets": str(fin["balance_sheet"]["total_assets"]),
-                   "total_liabilities": str(fin["balance_sheet"]["total_liabilities"]),
-                   "total_equity": str(fin["balance_sheet"]["total_equity"])}
+        is_ = acct.income_statement(session, start=start, end=end)
+        bs = acct.balance_sheet(session, as_of=end)
+        summary = {"period": label,
+                   "net_income": str(is_["net_income"]),
+                   "total_revenue": str(is_["total_revenue"]),
+                   "total_expenses": str(is_["total_expenses"]),
+                   "total_assets": str(bs["total_assets"]),
+                   "total_liabilities": str(bs["total_liabilities"]),
+                   "total_equity": str(bs["total_equity"])}
         if kind == "closing_package":
             summary["includes_sheets"] = list(_PACKAGE_SHEETS)
     elif kind == "cash_flow":
-        cf = acct.cash_flow(session, start=date(as_of.year, as_of.month, 1), end=as_of)
+        cf = acct.cash_flow(session, start=start, end=end)
         summary = {"net_change": str(cf["net_change"]), "ending_cash": str(cf["ending_cash"])}
     elif kind in ("ap_aging", "ar_aging"):
         ag = (acct.ap_aging if kind == "ap_aging" else acct.ar_aging)(session, as_of=as_of)
@@ -511,8 +514,9 @@ _BUILTIN = [
             "'마감자료', 'closing', or when the accountant wants everything. Others are "
             "single reports: 'financials' (BS+IS+CF only), 'cash_flow', 'trial_balance', "
             "'general_ledger', 'journal_entries', 'ap_aging', 'ar_aging', 'inventory'. "
-            "period is YYYY-MM (defaults to the latest month with activity = 'current'). "
-            "ALWAYS give the user the returned download_url."),
+            "period: a full YEAR 'YYYY' for ANNUAL / audit / fiscal-year statements (e.g. "
+            "'2025 FS for audit' -> period='2025'), or a single month 'YYYY-MM'. Defaults to "
+            "the latest month with activity. ALWAYS give the user the returned download_url."),
         parameters={"type": "object", "properties": {
             "kind": {"type": "string",
                      "enum": ["closing_package", "financials", "cash_flow", "trial_balance",

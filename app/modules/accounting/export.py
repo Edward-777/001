@@ -146,13 +146,25 @@ def _inventory(wb, session) -> None:
     _h(s, ["", "", "TOTAL", float(val["total_value"])])
 
 
+def period_bounds(period: str) -> tuple[date, date, str]:
+    """(start, end, label) for either a full YEAR ('2025' -> Jan 1..Dec 31, audit
+    FS) or a single MONTH ('2025-12')."""
+    p = period.strip()
+    if len(p) == 4 and p.isdigit():
+        y = int(p)
+        return date(y, 1, 1), date(y, 12, 31), f"FY{y}"
+    start, end = reports._month_bounds(p)
+    return start, end, p
+
+
 def build_report_xlsx(session: Session, kind: str, period: str | None = None) -> tuple[str, bytes]:
     """Return (filename, xlsx-bytes) for a report kind. 'closing_package' bundles
-    every statement + supporting schedule into one workbook."""
+    every statement + supporting schedule into one workbook. period may be a YEAR
+    (YYYY) for annual/audit statements or a month (YYYY-MM)."""
     from openpyxl import Workbook  # lazy: only needed when a report is exported
 
     period = period or latest_active_period(session)
-    start, end = reports._month_bounds(period)
+    start, end, period = period_bounds(period)
     wb = Workbook()
     wb.remove(wb.active)
 

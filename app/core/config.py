@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:14b"
     ollama_embed_model: str = "bge-m3"
     ollama_vision_model: str = "qwen2.5vl:7b"  # invoice/document parsing
+    # Context window. Smaller = less KV-cache memory so big models (32B) fit fully
+    # in VRAM instead of spilling to CPU (which is ~20x slower). 8192 is plenty for
+    # our prompt + history + tool results.
+    ollama_num_ctx: int = 8192
     ai_max_tool_iters: int = 6
 
 
