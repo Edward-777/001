@@ -180,14 +180,31 @@ def _list_customers(session: Session, user: User, args: dict) -> list[dict]:
     return [{"name": c.name, "terms": c.payment_terms} for c in sls.list_customers(session)]
 
 
+def _aging_result(a: dict) -> dict:
+    out = {"subledger_total": str(a["total"]),
+           "gl_control_balance": str(a.get("gl_control_balance", a["total"])),
+           "buckets": {k: str(v) for k, v in a["buckets"].items()}}
+    if a.get("warning"):
+        out["warning"] = a["warning"]
+    return out
+
+
 def _get_ap_aging(session: Session, user: User, args: dict) -> dict:
-    a = acct.ap_aging(session, as_of=date.today())
-    return {"total": str(a["total"]), "buckets": {k: str(v) for k, v in a["buckets"].items()}}
+    return _aging_result(acct.ap_aging(session, as_of=date.today()))
 
 
 def _get_ar_aging(session: Session, user: User, args: dict) -> dict:
-    a = acct.ar_aging(session, as_of=date.today())
-    return {"total": str(a["total"]), "buckets": {k: str(v) for k, v in a["buckets"].items()}}
+    return _aging_result(acct.ar_aging(session, as_of=date.today()))
+
+
+def _get_account_balance(session: Session, user: User, args: dict) -> dict:
+    """GL balance for accounts matching a name or code — the source of truth for
+    'how much do we owe / are owed / is in account X'."""
+    rows = acct.account_balances(session, args.get("query", ""))
+    if not rows:
+        return {"matches": [], "note": "no account matched — try the exact account name or code"}
+    return {"matches": [{"code": r["code"], "name": r["name"], "type": r["type"],
+                         "balance": str(r["balance"])} for r in rows[:25]]}
 
 
 def _get_inventory_valuation(session: Session, user: User, args: dict) -> dict:
@@ -497,14 +514,27 @@ _BUILTIN = [
         handler=_list_customers, scope="finance", level=1,
     ),
     Tool(
+        name="get_account_balance",
+        description=("GL balance of accounts matching a name or code — the SOURCE OF TRUTH for "
+                     "'how much do we owe (Accounts Payable), are owed (Accounts Receivable), or "
+                     "have in <account>'. Pass the account name (e.g. 'Accounts Payable', 'Cash') "
+                     "or code. Prefer this over aging for the amount owed/due."),
+        parameters={"type": "object", "properties": {"query": {"type": "string"}},
+                    "required": ["query"]},
+        handler=_get_account_balance, scope="finance", level=3,
+    ),
+    Tool(
         name="get_ap_aging",
-        description="Accounts Payable aging (what we owe vendors) by due bucket.",
+        description=("Accounts Payable aging by due bucket. Returns subledger_total AND the "
+                     "gl_control_balance; if they differ (warning), trust the GL balance for the "
+                     "amount owed — detailed aging needs open bill documents."),
         parameters={"type": "object", "properties": {}},
         handler=_get_ap_aging, scope="finance", level=3,
     ),
     Tool(
         name="get_ar_aging",
-        description="Accounts Receivable aging (what customers owe us) by due bucket.",
+        description=("Accounts Receivable aging by due bucket. Returns subledger_total AND the "
+                     "gl_control_balance; if they differ (warning), trust the GL balance."),
         parameters={"type": "object", "properties": {}},
         handler=_get_ar_aging, scope="finance", level=3,
     ),

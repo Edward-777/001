@@ -172,6 +172,36 @@ def generate_financials(session: Session, period: str) -> dict:
     }
 
 
+# ---- account balances (GL — the source of truth) -----------------------
+
+def account_balances(session: Session, query: str, *, as_of: date | None = None) -> list[dict]:
+    """GL balances for accounts matching `query` (name substring or exact code).
+    The GL is authoritative — use this for 'how much is in X / do we owe / are owed'."""
+    nets = _net_by_account(session, end=as_of)
+    q = (query or "").strip().lower()
+    out = []
+    for a in _accounts(session).values():
+        if not q or q in a.name.lower() or q == (a.code or "").lower():
+            net = nets.get(a.id, _ZERO)
+            bal = net if a.type in ("asset", "expense") else -net
+            if bal != 0 or q == (a.code or "").lower():
+                out.append({"code": a.code, "name": a.name, "type": a.type, "balance": bal})
+    return out
+
+
+def _control_balance(session: Session, *, receivable: bool, as_of: date | None) -> Decimal:
+    """GL balance of the AP/AR control account(s) — by system_role or name."""
+    nets = _net_by_account(session, end=as_of)
+    role = "ar" if receivable else "ap"
+    pat = "receivable" if receivable else "payable"
+    total = _ZERO
+    for a in _accounts(session).values():
+        if a.system_role == role or pat in a.name.lower():
+            net = nets.get(a.id, _ZERO)
+            total += net if a.type in ("asset", "expense") else -net
+    return total.quantize(_ZERO)
+
+
 # ---- general ledger -----------------------------------------------------
 
 def general_ledger(session: Session, account_id: int, *, start: date | None = None, end: date | None = None) -> list[dict]:
@@ -223,27 +253,40 @@ def _aging(items, *, as_of: date, due_of, bal_of, row_of) -> dict:
             "total": sum(buckets.values(), _ZERO)}
 
 
+def _with_control(session, result: dict, *, receivable: bool, as_of: date) -> dict:
+    """Attach the GL control-account balance and warn if the subledger doesn't tie
+    out (e.g. a journal-imported ledger has GL balances but no open documents)."""
+    gl = _control_balance(session, receivable=receivable, as_of=as_of)
+    result["gl_control_balance"] = gl
+    if (gl - result["total"]).copy_abs() > Decimal("0.01"):
+        result["warning"] = (
+            f"Subledger aging total ({result['total']}) does NOT match the GL control "
+            f"balance ({gl}). The detailed aging is incomplete here (e.g. an imported "
+            f"ledger with no open documents) — trust the GL balance for the amount owed/due.")
+    return result
+
+
 def ap_aging(session: Session, *, as_of: date) -> dict:
     # Only POSTED bills (open/partially_paid) — draft/exception bills aren't in the
     # GL yet, so excluding them keeps the aging tied to the AP control account.
     bills = session.scalars(
         select(APBill).where(APBill.balance > 0, APBill.status.in_(["open", "partially_paid"]))
     ).all()
-    return _aging(
+    return _with_control(session, _aging(
         bills, as_of=as_of, due_of=lambda b: b.due_date, bal_of=lambda b: b.balance,
         row_of=lambda b: {"bill_no": b.bill_no, "vendor_id": b.vendor_id, "due_date": b.due_date},
-    )
+    ), receivable=False, as_of=as_of)
 
 
 def ar_aging(session: Session, *, as_of: date) -> dict:
     from ..sales import service as sales
 
-    return _aging(
+    return _with_control(session, _aging(
         sales.list_open_invoices(session), as_of=as_of,
         due_of=lambda i: i.due_date, bal_of=lambda i: i.balance,
         row_of=lambda i: {"invoice_no": i.invoice_no, "customer_id": i.customer_id,
                           "due_date": i.due_date},
-    )
+    ), receivable=True, as_of=as_of)
 
 
 def inventory_valuation(session: Session) -> dict:
