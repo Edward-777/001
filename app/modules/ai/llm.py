@@ -8,7 +8,7 @@ from ...core.config import settings
 
 
 def chat(messages: list[dict], *, tools: list[dict] | None = None,
-         model: str | None = None, temperature: float = 0.0, timeout: float = 120.0) -> dict:
+         model: str | None = None, temperature: float = 0.0, timeout: float = 300.0) -> dict:
     """Return the assistant message dict: {role, content, tool_calls?}.
 
     messages: OpenAI-style [{role, content, ...}].
