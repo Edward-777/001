@@ -55,7 +55,10 @@ def test_agent_injects_history_as_memory(session, user):
     contents = [m.get("content") for m in seen["messages"]]
     assert "stock of WIDGET-1?" in contents   # memory present
     assert "100 on hand" in contents
-    assert seen["messages"][-1]["content"] == "order 50 more of those"  # new msg last
+    # new msg last; a short language tag is appended to the user turn (overrides
+    # history-induced language drift) so it starts with — not equals — the message.
+    last = seen["messages"][-1]
+    assert last["role"] == "user" and last["content"].startswith("order 50 more of those")
 
 
 def test_review_permissions(session):
