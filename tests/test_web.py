@@ -157,3 +157,26 @@ def test_assistant_message_renders_turn(client, monkeypatch):
 
 def test_health_still_ok(client):
     assert client.get("/health").json()["status"] == "ok"
+
+
+def test_linkify_makes_report_link_downloadable():
+    """A report URL in assistant text becomes a clickable download link, so the
+    user can grab the .xlsx even after a reload (when the green button is gone)."""
+    from app.web.deps import _linkify
+
+    # markdown form the model writes
+    html = str(_linkify(
+        "FS: [/reports/export?kind=closing_package&period=2025]"
+        "(/reports/export?kind=closing_package&period=2025)"))
+    assert '<a href="/reports/export?kind=closing_package&amp;period=2025"' in html
+    assert "download" in html and "리포트 다운로드" in html
+    # bare URL form is linkified too
+    assert "<a href=" in str(_linkify("get /reports/export?kind=financials&period=2025"))
+
+
+def test_linkify_escapes_untrusted_llm_html():
+    """LLM output is escaped first — no raw <script> survives (XSS guard)."""
+    from app.web.deps import _linkify
+
+    html = str(_linkify("<script>alert(1)</script>"))
+    assert "<script>" not in html and "&lt;script&gt;" in html

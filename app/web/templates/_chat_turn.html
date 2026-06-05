@@ -6,7 +6,7 @@
     {% if error %}
       <span class="text-rose-600">{{ error }}</span>
     {% else %}
-      <div class="whitespace-pre-wrap">{{ reply }}</div>
+      <div class="whitespace-pre-wrap">{{ reply | linkify }}</div>
       {% if download %}
         <a href="{{ download }}"
            class="inline-flex items-center gap-1 mt-3 bg-emerald-600 text-white rounded px-3 py-1.5 text-sm hover:bg-emerald-700">
