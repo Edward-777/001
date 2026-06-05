@@ -65,10 +65,14 @@ def _list_my_requests(session: Session, user: User, args: dict) -> list[dict]:
 
 
 _REPORT_PERMS = {
-    "financials": ("finance", 3), "trial_balance": ("finance", 3),
+    "closing_package": ("finance", 3), "financials": ("finance", 3),
+    "cash_flow": ("finance", 3), "trial_balance": ("finance", 3),
+    "general_ledger": ("finance", 3), "journal_entries": ("finance", 3),
     "ap_aging": ("finance", 3), "ar_aging": ("finance", 3),
     "inventory": ("inventory", 2),
 }
+_PACKAGE_SHEETS = ("Balance Sheet", "Income Statement", "Cash Flow", "Trial Balance",
+                   "General Ledger", "Journal Entries", "AP Aging", "AR Aging", "Inventory")
 
 
 def _generate_report(session: Session, user: User, args: dict) -> dict:
@@ -76,7 +80,7 @@ def _generate_report(session: Session, user: User, args: dict) -> dict:
     Defaults the period to the latest month with activity, so 'current' works."""
     from datetime import date
 
-    kind = (args.get("kind") or "financials").strip()
+    kind = (args.get("kind") or "closing_package").strip()
     if kind not in _REPORT_PERMS:
         return {"error": f"unknown report; choose one of {list(_REPORT_PERMS)}"}
     scope, level = _REPORT_PERMS[kind]
@@ -85,20 +89,27 @@ def _generate_report(session: Session, user: User, args: dict) -> dict:
 
     period = args.get("period") or acct.latest_active_period(session)
     as_of = date(int(period[:4]), int(period[5:7]), 28)
-    if kind == "financials":
+    if kind in ("financials", "closing_package"):
         fin = acct.generate_financials(session, period)
         summary = {"net_income": str(fin["income_statement"]["net_income"]),
                    "total_assets": str(fin["balance_sheet"]["total_assets"]),
                    "total_liabilities": str(fin["balance_sheet"]["total_liabilities"]),
                    "total_equity": str(fin["balance_sheet"]["total_equity"])}
+        if kind == "closing_package":
+            summary["includes_sheets"] = list(_PACKAGE_SHEETS)
+    elif kind == "cash_flow":
+        cf = acct.cash_flow(session, start=date(as_of.year, as_of.month, 1), end=as_of)
+        summary = {"net_change": str(cf["net_change"]), "ending_cash": str(cf["ending_cash"])}
     elif kind in ("ap_aging", "ar_aging"):
         ag = (acct.ap_aging if kind == "ap_aging" else acct.ar_aging)(session, as_of=as_of)
         summary = {"total": str(ag["total"]), "buckets": {k: str(v) for k, v in ag["buckets"].items()}}
     elif kind == "inventory":
         summary = {"total_value": str(acct.inventory_valuation(session)["total_value"])}
-    else:  # trial_balance
+    elif kind == "trial_balance":
         tb = acct.trial_balance(session, as_of=as_of)
         summary = {"total_debit": str(tb["total_debit"]), "balanced": tb["balanced"]}
+    else:  # general_ledger / journal_entries — detail-only, no headline number
+        summary = {"note": f"full {kind} detail is in the downloadable file"}
 
     return {"kind": kind, "period": period, "summary": summary,
             "download_url": f"/reports/export?kind={kind}&period={period}"}
@@ -431,14 +442,21 @@ _BUILTIN = [
     ),
     Tool(
         name="generate_report",
-        description=("Generate a downloadable .xlsx report and a short summary. kinds: "
-                     "financials, trial_balance, ap_aging, ar_aging, inventory. period is "
-                     "YYYY-MM (defaults to the latest month with activity — use this for "
-                     "'current' or 'as of now'). ALWAYS give the user the returned download_url "
-                     "so they can download the full report."),
+        description=(
+            "Generate a downloadable .xlsx report + a short summary. kinds: "
+            "'closing_package' = the FULL month-end binder (Balance Sheet, Income "
+            "Statement/P&L, Cash Flow, Trial Balance, General Ledger, Journal Entries, "
+            "AP & AR Aging, Inventory) — USE THIS for 'financial statements', 'FS', "
+            "'마감자료', 'closing', or when the accountant wants everything. Others are "
+            "single reports: 'financials' (BS+IS+CF only), 'cash_flow', 'trial_balance', "
+            "'general_ledger', 'journal_entries', 'ap_aging', 'ar_aging', 'inventory'. "
+            "period is YYYY-MM (defaults to the latest month with activity = 'current'). "
+            "ALWAYS give the user the returned download_url."),
         parameters={"type": "object", "properties": {
             "kind": {"type": "string",
-                     "enum": ["financials", "trial_balance", "ap_aging", "ar_aging", "inventory"]},
+                     "enum": ["closing_package", "financials", "cash_flow", "trial_balance",
+                              "general_ledger", "journal_entries", "ap_aging", "ar_aging",
+                              "inventory"]},
             "period": {"type": "string"}}, "required": ["kind"]},
         handler=_generate_report,  # per-kind permission enforced inside the handler
     ),

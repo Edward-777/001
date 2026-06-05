@@ -119,7 +119,9 @@ def financials(request: Request, period: str | None = None,
 
 # Required permission per report kind (DESIGN §8.5) — the export route enforces it.
 _REPORT_PERMS = {
-    "financials": ("finance", 3), "trial_balance": ("finance", 3),
+    "closing_package": ("finance", 3), "financials": ("finance", 3),
+    "cash_flow": ("finance", 3), "trial_balance": ("finance", 3),
+    "general_ledger": ("finance", 3), "journal_entries": ("finance", 3),
     "ap_aging": ("finance", 3), "ar_aging": ("finance", 3),
     "inventory": ("inventory", 2),
 }

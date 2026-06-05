@@ -103,7 +103,7 @@ def main(fresh: bool = False) -> None:
             )
             acct.match_ap_bill(s, bill.id)
             if pay:
-                acct.create_payment(s, vendor_id=vendor.id,
+                acct.create_payment(s, vendor_id=vendor.id, payment_date=when,
                                     applications=[{"ap_bill_id": bill.id, "amount": float(bill.amount)}])
             return bill
 
