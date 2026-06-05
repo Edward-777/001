@@ -163,9 +163,10 @@ from .reports import (  # noqa: E402
     inventory_valuation,
     subledger_check,
     trial_balance,
+    vendor_summary,
 )
 
-__all__ += ["subledger_check", "cash_flow", "account_balances"]
+__all__ += ["subledger_check", "cash_flow", "account_balances", "vendor_summary"]
 
 # ---- downloadable report files (xlsx) ------------------------------------
 from .export import (  # noqa: E402

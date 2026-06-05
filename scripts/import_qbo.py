@@ -101,12 +101,13 @@ def load_journal(session, code_to_id: dict[str, int], suspense_id: int) -> tuple
     rows = _read(JOURNAL_CSV)
     hdr = next(r for r in rows if "Transaction date" in r)
     h = {name: i for i, name in enumerate(hdr)}
-    di, ai_, dr_i, cr_i, desc_i, fn_i = (h["Transaction date"], h["Distribution account number"],
-                                         h["Debit"], h["Credit"], h["Description"], h["Full name"])
+    di, ai_, dr_i, cr_i, desc_i, fn_i, nm_i = (
+        h["Transaction date"], h["Distribution account number"], h["Debit"], h["Credit"],
+        h["Description"], h["Full name"], h["Name"])
 
     posted = lines_total = skipped = suspensed = 0
     missing = set()
-    cur: list[tuple[int, Decimal, Decimal, str]] = []
+    cur: list[tuple[int, Decimal, Decimal, str, str]] = []
     cur_date: date | None = None
     now = datetime.now(timezone.utc)
     seq = 0
@@ -120,8 +121,9 @@ def load_journal(session, code_to_id: dict[str, int], suspense_id: int) -> tuple
         je = JournalEntry(je_no=f"JE-IMP-{seq:06d}", entry_date=cur_date or date.today(),
                           description="QBO import", source_type="manual", status="posted",
                           posted_at=now)
-        je.lines = [JournalLine(account_id=aid, debit=d, credit=c, memo=m[:400] or None)
-                    for aid, d, c, m in cur]
+        je.lines = [JournalLine(account_id=aid, debit=d, credit=c, memo=m[:400] or None,
+                                party=(p[:160] or None))
+                    for aid, d, c, m, p in cur]
         batch.append(je)
         posted += 1
         lines_total += len(cur)
@@ -149,7 +151,7 @@ def load_journal(session, code_to_id: dict[str, int], suspense_id: int) -> tuple
                 missing.add(code or (r[fn_i][:30] if len(r) > fn_i else "(blank)"))
                 aid = suspense_id  # deleted/unmapped account with real $ -> suspense
                 suspensed += 1
-            cur.append((aid, d, c, r[desc_i].strip()))
+            cur.append((aid, d, c, r[desc_i].strip(), r[nm_i].strip() if len(r) > nm_i else ""))
         if len(batch) >= 1000:
             session.add_all(batch)
             session.flush()

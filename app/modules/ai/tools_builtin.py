@@ -197,6 +197,26 @@ def _get_ar_aging(session: Session, user: User, args: dict) -> dict:
     return _aging_result(acct.ar_aging(session, as_of=date.today()))
 
 
+def _get_vendor_summary(session: Session, user: User, args: dict) -> dict:
+    from decimal import Decimal
+
+    vendor = (args.get("vendor") or "").strip()
+    if vendor:
+        # one vendor -> return BOTH figures so the kind param can't be misread
+        spend = sum((r["amount"] for r in acct.vendor_summary(session, kind="spend", vendor=vendor, limit=200)), Decimal("0"))
+        owed = sum((r["amount"] for r in acct.vendor_summary(session, kind="ap", vendor=vendor, limit=200)), Decimal("0"))
+        if spend == 0 and owed == 0:
+            return {"vendor": vendor, "note": "no activity found for that vendor name"}
+        return {"vendor": vendor, "total_spend_all_time": str(spend), "amount_owed_now": str(owed)}
+
+    kind = "spend" if args.get("kind") == "spend" else "ap"
+    rows = acct.vendor_summary(session, kind=kind, limit=20)
+    label = "total_spend" if kind == "spend" else "amount_owed"
+    return {"kind": kind,
+            "vendors": [{"vendor": r["vendor"], label: str(r["amount"])} for r in rows],
+            "grand_total": str(sum((r["amount"] for r in rows), Decimal("0")))}
+
+
 def _get_account_balance(session: Session, user: User, args: dict) -> dict:
     """GL balance for accounts matching a name or code — the source of truth for
     'how much do we owe / are owed / is in account X'."""
@@ -512,6 +532,18 @@ _BUILTIN = [
         description="List active customers.",
         parameters={"type": "object", "properties": {}},
         handler=_list_customers, scope="finance", level=1,
+    ),
+    Tool(
+        name="get_vendor_summary",
+        description=("Per-vendor amounts. kind='ap' = how much we currently OWE each vendor "
+                     "(open Accounts Payable by vendor, highest first); kind='spend' = total "
+                     "spend per vendor (all-time). Pass an optional 'vendor' name to filter to "
+                     "one. Use this for '벤더별 미지급금', 'who do we owe', 'top vendors by spend', "
+                     "'how much did we spend with X'."),
+        parameters={"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["ap", "spend"]},
+            "vendor": {"type": "string"}}},
+        handler=_get_vendor_summary, scope="finance", level=3,
     ),
     Tool(
         name="get_account_balance",

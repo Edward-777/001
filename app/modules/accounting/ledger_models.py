@@ -69,6 +69,8 @@ class JournalLine(PKMixin, Base):
     debit: Mapped[float] = mapped_column(Money, nullable=False, default=0)
     credit: Mapped[float] = mapped_column(Money, nullable=False, default=0)
     memo: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    # the vendor/customer ("Name") on this line — enables per-vendor AP / spend
+    party: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     entry: Mapped[JournalEntry] = relationship(back_populates="lines", foreign_keys=[je_id])
 

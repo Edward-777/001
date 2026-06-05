@@ -189,6 +189,41 @@ def account_balances(session: Session, query: str, *, as_of: date | None = None)
     return out
 
 
+def vendor_summary(session: Session, *, kind: str = "ap", vendor: str | None = None,
+                   limit: int = 50, as_of: date | None = None) -> list[dict]:
+    """Per-vendor amounts from the journal's party (Name) column.
+      kind='ap'    -> open Accounts Payable by vendor (Σcredit - Σdebit on AP)
+      kind='spend' -> total expense by vendor (Σdebit - Σcredit on expense accts)
+    """
+    stmt = (
+        select(JournalLine.party,
+               func.coalesce(func.sum(JournalLine.debit), 0),
+               func.coalesce(func.sum(JournalLine.credit), 0))
+        .join(JournalEntry, JournalLine.je_id == JournalEntry.id)
+        .join(Account, Account.id == JournalLine.account_id)
+        .where(JournalEntry.status.in_(_POSTED), JournalLine.party.isnot(None),
+               JournalLine.party != "")
+        .group_by(JournalLine.party)
+    )
+    if kind == "ap":
+        stmt = stmt.where(Account.type == "liability", func.lower(Account.name).like("%payable%"))
+    else:
+        stmt = stmt.where(Account.type == "expense")
+    if vendor:
+        stmt = stmt.where(JournalLine.party.ilike(f"%{vendor}%"))
+    if as_of is not None:
+        stmt = stmt.where(JournalEntry.entry_date <= as_of)
+
+    rows = []
+    for party, dr, cr in session.execute(stmt).all():
+        dr, cr = Decimal(str(dr)), Decimal(str(cr))
+        amt = (cr - dr if kind == "ap" else dr - cr).quantize(_ZERO)
+        if amt != 0:
+            rows.append({"vendor": party, "amount": amt})
+    rows.sort(key=lambda r: r["amount"], reverse=True)
+    return rows[:limit]
+
+
 def _control_balance(session: Session, *, receivable: bool, as_of: date | None) -> Decimal:
     """GL balance of the AP/AR control account(s) — by system_role or name."""
     nets = _net_by_account(session, end=as_of)
