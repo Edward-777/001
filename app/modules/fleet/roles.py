@@ -158,6 +158,29 @@ def revenue_approve(session: Session, task: Task) -> None:
     q.resolve_approval(session, task, approved=True)
 
 
+# ---- 📒 accounting (weekly payment run approval) ------------------------
+
+def accounting_approve(session: Session, task: Task) -> None:
+    """Founder approved the weekly payment run -> record each disbursement
+    (Dr AP / Cr Cash). Only the payment_run category does work here."""
+    if task.category != "payment_run":
+        q.resolve_approval(session, task, approved=True)
+        return
+    result = task.result or {}
+    paid = []
+    for item in result.get("bills", []):
+        bill = acct.get_ap_bill(session, item.get("ap_bill_id"))
+        if bill is None or Decimal(str(bill.balance)) <= 0:
+            continue
+        acct.create_payment(
+            session, vendor_id=bill.vendor_id,
+            applications=[{"ap_bill_id": bill.id, "amount": bill.balance}],
+        )
+        paid.append(item.get("bill_no"))
+    task.result = {**result, "paid": paid}
+    q.resolve_approval(session, task, approved=True)
+
+
 # ---- role registries ----------------------------------------------------
 
 # role -> handler that processes a freshly claimed task
@@ -170,6 +193,7 @@ HANDLERS: dict[str, Callable[[Session, Task], None]] = {
 APPROVERS: dict[str, Callable[[Session, Task], None]] = {
     Role.SPEND: spend_approve,
     Role.REVENUE: revenue_approve,
+    Role.ACCOUNTING: accounting_approve,
 }
 
 
