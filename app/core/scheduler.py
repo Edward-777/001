@@ -41,6 +41,13 @@ def _payment_run_tick() -> None:
     _in_session(payment_run.enqueue_weekly_payment_run)
 
 
+def _anomaly_tick() -> None:
+    """Daily anomaly scan -> alert in the founder's inbox (AGENT-FLEET §2)."""
+    from ..modules.fleet import alerts
+
+    _in_session(alerts.enqueue_anomaly_alerts)
+
+
 def start_scheduler():
     global _scheduler
     if _scheduler is not None:
@@ -62,6 +69,8 @@ def start_scheduler():
         _payment_run_tick, trigger="cron", day_of_week="mon", hour=8, minute=0,
         id="payment_run",
     )
+    # Daily anomaly scan — 07:00.
+    sch.add_job(_anomaly_tick, trigger="cron", hour=7, minute=0, id="anomaly_scan")
     sch.start()
     _scheduler = sch
     return sch

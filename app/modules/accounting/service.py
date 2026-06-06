@@ -171,6 +171,15 @@ from .reports import (  # noqa: E402
 __all__ += ["subledger_check", "cash_flow", "account_balances", "vendor_summary",
             "cash_runway", "affordability"]
 
+# ---- anomaly detection (insight push) -----------------------------------
+from .anomalies import (  # noqa: E402
+    detect_all,
+    duplicate_bills,
+    spend_anomalies,
+)
+
+__all__ += ["spend_anomalies", "duplicate_bills", "detect_all"]
+
 # ---- downloadable report files (xlsx) ------------------------------------
 from .export import (  # noqa: E402
     REPORT_KINDS,

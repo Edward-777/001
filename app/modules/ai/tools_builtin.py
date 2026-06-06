@@ -436,6 +436,13 @@ def _get_runway(session: Session, user: User, args: dict) -> dict:
     }
 
 
+def _get_anomalies(session: Session, user: User, args: dict) -> dict:
+    """Spend spikes vs the category baseline + likely duplicate vendor bills."""
+    found = acct.detect_all(session)
+    return {"count": len(found), "anomalies": found,
+            "note": "Empty list means nothing unusual was detected."}
+
+
 def _check_affordability(session: Session, user: User, args: dict) -> dict:
     amount = args.get("amount")
     if amount in (None, ""):
@@ -459,6 +466,14 @@ _BUILTIN = [
                      "얼마 / how much runway / burn rate / cash position / when do we run out'."),
         parameters={"type": "object", "properties": {}},
         handler=_get_runway, scope="finance", level=3,
+    ),
+    Tool(
+        name="get_anomalies",
+        description=("Unusual spending: category spend SPIKES vs their recent baseline, and "
+                     "likely DUPLICATE vendor bills. USE THIS for '이상한 지출 / 이번 달 이상한 거 / "
+                     "중복 결제 / anything unusual / weird charges / 지출 급증'."),
+        parameters={"type": "object", "properties": {}},
+        handler=_get_anomalies, scope="finance", level=3,
     ),
     Tool(
         name="check_affordability",
