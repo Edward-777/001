@@ -421,7 +421,54 @@ def _get_income_statement(session: Session, user: User, args: dict) -> dict:
             "basis": "full calendar year Jan-Dec (assumes calendar fiscal year)"}
 
 
+def _get_runway(session: Session, user: User, args: dict) -> dict:
+    """Cash on hand, monthly burn, and months of runway — the founder's headline."""
+    r = acct.cash_runway(session)
+    return {
+        "cash_on_hand": str(r["cash"]),
+        "monthly_burn": str(r["monthly_burn"]),
+        "runway_months": (str(r["runway_months"]) if r["runway_months"] is not None
+                          else "open-ended (company is profitable)"),
+        "profitable": r["profitable"],
+        "ar_outstanding_owed_to_us": str(r["ar_outstanding"]),
+        "ap_outstanding_we_owe": str(r["ap_outstanding"]),
+        "basis": f"burn = average monthly net loss over the last {r['trailing_months']} months",
+    }
+
+
+def _check_affordability(session: Session, user: User, args: dict) -> dict:
+    amount = args.get("amount")
+    if amount in (None, ""):
+        return {"error": "state the amount to check (e.g. 50000)"}
+    a = acct.affordability(session, amount=amount)
+    return {
+        "amount": str(a["amount"]), "cash_after": str(a["cash_after"]),
+        "runway_before_months": (str(a["runway_before"]) if a["runway_before"] is not None
+                                 else "open-ended"),
+        "runway_after_months": (str(a["runway_after"]) if a["runway_after"] is not None
+                                else "open-ended"),
+        "affordable": a["affordable"],
+    }
+
+
 _BUILTIN = [
+    Tool(
+        name="get_runway",
+        description=("Cash on hand, monthly BURN RATE, and months of RUNWAY left, plus AR/AP "
+                     "outstanding. USE THIS for '런웨이 얼마 / 돈 언제 떨어져 / 번레이트 / 현금 "
+                     "얼마 / how much runway / burn rate / cash position / when do we run out'."),
+        parameters={"type": "object", "properties": {}},
+        handler=_get_runway, scope="finance", level=3,
+    ),
+    Tool(
+        name="check_affordability",
+        description=("Whether the company can afford a ONE-OFF spend, and runway before/after. "
+                     "USE THIS for '이거 살 여유 돼 / X 쓰면 런웨이 어떻게 / can we afford'. "
+                     "Pass 'amount' (USD) the user stated; never invent it."),
+        parameters={"type": "object", "properties": {"amount": {"type": "number"}},
+                    "required": ["amount"]},
+        handler=_check_affordability, scope="finance", level=3,
+    ),
     Tool(
         name="create_purchase_request",
         description="Create and submit a purchase request for approval (routes via the org chart).",

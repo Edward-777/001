@@ -237,6 +237,65 @@ def _control_balance(session: Session, *, receivable: bool, as_of: date | None) 
     return total.quantize(_ZERO)
 
 
+# ---- founder cash insight (runway / burn) -------------------------------
+
+def _months_back(d: date, n: int) -> date:
+    """First day of the month n months before d's month."""
+    m = d.month - n
+    y = d.year + (m - 1) // 12
+    m = (m - 1) % 12 + 1
+    return date(y, m, 1)
+
+
+def _cash_on_hand(session: Session, as_of: date) -> Decimal:
+    accts = _accounts(session)
+    nets = _net_by_account(session, end=as_of)
+    cash_ids = [
+        a.id for a in accts.values()
+        if a.type == "asset" and (a.subtype == "bank" or a.system_role == "cash")
+    ]
+    return sum((nets.get(i, _ZERO) for i in cash_ids), _ZERO).quantize(_ZERO)
+
+
+def cash_runway(session: Session, *, as_of: date | None = None,
+                trailing_months: int = 3) -> dict:
+    """The number a founder cares about most: cash on hand, monthly burn, and how
+    many months of runway remain. Burn = average monthly net loss over the trailing
+    window; if the company is net profitable, burn is 0 and runway is open-ended."""
+    as_of = as_of or date.today()
+    cash = _cash_on_hand(session, as_of)
+    start = _months_back(as_of, trailing_months - 1)
+    is_ = income_statement(session, start=start, end=as_of)
+    net = is_["net_income"]  # negative = loss
+    monthly_net = (net / trailing_months).quantize(_ZERO)
+    monthly_burn = (-monthly_net) if monthly_net < 0 else _ZERO
+    runway = None if monthly_burn <= 0 else (cash / monthly_burn)
+    return {
+        "as_of": as_of, "cash": cash, "trailing_months": trailing_months,
+        "monthly_net": monthly_net, "monthly_burn": monthly_burn,
+        "runway_months": runway.quantize(Decimal("0.1")) if runway is not None else None,
+        "profitable": monthly_burn <= _ZERO,
+        "ar_outstanding": _control_balance(session, receivable=True, as_of=as_of),
+        "ap_outstanding": _control_balance(session, receivable=False, as_of=as_of),
+        "revenue_trailing": is_["total_revenue"], "expenses_trailing": is_["total_expenses"],
+    }
+
+
+def affordability(session: Session, *, amount, as_of: date | None = None,
+                  trailing_months: int = 3) -> dict:
+    """'Can we afford $X?' — runway after spending `amount` as a one-off now."""
+    amt = Decimal(str(amount))
+    base = cash_runway(session, as_of=as_of, trailing_months=trailing_months)
+    new_cash = (base["cash"] - amt).quantize(_ZERO)
+    burn = base["monthly_burn"]
+    new_runway = None if burn <= _ZERO else (new_cash / burn).quantize(Decimal("0.1"))
+    return {
+        "amount": amt, "cash_before": base["cash"], "cash_after": new_cash,
+        "monthly_burn": burn, "runway_before": base["runway_months"],
+        "runway_after": new_runway, "affordable": new_cash >= _ZERO,
+    }
+
+
 # ---- general ledger -----------------------------------------------------
 
 def general_ledger(session: Session, account_id: int, *, start: date | None = None, end: date | None = None) -> list[dict]:

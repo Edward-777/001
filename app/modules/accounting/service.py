@@ -153,10 +153,12 @@ from .ap import (  # noqa: E402
 # ---- M13 reports (re-exported as public API) -----------------------------
 from .reports import (  # noqa: E402
     account_balances,
+    affordability,
     ap_aging,
     ar_aging,
     balance_sheet,
     cash_flow,
+    cash_runway,
     general_ledger,
     generate_financials,
     income_statement,
@@ -166,7 +168,8 @@ from .reports import (  # noqa: E402
     vendor_summary,
 )
 
-__all__ += ["subledger_check", "cash_flow", "account_balances", "vendor_summary"]
+__all__ += ["subledger_check", "cash_flow", "account_balances", "vendor_summary",
+            "cash_runway", "affordability"]
 
 # ---- downloadable report files (xlsx) ------------------------------------
 from .export import (  # noqa: E402
