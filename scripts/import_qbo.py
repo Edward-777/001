@@ -191,6 +191,18 @@ def main() -> None:
         s.commit()
 
         from app.modules.accounting import service as acct
+
+        # Posting-engine setup the QBO export doesn't carry: anchor system_roles
+        # (ap/ar/cash/revenue/retained_earnings) by name+type, and seed the default
+        # posting rules. Without these the fleet can't post bills/payments against
+        # the imported COA (the demo surfaced both gaps).
+        from scripts.backfill_roles import backfill
+        anchors = backfill(s)
+        n_rules = acct.seed_posting_rules(s)
+        s.commit()
+        print(f"Posting anchors set: {anchors}")
+        print(f"Posting rules seeded: {n_rules}")
+
         p = acct.latest_active_period(s)
         tb = acct.trial_balance(s, as_of=date(int(p[:4]), int(p[5:7]), 28))
         bs = acct.balance_sheet(s, as_of=date(int(p[:4]), int(p[5:7]), 28))
