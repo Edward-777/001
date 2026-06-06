@@ -28,6 +28,14 @@ class ARStatus(StrEnum):
     PAID = "paid"
 
 
+class QuoteStatus(StrEnum):
+    DRAFT = "draft"
+    SENT = "sent"          # delivered to the customer
+    ACCEPTED = "accepted"  # customer sent a PO -> converted to a sales order
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
 class Customer(PKMixin, TimestampMixin, Base):
     __tablename__ = "customers"
 
@@ -64,6 +72,66 @@ class SOLine(PKMixin, Base):
     amount: Mapped[float] = mapped_column(Money, nullable=False, default=0)
 
     so: Mapped[SalesOrder] = relationship(back_populates="lines")
+
+
+class Quote(PKMixin, TimestampMixin, Base):
+    """A price quote / estimate sent to a customer before they commit (O2C step 1)."""
+    __tablename__ = "quotes"
+
+    quote_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), nullable=False)
+    quote_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default=QuoteStatus.DRAFT)
+    customer_po: Mapped[str | None] = mapped_column(String(60), nullable=True)  # set on accept
+    so_id: Mapped[int | None] = mapped_column(ForeignKey("sales_orders.id"), nullable=True)
+    subtotal: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+    tax_amount: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+    total: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+
+    lines: Mapped[list[QuoteLine]] = relationship(
+        back_populates="quote", cascade="all, delete-orphan"
+    )
+
+
+class QuoteLine(PKMixin, Base):
+    __tablename__ = "quote_lines"
+
+    quote_id: Mapped[int] = mapped_column(ForeignKey("quotes.id"), nullable=False)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    qty: Mapped[float] = mapped_column(Qty, nullable=False, default=1)
+    unit_price: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+    amount: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+
+    quote: Mapped[Quote] = relationship(back_populates="lines")
+
+
+class Shipment(PKMixin, TimestampMixin, Base):
+    """A physical shipment against a sales order; backs the packing list (O2C step 3)."""
+    __tablename__ = "shipments"
+
+    shipment_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    so_id: Mapped[int] = mapped_column(ForeignKey("sales_orders.id"), nullable=False)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), nullable=False)
+    ship_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    carrier: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    tracking_no: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+    lines: Mapped[list[ShipmentLine]] = relationship(
+        back_populates="shipment", cascade="all, delete-orphan"
+    )
+
+
+class ShipmentLine(PKMixin, Base):
+    __tablename__ = "shipment_lines"
+
+    shipment_id: Mapped[int] = mapped_column(ForeignKey("shipments.id"), nullable=False)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    qty: Mapped[float] = mapped_column(Qty, nullable=False, default=1)
+
+    shipment: Mapped[Shipment] = relationship(back_populates="lines")
 
 
 class ARInvoice(PKMixin, TimestampMixin, Base):
