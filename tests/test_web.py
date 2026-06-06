@@ -155,6 +155,21 @@ def test_assistant_message_renders_turn(client, monkeypatch):
     assert "get_stock" in r.text             # tool chip
 
 
+def test_assistant_handles_llm_outage_gracefully(client, monkeypatch):
+    """If Ollama is down, the chat turn degrades to a friendly message, never a
+    500 (F8)."""
+    from app.modules.ai import agent
+
+    def _boom(*a, **k):
+        raise ConnectionError("ollama refused")
+
+    monkeypatch.setattr(agent, "run", _boom)
+    _login(client, "staff@x")
+    r = client.post("/assistant/message", data={"message": "hello?"})
+    assert r.status_code == 200
+    assert "unavailable" in r.text.lower()
+
+
 def test_health_still_ok(client):
     assert client.get("/health").json()["status"] == "ok"
 
