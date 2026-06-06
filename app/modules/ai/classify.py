@@ -18,7 +18,9 @@ _ROUTING: dict[str, tuple[str, int, str, bool]] = {
     "receipt":        ("finance", 1, "expense", False),
     "policy":         ("general", 1, "rag", True),
     "contract":       ("finance", 3, "store", False),
-    "other":          ("general", 1, "store", False),
+    # Default-Deny (§8.6): an unrecognized document is UNCERTAIN, so it gets the
+    # MOST restrictive ACL (finance L3), not general/L1. Stored, never indexed.
+    "other":          ("finance", 3, "store", False),
 }
 
 _PROMPT = (

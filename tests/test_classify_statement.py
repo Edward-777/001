@@ -42,6 +42,9 @@ def test_routing_drives_acl_and_workflow():
     # a policy is general-readable AND indexed; an invoice is finance-only, not indexed
     assert classify.routing_for("policy")[3] is True
     assert classify.routing_for("invoice")[3] is False
+    # Default-Deny: an unrecognized doc gets the MOST restrictive ACL, never indexed
+    scope, level, route, index = classify.routing_for("other")
+    assert (scope, level) == ("finance", 3) and index is False
 
 
 # ---- statement parsing + reconcile --------------------------------------
