@@ -96,7 +96,18 @@ def _route_document(session, *, route, category, dest, doc, acl_scope, acl_level
     if route == "ap_bill":
         data = invoice_parser.parse_invoice(str(dest))
         doc.extracted_text = json.dumps(data)
-        return header + _format_invoice(data)
+        # Hand the parsed invoice to the fleet: the 💸 spend role will draft a bill
+        # for the founder to approve (docs/AGENT-FLEET.md §9). Idempotent per doc.
+        from ..modules.fleet import dispatcher as fleet_disp
+        from ..modules.fleet.models import TaskSource
+        fleet_disp.dispatch(
+            session, category="invoice",
+            title=f"{data.get('vendor_name') or 'Vendor'} — ${data.get('total') or '?'}",
+            source=TaskSource.UPLOAD, payload={"parsed": data, "goods_received": None},
+            source_ref=f"doc:{doc.id}", idempotency_key=f"doc:{doc.id}:invoice",
+        )
+        return header + _format_invoice(data) + (
+            "\n\n드래프트 청구서를 만들어 **승인 인박스(/fleet)** 에 올려뒀습니다.")
     if route == "reconcile":
         parsed = statement.parse_statement(str(dest))
         doc.extracted_text = json.dumps(parsed)

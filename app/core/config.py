@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     # Nightly backup scheduler — on in production, off in dev/tests.
     enable_scheduler: bool = False
     backup_dir: str = "backups"
+    # Fleet work loop — how often the single loop drains the task queue (minutes).
+    fleet_loop_minutes: int = 10
 
     # Dev bootstraps tables via create_all; production uses Alembic migrations.
     auto_create_tables: bool = True

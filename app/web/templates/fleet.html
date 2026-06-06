@@ -1,0 +1,52 @@
+{% extends "layout.html" %}
+{% block title %}Inbox — 001 ERP{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4 max-w-3xl">
+  <h1 class="text-2xl font-bold">승인 인박스</h1>
+  <form method="post" action="/fleet/run">
+    <button class="px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-700 text-sm">
+      ⟳ 지금 처리 ({{ queued|length }} 대기)</button>
+  </form>
+</div>
+<p class="text-slate-500 mb-4 text-sm max-w-3xl">
+  AI가 만든 초안입니다. 승인하면 장부에 기표되고, 거절하면 초안으로 남습니다.</p>
+
+<div class="space-y-3 max-w-3xl">
+  {% if not pending %}
+  <div class="bg-white rounded-xl shadow p-4 text-slate-600">승인 대기 중인 항목이 없습니다.</div>
+  {% endif %}
+  {% for t in pending %}
+  <div class="bg-white rounded-xl shadow p-4">
+    <div class="flex items-center justify-between">
+      <div class="font-semibold">{{ t.title }}</div>
+      <span class="text-xs bg-slate-100 rounded px-2 py-0.5">{{ t.to_role }}</span>
+    </div>
+    {% set r = t.result or {} %}
+    {% if r.get('amount') %}
+    <table class="text-sm mt-2 text-slate-700">
+      <tr><td class="pr-4 text-slate-400">벤더</td><td>{{ r.get('vendor_name') }}
+        {% if r.get('new_vendor') %}<span class="text-emerald-700">(신규 등록)</span>{% endif %}</td></tr>
+      <tr><td class="pr-4 text-slate-400">금액</td><td>${{ r.get('amount') }}</td></tr>
+      <tr><td class="pr-4 text-slate-400">청구서</td><td>{{ r.get('bill_no') }}</td></tr>
+      <tr><td class="pr-4 text-slate-400">계정(추천)</td>
+        <td>{{ r.get('suggested_account_code') }} {{ r.get('suggested_account_name') }}</td></tr>
+    </table>
+    {% endif %}
+    {% if r.get('note') %}<div class="text-xs text-amber-700 mt-2">{{ r.get('note') }}</div>{% endif %}
+    <div class="flex gap-2 mt-3">
+      {% if can_finance %}
+      <form method="post" action="/fleet/{{ t.id }}/approve">
+        <button class="bg-emerald-600 text-white rounded px-4 py-1.5 text-sm hover:bg-emerald-700">
+          승인 · 기표</button>
+      </form>
+      {% else %}
+      <span class="text-xs text-slate-400 self-center">승인하려면 재무 권한이 필요합니다</span>
+      {% endif %}
+      <form method="post" action="/fleet/{{ t.id }}/reject">
+        <button class="bg-white border rounded px-4 py-1.5 text-sm hover:bg-slate-100">거절</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

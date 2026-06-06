@@ -73,11 +73,13 @@ def create_app() -> FastAPI:
     # Web UI (M15) + AI assistant (Phase 2)
     from .web.ai_routes import router as ai_router
     from .web.auth_routes import router as auth_router
+    from .web.fleet_routes import router as fleet_router
     from .web.main_routes import router as main_router
 
     app.include_router(auth_router)
     app.include_router(main_router)
     app.include_router(ai_router)
+    app.include_router(fleet_router)
 
     # Nightly backup scheduler (production only; off in dev/tests).
     if settings.enable_scheduler:
