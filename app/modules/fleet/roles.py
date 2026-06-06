@@ -161,23 +161,24 @@ def revenue_approve(session: Session, task: Task) -> None:
 # ---- 📒 accounting (weekly payment run approval) ------------------------
 
 def accounting_approve(session: Session, task: Task) -> None:
-    """Founder approved the weekly payment run -> record each disbursement
-    (Dr AP / Cr Cash). Only the payment_run category does work here."""
-    if task.category != "payment_run":
-        q.resolve_approval(session, task, approved=True)
-        return
+    """Founder approval for accounting tasks: pay the weekly run, or lock a month."""
     result = task.result or {}
-    paid = []
-    for item in result.get("bills", []):
-        bill = acct.get_ap_bill(session, item.get("ap_bill_id"))
-        if bill is None or Decimal(str(bill.balance)) <= 0:
-            continue
-        acct.create_payment(
-            session, vendor_id=bill.vendor_id,
-            applications=[{"ap_bill_id": bill.id, "amount": bill.balance}],
-        )
-        paid.append(item.get("bill_no"))
-    task.result = {**result, "paid": paid}
+    if task.category == "payment_run":
+        paid = []
+        for item in result.get("bills", []):
+            bill = acct.get_ap_bill(session, item.get("ap_bill_id"))
+            if bill is None or Decimal(str(bill.balance)) <= 0:
+                continue
+            acct.create_payment(
+                session, vendor_id=bill.vendor_id,
+                applications=[{"ap_bill_id": bill.id, "amount": bill.balance}],
+            )
+            paid.append(item.get("bill_no"))
+        task.result = {**result, "paid": paid}
+    elif task.category == "month_close":
+        period = result.get("period")
+        if period:
+            acct.close_period(session, period)  # locks the month
     q.resolve_approval(session, task, approved=True)
 
 

@@ -48,6 +48,13 @@ def _anomaly_tick() -> None:
     _in_session(alerts.enqueue_anomaly_alerts)
 
 
+def _month_close_tick() -> None:
+    """Monthly: propose closing the previous month (AGENT-FLEET §4)."""
+    from ..modules.fleet import month_close
+
+    _in_session(month_close.enqueue_month_close)
+
+
 def start_scheduler():
     global _scheduler
     if _scheduler is not None:
@@ -71,6 +78,8 @@ def start_scheduler():
     )
     # Daily anomaly scan — 07:00.
     sch.add_job(_anomaly_tick, trigger="cron", hour=7, minute=0, id="anomaly_scan")
+    # Monthly close proposal — 1st of the month, 06:00 (closes the prior month).
+    sch.add_job(_month_close_tick, trigger="cron", day=1, hour=6, minute=0, id="month_close")
     sch.start()
     _scheduler = sch
     return sch
