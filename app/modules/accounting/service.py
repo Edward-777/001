@@ -183,12 +183,14 @@ __all__ += ["spend_anomalies", "duplicate_bills", "detect_all"]
 # ---- downloadable report files (xlsx) ------------------------------------
 from .export import (  # noqa: E402
     REPORT_KINDS,
+    REPORT_PERMS,
     build_report_xlsx,
     latest_active_period,
     period_bounds,
 )
 
-__all__ += ["REPORT_KINDS", "build_report_xlsx", "latest_active_period", "period_bounds"]
+__all__ += ["REPORT_KINDS", "REPORT_PERMS", "build_report_xlsx",
+            "latest_active_period", "period_bounds"]
 
 __all__ += [
     "trial_balance",

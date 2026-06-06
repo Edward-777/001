@@ -21,6 +21,16 @@ REPORT_KINDS = (
     "general_ledger", "journal_entries", "ap_aging", "ar_aging", "inventory",
 )
 
+# Per-kind access requirement (scope, level). SINGLE SOURCE OF TRUTH for both the
+# AI report tool gate and the /reports/export download gate — keep them in sync.
+REPORT_PERMS: dict[str, tuple[str, int]] = {
+    "closing_package": ("finance", 3), "financials": ("finance", 3),
+    "cash_flow": ("finance", 3), "trial_balance": ("finance", 3),
+    "general_ledger": ("finance", 3), "journal_entries": ("finance", 3),
+    "ap_aging": ("finance", 3), "ar_aging": ("finance", 3),
+    "inventory": ("inventory", 2),
+}
+
 
 def latest_active_period(session: Session) -> str:
     """The YYYY-MM of the most recent journal activity (so 'current' financials

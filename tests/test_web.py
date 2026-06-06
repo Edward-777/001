@@ -159,6 +159,20 @@ def test_health_still_ok(client):
     assert client.get("/health").json()["status"] == "ok"
 
 
+def test_report_export_is_permission_gated(client):
+    """The download route is the bypass-proof gate for report files (F5). A
+    non-finance user is refused; an unknown kind is 404; finance gets the file."""
+    _login(client, "staff@x")  # plain employee, no finance
+    assert client.get("/reports/export?kind=financials").status_code == 403
+    assert client.get("/reports/export?kind=trial_balance").status_code == 403
+    assert client.get("/reports/export?kind=does-not-exist").status_code == 404
+
+    _login(client, "ceo@x")  # admin (finance L3)
+    r = client.get("/reports/export?kind=financials")
+    assert r.status_code == 200
+    assert "attachment" in r.headers.get("content-disposition", "")
+
+
 def test_linkify_makes_report_link_downloadable():
     """A report URL in assistant text becomes a clickable download link, so the
     user can grab the .xlsx even after a reload (when the green button is gone)."""
