@@ -24,12 +24,20 @@
     {% set r = t.result or {} %}
     {% if r.get('amount') %}
     <table class="text-sm mt-2 text-slate-700">
+      {% if r.get('vendor_name') %}
       <tr><td class="pr-4 text-slate-400">벤더</td><td>{{ r.get('vendor_name') }}
         {% if r.get('new_vendor') %}<span class="text-emerald-700">(신규 등록)</span>{% endif %}</td></tr>
+      {% endif %}
+      {% if r.get('customer_name') %}
+      <tr><td class="pr-4 text-slate-400">고객</td><td>{{ r.get('customer_name') }}
+        {% if r.get('new_customer') %}<span class="text-emerald-700">(신규 등록)</span>{% endif %}</td></tr>
+      {% endif %}
       <tr><td class="pr-4 text-slate-400">금액</td><td>${{ r.get('amount') }}</td></tr>
-      <tr><td class="pr-4 text-slate-400">청구서</td><td>{{ r.get('bill_no') }}</td></tr>
+      {% if r.get('bill_no') %}<tr><td class="pr-4 text-slate-400">청구서</td><td>{{ r.get('bill_no') }}</td></tr>{% endif %}
+      {% if r.get('suggested_account_code') %}
       <tr><td class="pr-4 text-slate-400">계정(추천)</td>
         <td>{{ r.get('suggested_account_code') }} {{ r.get('suggested_account_name') }}</td></tr>
+      {% endif %}
     </table>
     {% endif %}
     {% if r.get('note') %}<div class="text-xs text-amber-700 mt-2">{{ r.get('note') }}</div>{% endif %}

@@ -10,6 +10,7 @@ Phase 1 ships the 💸 spend (vendor-bill) role. Other roles arrive in later pha
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 from ..accounting import service as acct
 from ..accounting.models import Account, AccountType
 from ..procurement import service as proc
+from ..sales import service as sls
 from . import service as q
 from .models import Role, Task
 
@@ -96,16 +98,78 @@ def spend_approve(session: Session, task: Task) -> None:
     q.resolve_approval(session, task, approved=True)
 
 
+# ---- 💰 revenue (customer invoice) --------------------------------------
+
+def _find_customer(session: Session, name: str):
+    low = name.strip().lower()
+    for c in sls.list_customers(session):
+        if low in c.name.lower():
+            return c
+    return None
+
+
+def revenue_handle(session: Session, task: Task) -> None:
+    """customer_invoice -> drafts a customer invoice, parked for approval. The AR
+    invoice (which recognizes revenue) is NOT created until the founder approves —
+    the draft lives in the task, so nothing hits the ledger early."""
+    payload = task.payload or {}
+    parsed = payload.get("parsed", payload)
+    customer_name = (parsed.get("customer_name") or "").strip()
+    lines = parsed.get("lines")
+    total = parsed.get("total", parsed.get("amount"))
+    if not customer_name or (not lines and total in (None, "", 0)):
+        q.fail(session, task, reason="invoice missing customer name or amount — needs a human")
+        return
+    if not lines:
+        lines = [{"description": parsed.get("description") or "Services",
+                  "qty": 1, "unit_price": total}]
+
+    customer = _find_customer(session, customer_name)
+    new_customer = customer is None
+    if customer is None:
+        customer = sls.create_customer(session, name=customer_name)
+
+    amount = sum(
+        (Decimal(str(ln.get("qty", 1))) * Decimal(str(ln.get("unit_price", 0))) for ln in lines),
+        Decimal("0"),
+    )
+    q.request_approval(session, task, result={
+        "customer_id": customer.id,
+        "customer_name": customer.name,
+        "new_customer": new_customer,
+        "lines": lines,
+        "amount": str(amount),
+        "note": "승인하면 고객 청구서를 발행하고 매출을 인식합니다 (외상매출금 / 매출).",
+    })
+
+
+def revenue_approve(session: Session, task: Task) -> None:
+    """Founder approved -> post the AR invoice (Dr AR / Cr Revenue), mark done."""
+    result = task.result or {}
+    customer_id = result.get("customer_id")
+    lines = result.get("lines")
+    if customer_id is None or not lines:
+        q.fail(session, task, reason="cannot post invoice: missing customer or lines")
+        return
+    invoice = sls.post_ar_invoice(session, customer_id=customer_id, lines=lines)
+    # Copy FIRST, then assign a new dict — mutating task.result in place pollutes
+    # SQLAlchemy's loaded snapshot, so the change wouldn't be detected/flushed.
+    task.result = {**result, "invoice_no": invoice.invoice_no}
+    q.resolve_approval(session, task, approved=True)
+
+
 # ---- role registries ----------------------------------------------------
 
 # role -> handler that processes a freshly claimed task
 HANDLERS: dict[str, Callable[[Session, Task], None]] = {
     Role.SPEND: spend_handle,
+    Role.REVENUE: revenue_handle,
 }
 
 # role -> approver that does the real side-effect when the founder approves
 APPROVERS: dict[str, Callable[[Session, Task], None]] = {
     Role.SPEND: spend_approve,
+    Role.REVENUE: revenue_approve,
 }
 
 
