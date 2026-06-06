@@ -153,7 +153,10 @@ def _nudge_approvers(session: Session, user: User, args: dict) -> dict:
 
 
 def _list_company_requests(session: Session, user: User, args: dict) -> dict:
-    rows = appr.list_all_requests(session, status=args.get("status"), limit=50)
+    # PURCHASE requests only — personal expense/travel reimbursements are private
+    # (per-subject data boundary), not company-wide visibility (review F4).
+    rows = appr.list_all_requests(session, status=args.get("status"),
+                                  type="purchase", limit=50)
     items = [{"request_no": r.request_no, "type": r.type, "title": r.title,
               "requester": (auth.get_user(session, r.requester_id) or user).name,
               "amount": str(r.total_amount), "status": r.status} for r in rows]
@@ -552,9 +555,10 @@ _BUILTIN = [
     ),
     Tool(
         name="list_company_requests",
-        description=("List ALL company requests (everyone's purchase/expense/trip), newest "
-                     "first, optionally filtered by status. Use this for 'how many requests "
-                     "company-wide', 'all pending requests', total spend requested, etc."),
+        description=("List company-wide PURCHASE requests (everyone's), newest first, "
+                     "optionally filtered by status. Use this for 'how many purchase requests "
+                     "company-wide', 'all pending purchases', total spend requested. (Personal "
+                     "expense/travel reimbursements are private and NOT listed here.)"),
         parameters={"type": "object", "properties": {
             "status": {"type": "string",
                        "enum": ["draft", "submitted", "approved", "rejected", "canceled"]}}},
