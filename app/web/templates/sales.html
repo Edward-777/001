@@ -39,7 +39,7 @@
       {% for stage in ['Quote','Sent','PO','Shipped','Invoiced'] %}
       {% set done = (loop.index0 == 0)
         or (loop.index0 == 1 and q.status in ['sent','accepted'])
-        or (loop.index0 == 2 and q.so)
+        or (loop.index0 == 2 and q.so_id)
         or (loop.index0 == 3 and row.shipment)
         or (loop.index0 == 4 and row.invoice) %}
       <span class="px-2 py-0.5 rounded {{ 'bg-emerald-600 text-white' if done else 'bg-slate-100 text-slate-400' }}">{{ stage }}</span>
