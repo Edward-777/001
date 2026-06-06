@@ -306,5 +306,28 @@ bounce_count ≥ 3 → needs_approval  (창업자 에스컬레이션)
 
 > **설계 디테일 100% 완료.** 모든 결정이 박혔다. 남은 건 구현뿐.
 
+---
+
+## 11. 구현 현황 (Implementation status)
+
+모듈: `app/modules/fleet/` (models·service·dispatcher·roles·loop·payment_run) +
+`app/web/fleet_routes.py` (승인 인박스). 전부 테스트 포함.
+
+| 마일스톤 | 내용 | 상태 |
+|---------|------|------|
+| 1 | `tasks` 큐 모델 + 상태머신 서비스 (idempotency·bounce·escalation) | ✅ |
+| 2 | 디스패처 (category→role 라우팅) | ✅ |
+| 3 | 💸 지출·AP 롤 핸들러 + 단일 작업 루프 (드래프트→승인→기표) | ✅ |
+| 4 | 승인 인박스 UI + 업로드→디스패처 연결 + APScheduler 틱 | ✅ |
+| 5 | 📊 자금·인사이트 (런웨이·번레이트·살여유) + AI 도구 | ✅ |
+| 6 | 💰 매출·수금 롤 (고객 청구서 드래프트→승인→매출인식) | ✅ |
+| 7 | 주간 결제목록(payment run) → 승인 시 지급 분개 | ✅ |
+
+**남은 작업 (후속):**
+- 📧 이메일 커넥터 (Gmail API OAuth) — **사용자 Google Workspace 자격증명 필요** (외부 의존)
+- ⚠️ 이상 탐지 푸시 (지출 급증·중복·잊은 구독)
+- 🔘 선택 롤 핸들러 (people·supply·docs·support) + 분류기 6종→확장
+- 📅 월마감 자동화 (클로징 패키지 스케줄)
+
 > **설계 v2 완료.** 제네릭 소규모 스타트업 기준으로 재정렬. 다음은 1단계 구현
 > (tasks 테이블 + APScheduler + 단일 작업 루프 + 지출·AP 드래프트 흐름).
