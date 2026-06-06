@@ -19,14 +19,16 @@
 | **procurement** | 거래처·발주(PO) | `create_po`, `get_po` |
 | **inventory** | 품목·재고·입고·출고·시리얼·**이동평균** | `post_inbound`, `post_outbound`, `get_stock` |
 | **assets** | 고정자산·감가상각·**재고↔자산 전환** | `create_asset`, `run_depreciation`, `reclassify` |
-| **sales** | 고객·수주(SO)·AR인보이스·수금 (매입측 거울) | `create_so`, `post_ar_invoice`, `post_receipt` |
+| **sales** | 고객·수주(SO)·AR인보이스·수금 + **O2C 풀필먼트**(견적→PO→출하→인보이스)·문서 | `create_so`, `post_ar_invoice`, `post_receipt`, `fulfillment.*`, `documents.*` |
 | **expense** | 경비/정산(Non-PO 지출)·직원 환급 | `submit_expense`, `reimburse` |
 | **bank** | 은행계좌·**월간 statement 업로드 대사** | `import_statement`, `reconcile` |
 | **accounting** | COA·전표·기간(마감)·AP(3-way)·지급·**posting 엔진**·재무제표 | `post_journal`, `generate_financials`, `match_ap_bill` |
 | **documents** | 첨부파일·OCR/파싱 | `store_document`, `parse_document` |
-| **ai** | 에이전트 오케스트레이터·**도구 레지스트리**·LLM(Ollama)·RAG·대화 | (최상위 — 다른 모듈의 도구를 호출) |
+| **ai** | 에이전트 오케스트레이터·**도구 레지스트리**·LLM(Ollama)·RAG·대화 | (다른 모듈의 도구를 호출) |
+| **fleet** | 자율 운영 오케스트레이션: 작업큐(`fleet_tasks`)·디스패처·**단일 작업 루프**·롤 핸들러·승인 인박스 (D6) | `service.*`(큐), `dispatcher.dispatch`, `loop.run_once`, `roles.resolve` |
 
 > **의존 방향 규칙:** 위→아래로만 의존. 회계는 재고를 모른다(역방향 금지). 재고가 회계를 직접 부르지도 않는다 → **이벤트로 연결**(아래 §3).
+> **fleet은 최상위 오케스트레이터** — 다른 모듈의 service를 호출해 롤별 작업을 드래프트하고, 사람 승인 후 기표한다. 상세 = [AGENT-FLEET.md](AGENT-FLEET.md).
 
 ---
 

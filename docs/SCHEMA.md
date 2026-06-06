@@ -614,6 +614,48 @@ Bank Statement 업로드 → AI 적요 추출 → statement_lines
 
 > 별도 신규 테이블 최소화 — 기존 service API/posting을 재사용해 "import = 평소 거래를 일괄 생성"으로 구현. **Opening Balance Equity** 계정만 COA 시드에 추가.
 
+## Z. D6 — 자율 군단 + O2C 풀필먼트 (구현됨)
+
+> `fleet` + `sales` 모듈. 상세 = [AGENT-FLEET.md](AGENT-FLEET.md).
+
+### fleet_tasks (자율 작업큐)
+| 컬럼 | 타입 | 비고 |
+|---|---|---|
+| source | enum | upload·email·bank_feed·ceo_chat·agent |
+| source_ref | text? | document_id / email_id / conversation_id |
+| category | text | 디스패처 분류 결과 |
+| from_role / to_role | enum | dispatcher·revenue·spend·accounting·insight·people·supply·docs·support·ceo·system |
+| title | text | 사람이 읽을 한 줄 |
+| payload | json | 작업 데이터(파싱 인보이스·지시문 등) |
+| status | enum | queued·in_progress·needs_approval·bounced·done·failed |
+| bounce_count / bounce_reason | int/text | 반송 (≥3 → 사람 에스컬레이션) |
+| result | json? | 산출물(드래프트 청구서 id 등) |
+| approval_id | int? | 승인 연결(느슨) |
+| idempotency_key | text unique? | 루프 재실행 중복 생성 차단 |
+
+### quotes / quote_lines (O2C 견적)
+| quotes | 타입 | 비고 |
+|---|---|---|
+| quote_no | text unique | QUO-YYYY-NNNN |
+| customer_id | FK→customers | |
+| quote_date / valid_until | date | |
+| status | enum | draft·sent·accepted·rejected·expired |
+| customer_po | text? | 수락 시 입력 |
+| so_id | FK→sales_orders? | 수락 시 생성된 주문 |
+| subtotal / tax_amount / total | money | |
+| **quote_lines** | | quote_id, product_id?, description, qty, unit_price, amount |
+
+### shipments / shipment_lines (출하·패킹리스트)
+| shipments | 타입 | 비고 |
+|---|---|---|
+| shipment_no | text unique | SHP-YYYY-NNNN |
+| so_id | FK→sales_orders | |
+| customer_id | FK→customers | |
+| ship_date / carrier / tracking_no | date/text | |
+| **shipment_lines** | | shipment_id, product_id?, description, qty (제품 라인은 재고 차감) |
+
+> O2C 흐름: 견적 → 발송 → 수락(PO) → 주문 → 출하(패킹리스트, 재고 issue) → 인보이스(매출 인식). 각 단계 xlsx 문서 다운로드.
+
 ## 확정된 모델링 (Q1·Q3·Q5)
 - **✅ Q1: 입고를 별도 문서(Inbound)로.** 부분입고·검수·정식회계 지원.
 - **✅ Q3: 3-way match (PO↔입고↔벤더인보이스).** AP는 인보이스 수령 시 생성(manual/AI). GR/IR clearing 사용.
