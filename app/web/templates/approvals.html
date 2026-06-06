@@ -7,7 +7,7 @@
   <div class="bg-white rounded-xl shadow p-5 flex items-center justify-between">
     <div>
       <div class="font-semibold">{{ r.title }}</div>
-      <div class="text-sm text-slate-500">{{ r.request_no }} · {{ r.type }} · ${{ r.total_amount }}</div>
+      <div class="text-sm text-slate-500">{{ r.request_no }} · {{ r.type }} · ${{ r.total_amount | money }}</div>
     </div>
     <div class="flex gap-2">
       <form method="post" action="/approvals/{{ r.id }}/approve">

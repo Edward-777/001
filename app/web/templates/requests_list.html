@@ -14,7 +14,7 @@
   {% for r in reqs %}
     <tr class="border-t">
       <td class="p-3">{{ r.request_no }}</td><td class="p-3">{{ r.title }}</td>
-      <td class="p-3">{{ r.type }}</td><td class="p-3">${{ r.total_amount }}</td>
+      <td class="p-3">{{ r.type }}</td><td class="p-3">${{ r.total_amount | money }}</td>
       <td class="p-3"><span class="px-2 py-1 rounded text-xs
         {% if r.status == 'approved' %}bg-emerald-100 text-emerald-700
         {% elif r.status == 'rejected' %}bg-rose-100 text-rose-700
