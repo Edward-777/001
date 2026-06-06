@@ -15,9 +15,14 @@ from ..modules.auth import service as auth
 from ..modules.fleet import loop, roles
 from ..modules.fleet import service as q
 from ..modules.fleet.models import TaskStatus
-from .deps import require_login, templates
+from .deps import require_login, require_scope, templates
 
 router = APIRouter()
+
+# Acting on drafts (run the loop, approve/post, reject) is a finance action —
+# the inbox is the SINGLE control point for all autonomous work, so gate every
+# mutating route at finance L3 (same level as paying a bill). Viewing is open.
+_finance = require_scope("finance", 3)
 
 
 def _can_finance(user) -> bool:
@@ -36,23 +41,23 @@ def fleet_inbox(request: Request, user=Depends(require_login),
 
 
 @router.post("/fleet/run")
-def fleet_run(user=Depends(require_login), session: Session = Depends(get_session)):
+def fleet_run(user=Depends(_finance), session: Session = Depends(get_session)):
     """Manually tick the work loop (the scheduler does this automatically in prod)."""
     loop.run_once(session)
     return RedirectResponse("/fleet", status_code=303)
 
 
 @router.post("/fleet/{task_id}/approve")
-def fleet_approve(task_id: int, user=Depends(require_login),
+def fleet_approve(task_id: int, user=Depends(_finance),
                   session: Session = Depends(get_session)):
     task = q.get_task(session, task_id)
-    if task is not None and task.status == TaskStatus.NEEDS_APPROVAL and _can_finance(user):
+    if task is not None and task.status == TaskStatus.NEEDS_APPROVAL:
         roles.resolve(session, task, approved=True)
     return RedirectResponse("/fleet", status_code=303)
 
 
 @router.post("/fleet/{task_id}/reject")
-def fleet_reject(task_id: int, user=Depends(require_login),
+def fleet_reject(task_id: int, user=Depends(_finance),
                  session: Session = Depends(get_session)):
     task = q.get_task(session, task_id)
     if task is not None and task.status == TaskStatus.NEEDS_APPROVAL:

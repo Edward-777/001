@@ -117,14 +117,21 @@ def test_dashboard_hides_runway_for_plain_user(ctx):
     assert "Runway" not in r.text  # finance-gated
 
 
-def test_non_finance_user_cannot_approve(ctx):
+def test_non_finance_user_is_blocked_from_fleet_actions(ctx):
+    """A plain employee can view the inbox but cannot run the loop, approve, or
+    reject — every mutating fleet route is finance-L3 gated (the single control
+    point). (F1)"""
+    from app.modules.fleet import loop
     client, TestSession = ctx
-    _login(client, "staff@x")  # plain employee, no finance L3
     _seed_invoice(TestSession)
-    client.post("/fleet/run")
-    with TestSession() as s:
+    with TestSession() as s:          # create the draft as the system (scheduler)
+        loop.run_once(s)
+        s.commit()
         tid = q.pending_approvals(s)[0].id
-    client.post(f"/fleet/{tid}/approve")
+
+    _login(client, "staff@x")         # plain employee, no finance L3
+    assert client.post("/fleet/run").status_code == 403
+    assert client.post(f"/fleet/{tid}/approve").status_code == 403
+    assert client.post(f"/fleet/{tid}/reject").status_code == 403
     with TestSession() as s:
-        task = q.get_task(s, tid)
-        assert task.status == TaskStatus.NEEDS_APPROVAL  # blocked, still pending
+        assert q.get_task(s, tid).status == TaskStatus.NEEDS_APPROVAL  # untouched
