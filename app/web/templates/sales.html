@@ -1,0 +1,89 @@
+{% extends "layout.html" %}
+{% block title %}Sales — 001 ERP{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Sales — Order to Cash</h1>
+
+<div class="bg-white rounded-xl shadow p-4 mb-6 max-w-3xl">
+  <div class="font-semibold mb-2">New quote</div>
+  <form method="post" action="/sales/quote" class="space-y-2 text-sm">
+    <input name="customer" required placeholder="Customer name" class="border rounded px-2 py-1 w-full">
+    <div class="grid grid-cols-12 gap-2">
+      <input name="desc1" placeholder="Item 1 description" class="border rounded px-2 py-1 col-span-6">
+      <input name="qty1" type="number" step="any" placeholder="Qty" class="border rounded px-2 py-1 col-span-3">
+      <input name="price1" type="number" step="any" placeholder="Unit price" class="border rounded px-2 py-1 col-span-3">
+    </div>
+    <div class="grid grid-cols-12 gap-2">
+      <input name="desc2" placeholder="Item 2 (optional)" class="border rounded px-2 py-1 col-span-6">
+      <input name="qty2" type="number" step="any" placeholder="Qty" class="border rounded px-2 py-1 col-span-3">
+      <input name="price2" type="number" step="any" placeholder="Unit price" class="border rounded px-2 py-1 col-span-3">
+    </div>
+    <button class="bg-slate-900 text-white rounded px-4 py-1.5 hover:bg-slate-700">Create quote</button>
+  </form>
+</div>
+
+<div class="space-y-3 max-w-3xl">
+  {% if not rows %}<div class="bg-white rounded-xl shadow p-4 text-slate-600">No quotes yet.</div>{% endif %}
+  {% for row in rows %}
+  {% set q = row.quote %}
+  <div class="bg-white rounded-xl shadow p-4">
+    <div class="flex items-center justify-between">
+      <div class="font-semibold">{{ q.quote_no }} · {{ row.customer.name if row.customer }}</div>
+      <span class="text-xs bg-slate-100 rounded px-2 py-0.5">{{ q.status }}</span>
+    </div>
+    <div class="text-sm text-slate-600 mt-1">Total ${{ q.total | money }}
+      {% if q.customer_po %} · PO {{ q.customer_po }}{% endif %}
+      {% if row.so %} · SO {{ row.so.so_no }} ({{ row.so.status }}){% endif %}</div>
+
+    <!-- pipeline stage tracker -->
+    <div class="flex gap-1 mt-2 text-xs">
+      {% for stage in ['Quote','Sent','PO','Shipped','Invoiced'] %}
+      {% set done = (loop.index0 == 0)
+        or (loop.index0 == 1 and q.status in ['sent','accepted'])
+        or (loop.index0 == 2 and q.so)
+        or (loop.index0 == 3 and row.shipment)
+        or (loop.index0 == 4 and row.invoice) %}
+      <span class="px-2 py-0.5 rounded {{ 'bg-emerald-600 text-white' if done else 'bg-slate-100 text-slate-400' }}">{{ stage }}</span>
+      {% endfor %}
+    </div>
+
+    <div class="flex flex-wrap gap-2 mt-3 text-sm items-center">
+      <a href="/sales/quote/{{ q.id }}/document" class="text-blue-600 underline">⬇ Quote</a>
+
+      {% if q.status == 'draft' %}
+      <form method="post" action="/sales/quote/{{ q.id }}/send">
+        <button class="bg-slate-700 text-white rounded px-3 py-1">Send to customer</button></form>
+      {% endif %}
+
+      {% if q.status == 'sent' %}
+      <form method="post" action="/sales/quote/{{ q.id }}/accept" class="flex gap-1">
+        <input name="customer_po" placeholder="Customer PO #" required class="border rounded px-2 py-1 w-32">
+        <button class="bg-emerald-600 text-white rounded px-3 py-1">Receive PO → order</button></form>
+      {% endif %}
+
+      {% if row.so and not row.shipment %}
+      <form method="post" action="/sales/order/{{ row.so.id }}/ship" class="flex gap-1">
+        <input name="carrier" placeholder="Carrier" class="border rounded px-2 py-1 w-24">
+        <input name="tracking_no" placeholder="Tracking #" class="border rounded px-2 py-1 w-28">
+        <button class="bg-emerald-600 text-white rounded px-3 py-1">Ship</button></form>
+      {% endif %}
+
+      {% if row.shipment %}
+      <a href="/sales/shipment/{{ row.shipment.id }}/document" class="text-blue-600 underline">⬇ Packing list</a>
+      {% endif %}
+
+      {% if row.so and row.shipment and not row.invoice %}
+        {% if can_finance %}
+        <form method="post" action="/sales/order/{{ row.so.id }}/invoice">
+          <button class="bg-emerald-600 text-white rounded px-3 py-1">Invoice</button></form>
+        {% else %}<span class="text-xs text-slate-400">finance permission to invoice</span>{% endif %}
+      {% endif %}
+
+      {% if row.invoice %}
+      <a href="/sales/invoice/{{ row.invoice.id }}/document" class="text-blue-600 underline">⬇ Invoice</a>
+      <span class="text-xs text-slate-500">{{ row.invoice.invoice_no }} (${{ row.invoice.total | money }})</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
