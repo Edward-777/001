@@ -105,7 +105,8 @@ def load_journal(session, code_to_id: dict[str, int], suspense_id: int) -> tuple
         h["Transaction date"], h["Distribution account number"], h["Debit"], h["Credit"],
         h["Description"], h["Full name"], h["Name"])
 
-    posted = lines_total = skipped = suspensed = 0
+    posted = lines_total = skipped = suspensed = unbalanced = 0
+    plugged = Decimal("0")
     missing = set()
     cur: list[tuple[int, Decimal, Decimal, str, str]] = []
     cur_date: date | None = None
@@ -114,9 +115,23 @@ def load_journal(session, code_to_id: dict[str, int], suspense_id: int) -> tuple
     batch: list[JournalEntry] = []
 
     def flush_entry():
-        nonlocal posted, lines_total, skipped, seq
+        nonlocal posted, lines_total, skipped, seq, unbalanced, plugged
         if not cur:
             return
+        # Engine invariant the importer must uphold even though it bypasses
+        # post_journal: every JE balances (Σdebit = Σcredit). Assert it per entry
+        # and plug any residual to suspense, so a parse glitch can't silently
+        # unbalance the books (the global TB check alone can hide offsetting errors).
+        tot_d = sum((x[1] for x in cur), Decimal("0"))
+        tot_c = sum((x[2] for x in cur), Decimal("0"))
+        diff = (tot_d - tot_c).quantize(Decimal("0.01"))
+        if diff != 0:
+            unbalanced += 1
+            plugged += abs(diff)
+            if diff > 0:   # more debit -> add a credit plug to suspense
+                cur.append((suspense_id, Decimal("0"), diff, "import balance plug", ""))
+            else:
+                cur.append((suspense_id, -diff, Decimal("0"), "import balance plug", ""))
         seq += 1
         je = JournalEntry(je_no=f"JE-IMP-{seq:06d}", entry_date=cur_date or date.today(),
                           description="QBO import", source_type="manual", status="posted",
@@ -162,6 +177,9 @@ def load_journal(session, code_to_id: dict[str, int], suspense_id: int) -> tuple
     if missing:
         print(f"  ! {suspensed} lines to deleted/unmapped accounts -> Import Suspense; "
               f"{skipped} $0 artifacts skipped. e.g.:", list(missing)[:6])
+    if unbalanced:
+        print(f"  ! {unbalanced} source entries did not balance -> ${plugged} plugged to "
+              f"Import Suspense (each JE now balances; investigate the source export)")
     print(f"  posted {posted} entries / {lines_total} lines")
     return posted, lines_total
 
