@@ -1,6 +1,6 @@
 # 001 — 마스터 요약 (한 장)
 
-> 프로젝트 **001** 설계의 전체 그림. 상세는 5개 문서로. (2026-06-03 정합성 점검 완료)
+> 프로젝트 **001** 설계의 전체 그림. 상세는 6개 문서로. (2026-06-05 갱신 — D6 자율 플릿·O2C·코드리뷰 반영)
 > 📂 [DESIGN.md](DESIGN.md) · [docs/SCHEMA.md](docs/SCHEMA.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/POLICIES.md](docs/POLICIES.md) · [docs/AI-AGENT.md](docs/AI-AGENT.md)
 
 ---
@@ -49,10 +49,10 @@
 Phase1 경량코어(전 사이클) → Phase2 에이전트 연결 → Phase3 문서파싱·분류·RAG질의 → GTM 온보딩/이행 → Phase4 자체 파인튜닝.
 
 ## 현재 구현 상태 (Phase1~3 완료 + D6 진행 중)
-- **Phase1~3 완료:** 전 회계 사이클(수동/UI) + 로컬 Ollama 에이전트(도구=service, 권한 상속) + RAG(회사규정) + 비전 인보이스 파싱. **211 tests.**
+- **Phase1~3 완료:** 전 회계 사이클(수동/UI) + 로컬 Ollama 에이전트(도구=service, 권한 상속) + RAG(회사규정) + 비전 인보이스 파싱. **213 tests.**
 - **D6 자율 에이전트 군단 (`fleet` 모듈):** 인입(업로드·대화) → 디스패처 → **단일 작업 루프**가 롤별로 처리(드래프트) → **승인 인박스 `/fleet`**에서 사람 승인 → 기표. 롤: 💸지출·AP · 💰매출·수금 · 📒회계(주간결제·월마감) · 📊자금·인사이트(런웨이·번레이트·"살 여유?") · ⚠️이상탐지. 전부 **드래프트-우선, 결과 큰 행동은 사람 승인 게이트**.
 - **수주→현금(O2C) `/sales`:** 견적 → 발송 → 고객PO 접수 → 출하(패킹리스트, 재고 차감) → 인보이스(매출 인식). 각 단계 **고객 문서(견적서·패킹리스트·인보이스 xlsx) 다운로드**.
-- **보안:** 회사 데이터 외부 유출 0(로컬 LLM). 외부엔 공개·추상 정보만(에스컬레이션: 로컬→웹검색→프론티어 방법자문). 상세 = [docs/AGENT-FLEET.md](docs/AGENT-FLEET.md).
+- **보안 (모델 2개):** ①**인터랙티브**(UI·AI)=호출 사용자로 실행, scope×level×boundary 게이트 상속. ②**자율 플릿**=시스템 액터, 권한게이트 대신 **승인 인박스가 단일 통제점**(finance L3). 둘 다 회사 데이터 외부 유출 0(로컬 LLM), 외부엔 공개·추상 정보만(에스컬레이션: 로컬→웹검색→프론티어 방법자문). 상세 = [docs/AGENT-FLEET.md](docs/AGENT-FLEET.md).
 - 모듈: core·auth·hr·approval·procurement·inventory·assets·sales·expense·bank·accounting·documents·ai·**fleet**.
 
 ## 열린 항목 (소소)
