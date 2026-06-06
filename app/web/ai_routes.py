@@ -107,7 +107,7 @@ def _route_document(session, *, route, category, dest, doc, acl_scope, acl_level
             source_ref=f"doc:{doc.id}", idempotency_key=f"doc:{doc.id}:invoice",
         )
         return header + _format_invoice(data) + (
-            "\n\n드래프트 청구서를 만들어 **승인 인박스(/fleet)** 에 올려뒀습니다.")
+            "\n\nI've drafted a vendor bill and placed it in your **Approval Inbox (/fleet)**.")
     if route == "reconcile":
         parsed = statement.parse_statement(str(dest))
         doc.extracted_text = json.dumps(parsed)

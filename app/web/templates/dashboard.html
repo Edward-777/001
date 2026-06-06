@@ -6,17 +6,17 @@
 {% if runway %}
 <div class="grid grid-cols-3 gap-4 mb-4">
   <div class="bg-slate-900 text-white rounded-xl shadow p-5">
-    <div class="text-slate-400 text-sm">현금</div>
-    <div class="text-2xl font-bold">${{ runway.cash }}</div>
+    <div class="text-slate-400 text-sm">Cash on hand</div>
+    <div class="text-2xl font-bold">${{ runway.cash | money }}</div>
   </div>
   <div class="bg-slate-900 text-white rounded-xl shadow p-5">
-    <div class="text-slate-400 text-sm">월 번레이트</div>
-    <div class="text-2xl font-bold">${{ runway.monthly_burn }}</div>
+    <div class="text-slate-400 text-sm">Monthly burn</div>
+    <div class="text-2xl font-bold">${{ runway.monthly_burn | money }}</div>
   </div>
   <div class="bg-emerald-700 text-white rounded-xl shadow p-5">
-    <div class="text-emerald-200 text-sm">런웨이</div>
+    <div class="text-emerald-200 text-sm">Runway</div>
     <div class="text-2xl font-bold">
-      {% if runway.runway_months is none %}흑자 · 무제한{% else %}{{ runway.runway_months }}개월{% endif %}
+      {% if runway.runway_months is none %}Profitable · open-ended{% else %}{{ runway.runway_months }} months{% endif %}
     </div>
   </div>
 </div>
@@ -26,8 +26,8 @@
   {% if fleet_pending is not none %}
   <div class="bg-white rounded-xl shadow p-5">
     <div class="text-3xl font-bold">{{ fleet_pending }}</div>
-    <div class="text-slate-500">AI 드래프트 승인 대기</div>
-    <a href="/fleet" class="text-sm text-blue-600">📥 인박스 →</a>
+    <div class="text-slate-500">AI drafts awaiting approval</div>
+    <a href="/fleet" class="text-sm text-blue-600">📥 Inbox →</a>
   </div>
   {% endif %}
   <div class="bg-white rounded-xl shadow p-5">

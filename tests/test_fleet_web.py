@@ -68,12 +68,12 @@ def test_inbox_run_then_approve_posts_bill(ctx):
 
     # queued shows on the inbox, no pending yet
     r = client.get("/fleet")
-    assert r.status_code == 200 and "1 대기" in r.text
+    assert r.status_code == 200 and "1 queued" in r.text
 
     # run the loop -> the spend role drafts a bill, parked for approval
     client.post("/fleet/run")
     r = client.get("/fleet")
-    assert "ACME Cloud Inc" in r.text and "$1200.00" in r.text
+    assert "ACME Cloud Inc" in r.text and "$1,200.00" in r.text  # comma-formatted
 
     # approve -> posted
     with TestSession() as s:
@@ -106,7 +106,7 @@ def test_dashboard_shows_runway_for_finance_user(ctx):
     _login(client, "ceo@x")
     r = client.get("/")
     assert r.status_code == 200
-    assert "런웨이" in r.text and "월 번레이트" in r.text
+    assert "Runway" in r.text and "Monthly burn" in r.text
 
 
 def test_dashboard_hides_runway_for_plain_user(ctx):
@@ -114,7 +114,7 @@ def test_dashboard_hides_runway_for_plain_user(ctx):
     _login(client, "staff@x")
     r = client.get("/")
     assert r.status_code == 200
-    assert "런웨이" not in r.text  # finance-gated
+    assert "Runway" not in r.text  # finance-gated
 
 
 def test_non_finance_user_cannot_approve(ctx):

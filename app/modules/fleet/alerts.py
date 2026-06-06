@@ -22,14 +22,15 @@ def enqueue_anomaly_alerts(session: Session, *, as_of: date | None = None):
     found = acct.detect_all(session, as_of=as_of)
     if not found:
         return None
+    plural = "anomalies" if len(found) != 1 else "anomaly"
     task = q.enqueue(
         session, to_role=Role.INSIGHT, category="anomaly_alert",
-        title=f"이상 징후 {len(found)}건 감지", source=TaskSource.AGENT,
+        title=f"{len(found)} {plural} detected", source=TaskSource.AGENT,
         from_role=Role.SYSTEM, idempotency_key=f"anomaly:{as_of.isoformat()}",
     )
     if task.status == TaskStatus.QUEUED:
         q.request_approval(session, task, result={
             "anomalies": found, "count": len(found),
-            "note": "검토용 알림입니다. 확인했으면 승인(닫기)하세요.",
+            "note": "Heads-up for review. Approve to acknowledge (close) it.",
         })
     return task

@@ -50,6 +50,22 @@ def _linkify(text: str | None) -> Markup:
 templates.env.filters["linkify"] = _linkify
 
 
+def _money(value) -> str:
+    """Format a number/string/Decimal with thousands separators and 2 decimals
+    (e.g. 38421954.22 -> '38,421,954.22') so amounts are quick to read."""
+    from decimal import Decimal, InvalidOperation
+
+    if value is None or value == "":
+        return ""
+    try:
+        return f"{Decimal(str(value)):,.2f}"
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value)
+
+
+templates.env.filters["money"] = _money
+
+
 def get_current_user(request: Request, session: Session = Depends(get_session)) -> User | None:
     uid = request.session.get("user_id")
     if not uid:

@@ -66,10 +66,10 @@ def spend_handle(session: Session, task: Task) -> None:
     suggested = _suggest_expense_account(session)
     goods_received = payload.get("goods_received")
     if goods_received is False:
-        note = ("물품 입고 전입니다 — 승인 시 직접 비용으로 기표되거나, 입고증을 받은 뒤 "
-                "3-way 매칭하도록 잠시 보류할 수 있습니다.")
+        note = ("Goods not received yet — on approval this posts as a direct expense, or "
+                "you can wait for the goods-receipt number to 3-way match it.")
     else:
-        note = "서비스/직접 비용으로 보입니다. 승인하면 추천 계정으로 기표합니다."
+        note = "Looks like a service / direct cost. Approving posts it to the suggested account."
 
     q.request_approval(session, task, result={
         "draft_bill_id": bill.id,
@@ -139,7 +139,7 @@ def revenue_handle(session: Session, task: Task) -> None:
         "new_customer": new_customer,
         "lines": lines,
         "amount": str(amount),
-        "note": "승인하면 고객 청구서를 발행하고 매출을 인식합니다 (외상매출금 / 매출).",
+        "note": "Approving issues the customer invoice and recognizes revenue (Dr AR / Cr Revenue).",
     })
 
 

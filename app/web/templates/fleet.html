@@ -2,18 +2,18 @@
 {% block title %}Inbox — 001 ERP{% endblock %}
 {% block content %}
 <div class="flex items-center justify-between mb-4 max-w-3xl">
-  <h1 class="text-2xl font-bold">승인 인박스</h1>
+  <h1 class="text-2xl font-bold">Approval Inbox</h1>
   <form method="post" action="/fleet/run">
     <button class="px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-700 text-sm">
-      ⟳ 지금 처리 ({{ queued|length }} 대기)</button>
+      ⟳ Process now ({{ queued|length }} queued)</button>
   </form>
 </div>
 <p class="text-slate-500 mb-4 text-sm max-w-3xl">
-  AI가 만든 초안입니다. 승인하면 장부에 기표되고, 거절하면 초안으로 남습니다.</p>
+  Drafts prepared by the AI. Approving posts to the ledger; rejecting keeps it as a draft.</p>
 
 <div class="space-y-3 max-w-3xl">
   {% if not pending %}
-  <div class="bg-white rounded-xl shadow p-4 text-slate-600">승인 대기 중인 항목이 없습니다.</div>
+  <div class="bg-white rounded-xl shadow p-4 text-slate-600">No items awaiting approval.</div>
   {% endif %}
   {% for t in pending %}
   <div class="bg-white rounded-xl shadow p-4">
@@ -25,17 +25,17 @@
     {% if r.get('amount') %}
     <table class="text-sm mt-2 text-slate-700">
       {% if r.get('vendor_name') %}
-      <tr><td class="pr-4 text-slate-400">벤더</td><td>{{ r.get('vendor_name') }}
-        {% if r.get('new_vendor') %}<span class="text-emerald-700">(신규 등록)</span>{% endif %}</td></tr>
+      <tr><td class="pr-4 text-slate-400">Vendor</td><td>{{ r.get('vendor_name') }}
+        {% if r.get('new_vendor') %}<span class="text-emerald-700">(new)</span>{% endif %}</td></tr>
       {% endif %}
       {% if r.get('customer_name') %}
-      <tr><td class="pr-4 text-slate-400">고객</td><td>{{ r.get('customer_name') }}
-        {% if r.get('new_customer') %}<span class="text-emerald-700">(신규 등록)</span>{% endif %}</td></tr>
+      <tr><td class="pr-4 text-slate-400">Customer</td><td>{{ r.get('customer_name') }}
+        {% if r.get('new_customer') %}<span class="text-emerald-700">(new)</span>{% endif %}</td></tr>
       {% endif %}
-      <tr><td class="pr-4 text-slate-400">금액</td><td>${{ r.get('amount') }}</td></tr>
-      {% if r.get('bill_no') %}<tr><td class="pr-4 text-slate-400">청구서</td><td>{{ r.get('bill_no') }}</td></tr>{% endif %}
+      <tr><td class="pr-4 text-slate-400">Amount</td><td>${{ r.get('amount') | money }}</td></tr>
+      {% if r.get('bill_no') %}<tr><td class="pr-4 text-slate-400">Bill</td><td>{{ r.get('bill_no') }}</td></tr>{% endif %}
       {% if r.get('suggested_account_code') %}
-      <tr><td class="pr-4 text-slate-400">계정(추천)</td>
+      <tr><td class="pr-4 text-slate-400">Account (suggested)</td>
         <td>{{ r.get('suggested_account_code') }} {{ r.get('suggested_account_name') }}</td></tr>
       {% endif %}
     </table>
@@ -45,13 +45,13 @@
       {% if can_finance %}
       <form method="post" action="/fleet/{{ t.id }}/approve">
         <button class="bg-emerald-600 text-white rounded px-4 py-1.5 text-sm hover:bg-emerald-700">
-          승인 · 기표</button>
+          Approve &amp; post</button>
       </form>
       {% else %}
-      <span class="text-xs text-slate-400 self-center">승인하려면 재무 권한이 필요합니다</span>
+      <span class="text-xs text-slate-400 self-center">finance permission required to approve</span>
       {% endif %}
       <form method="post" action="/fleet/{{ t.id }}/reject">
-        <button class="bg-white border rounded px-4 py-1.5 text-sm hover:bg-slate-100">거절</button>
+        <button class="bg-white border rounded px-4 py-1.5 text-sm hover:bg-slate-100">Reject</button>
       </form>
     </div>
   </div>

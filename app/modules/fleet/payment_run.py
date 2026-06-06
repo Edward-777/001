@@ -43,12 +43,12 @@ def enqueue_weekly_payment_run(session: Session, *, as_of: date | None = None):
 
     task = q.enqueue(
         session, to_role=Role.ACCOUNTING, category="payment_run",
-        title=f"이번 주 결제목록 — {len(items)}건 / ${total}",
+        title=f"This week's payments — {len(items)} bills / ${total}",
         source=TaskSource.AGENT, from_role=Role.SYSTEM, idempotency_key=key,
     )
     if task.status == TaskStatus.QUEUED:  # freshly created this week -> park it
         q.request_approval(session, task, result={
             "bills": items, "total": str(total), "count": len(items),
-            "note": "은행에서 송금한 뒤 '승인'하면 지급 분개(외상매입금/현금)를 기록합니다.",
+            "note": "Pay these in your bank, then Approve to record the disbursements (Dr AP / Cr Cash).",
         })
     return task

@@ -32,7 +32,7 @@ def enqueue_month_close(session: Session, *, as_of: date | None = None):
     tie = acct.subledger_check(session, as_of=prev_end)
     task = q.enqueue(
         session, to_role=Role.ACCOUNTING, category="month_close",
-        title=f"{period} 월마감 검토", source=TaskSource.AGENT,
+        title=f"{period} month-end close", source=TaskSource.AGENT,
         from_role=Role.SYSTEM, idempotency_key=f"close:{period}",
     )
     if task.status == TaskStatus.QUEUED:
@@ -42,6 +42,6 @@ def enqueue_month_close(session: Session, *, as_of: date | None = None):
             "total_assets": str(bs["total_assets"]),
             "balanced": bs["balanced"],
             "subledger_ties_out": tie.get("all_ok", True),
-            "note": "승인하면 해당 월을 마감(잠금)합니다. 이후 그 달에는 기표할 수 없습니다.",
+            "note": "Approving closes (locks) this month — no further postings can be made into it.",
         })
     return task
