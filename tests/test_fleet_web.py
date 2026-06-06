@@ -101,6 +101,22 @@ def test_reject_keeps_bill_draft(ctx):
         assert acct.get_ap_bill(s, task.result["draft_bill_id"]).status == "draft"
 
 
+def test_dashboard_shows_runway_for_finance_user(ctx):
+    client, _ = ctx
+    _login(client, "ceo@x")
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "런웨이" in r.text and "월 번레이트" in r.text
+
+
+def test_dashboard_hides_runway_for_plain_user(ctx):
+    client, _ = ctx
+    _login(client, "staff@x")
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "런웨이" not in r.text  # finance-gated
+
+
 def test_non_finance_user_cannot_approve(ctx):
     client, TestSession = ctx
     _login(client, "staff@x")  # plain employee, no finance L3

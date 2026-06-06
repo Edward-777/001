@@ -25,11 +25,21 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, user=Depends(require_login), session: Session = Depends(get_session)):
+    from ..modules.auth import service as auth
+    from ..modules.fleet import service as fleet_q
+
     pending = appr.pending_for_user(session, user.id)
     unread = notify.unread_count(session, user.id)
     my_reqs = appr.list_requests_for_user(session, user.id, limit=5)
+
+    # The 📊 cash-insight headline + fleet approval count — finance users only.
+    runway = fleet_pending = None
+    if auth.can_access(auth.get_grants(user), "finance", 3):
+        runway = acct.cash_runway(session)
+        fleet_pending = len(fleet_q.pending_approvals(session))
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user, "pending": pending, "unread": unread, "my_reqs": my_reqs,
+        "runway": runway, "fleet_pending": fleet_pending,
     })
 
 
