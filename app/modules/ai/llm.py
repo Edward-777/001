@@ -2,9 +2,32 @@
 supports tool-calling for Qwen2.5. The model is swappable via settings."""
 from __future__ import annotations
 
+import time
+
 import httpx
 
 from ...core.config import settings
+
+
+def _post(url: str, payload: dict, *, timeout: float, retries: int = 1) -> httpx.Response:
+    """POST to Ollama with a small retry. A model swap under VRAM pressure can make
+    llama-server return a transient 5xx (or drop the connection) on the first hit;
+    one retry after a short backoff recovers the common case instead of surfacing a
+    hard failure to the user. Non-transient errors (4xx) are raised immediately."""
+    for attempt in range(retries + 1):
+        try:
+            resp = httpx.post(url, json=payload, timeout=timeout)
+        except httpx.TransportError:
+            if attempt >= retries:
+                raise
+            time.sleep(1.0)
+            continue
+        # Retry only transient server-side 5xx; a 4xx is our bug — fail fast below.
+        if resp.status_code >= 500 and attempt < retries:
+            time.sleep(1.0)
+            continue
+        resp.raise_for_status()
+        return resp
 
 
 def chat(messages: list[dict], *, tools: list[dict] | None = None,
@@ -23,8 +46,7 @@ def chat(messages: list[dict], *, tools: list[dict] | None = None,
     }
     if tools:
         payload["tools"] = tools
-    resp = httpx.post(f"{settings.ollama_base_url}/api/chat", json=payload, timeout=timeout)
-    resp.raise_for_status()
+    resp = _post(f"{settings.ollama_base_url}/api/chat", payload, timeout=timeout)
     return resp.json()["message"]
 
 
@@ -44,18 +66,16 @@ def vision_chat(prompt: str, images: list[bytes], *, model: str | None = None,
         "keep_alive": "30m",
         "options": {"temperature": temperature},
     }
-    resp = httpx.post(f"{settings.ollama_base_url}/api/chat", json=payload, timeout=timeout)
-    resp.raise_for_status()
+    resp = _post(f"{settings.ollama_base_url}/api/chat", payload, timeout=timeout)
     return resp.json()["message"]["content"]
 
 
 def embed(text: str, *, model: str | None = None, timeout: float = 180.0) -> list[float]:
     """Embed a single string (RAG, Phase 3) via the embedding model.
     Generous timeout: the first call cold-loads the embedding model into VRAM."""
-    resp = httpx.post(
+    resp = _post(
         f"{settings.ollama_base_url}/api/embeddings",
-        json={"model": model or settings.ollama_embed_model, "prompt": text, "keep_alive": "30m"},
+        {"model": model or settings.ollama_embed_model, "prompt": text, "keep_alive": "30m"},
         timeout=timeout,
     )
-    resp.raise_for_status()
     return resp.json()["embedding"]
