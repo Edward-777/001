@@ -33,6 +33,17 @@ def test_purchase_request_requires_amounts(session, employee):
     assert "unit_price" in out["result"]["error"]
 
 
+def test_purchase_request_is_draft_not_auto_submitted(session, employee):
+    """Maker-checker: an AI-created purchase request is a DRAFT awaiting confirmation —
+    it is NOT pushed into the approval chain, so a fabricated price can't auto-approve."""
+    out = registry.execute("create_purchase_request",
+                           {"title": "laptop", "qty": 5, "unit_price": 1000},
+                           session=session, user=employee)["result"]
+    assert out["status"] == "draft"
+    assert out["needs_confirmation"] is True
+    assert out["total_amount"] == "5000.00"
+
+
 def test_expense_request_routes_to_expense_not_purchase(session, employee):
     out = registry.execute("create_expense_request",
                            {"title": "SD trip", "amount": 1200, "kind": "trip"},

@@ -93,6 +93,40 @@ def test_agent_runs_tool_then_answers(session, users):
     assert any(r.title == "Buy widgets" for r in reqs)
 
 
+def test_agent_blocks_submit_in_same_turn_as_draft(session, users):
+    """Deterministic maker-checker gate: even if the model tries to create AND submit
+    in one turn, the submit is refused — the user must confirm in a separate turn."""
+    fake = FakeChat(
+        _toolcall("create_purchase_request", {"title": "monitors", "qty": 3, "unit_price": 200}),
+        _toolcall("submit_request_for_approval", {"request_no": "REQ-2026-0001"}),
+        {"role": "assistant", "content": "Draft created — please confirm the figures."},
+    )
+    out = agent.run(session, users["emp"], "buy 3 monitors at $200", chat=fake)
+    submit = next(t for t in out["tool_calls"] if t["tool"] == "submit_request_for_approval")
+    assert "confirmation required" in submit["result"]["error"]
+    # the request is still a draft — never entered the approval chain
+    reqs = approval.service.list_requests_for_user(session, users["emp"].id)
+    assert all(r.status == "draft" for r in reqs if r.title == "monitors")
+
+
+def test_agent_submits_draft_in_a_later_turn(session, users):
+    """Once the draft exists (created in a prior turn), a fresh turn may submit it —
+    this is the confirmed path, so submission must succeed."""
+    draft = registry.execute("create_purchase_request",
+                             {"title": "monitors", "qty": 3, "unit_price": 200},
+                             session=session, user=users["emp"])["result"]
+    fake = FakeChat(
+        _toolcall("submit_request_for_approval", {"request_no": draft["request_no"]}),
+        {"role": "assistant", "content": "Submitted for approval."},
+    )
+    out = agent.run(session, users["emp"], "yes, submit it", chat=fake)
+    submit = out["tool_calls"][0]["result"]["result"]
+    # left draft and entered the approval chain (auto-approved here: emp has no approver)
+    assert submit["status"] in ("submitted", "approved")
+    reqs = approval.service.list_requests_for_user(session, users["emp"].id)
+    assert any(r.status != "draft" and r.title == "monitors" for r in reqs)
+
+
 def test_agent_reads_live_stock(session, users):
     p = inv.create_product(session, sku="W1", name="Widget", type=ProductType.INVENTORY)
     session.flush()

@@ -69,6 +69,11 @@ _SYSTEM = (
     "asked to see the list. Never dump a chart of accounts / vendor list as an answer "
     "to an unrelated request — that is a non-answer. Use the list silently to fill a "
     "parameter, or to confirm ONE specific item with the user.\n"
+    "10b. CREATING a purchase or expense request makes a DRAFT that is NOT yet "
+    "submitted. You MUST show the user the exact quantity, unit price, and total and "
+    "get their explicit confirmation BEFORE calling submit_request_for_approval — and "
+    "NEVER submit in the same turn you created the draft. If an amount was not "
+    "explicitly given by the user, do not even draft it: ask for the figure first.\n"
     "10. Recording a VENDOR INVOICE / BILL — follow the goods-receipt rule:\n"
     "  • If the goods have NOT been received yet, do NOT post anything. Tell the user "
     "you'll record and 3-way match it once they give you the goods-receipt (inbound) "
@@ -94,6 +99,18 @@ def _tool_catalog(schemas: list[dict]) -> str:
         f"- {s['function']['name']}: {s['function'].get('description', '').strip()}"
         for s in schemas
     )
+
+
+# Maker-checker gate (defense layer 2, deterministic — not reliant on the model):
+# a draft-creating tool and the submit tool may not run in the SAME turn, so a
+# fabricated amount can never be auto-submitted; the user must confirm next turn.
+_DRAFT_CREATE_TOOLS = {"create_purchase_request", "create_expense_request"}
+_SUBMIT_TOOLS = {"submit_request_for_approval"}
+_SUBMIT_BLOCKED = {
+    "error": "confirmation required: a draft was just created this turn. STOP, show the "
+             "user the draft's exact quantity, unit price and total, and submit only after "
+             "they confirm in their next message."
+}
 
 
 def _arguments(call: dict) -> dict:
@@ -174,6 +191,7 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
         {"role": "user", "content": f"{message}\n\n[{_reply_lang_tag(message)}]"},
     ]
     used: list[dict] = []
+    drafted_this_turn = False
 
     for _ in range(max_iters):
         msg = chat(messages, tools=tools)
@@ -190,7 +208,12 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
         for call in calls:
             name = call.get("function", {}).get("name", "")
             args = _arguments(call)
-            result = registry.execute(name, args, session=session, user=user)
+            if name in _SUBMIT_TOOLS and drafted_this_turn:
+                result = dict(_SUBMIT_BLOCKED)
+            else:
+                result = registry.execute(name, args, session=session, user=user)
+            if name in _DRAFT_CREATE_TOOLS and "error" not in result:
+                drafted_this_turn = True
             used.append({"tool": name, "args": args, "result": result})
             audit.record(session, actor_user_id=user.id, action="ai_tool",
                          entity_type=name, detail={"args": args, "ok": "error" not in result})

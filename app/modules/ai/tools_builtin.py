@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..accounting import service as acct
 from ..approval import service as appr
-from ..approval.service import RequestType
+from ..approval.service import RequestStatus, RequestType
 from ..auth import service as auth
 from ..auth.models import User
 from ..notifications import service as notify
@@ -21,6 +21,22 @@ from ..procurement import service as proc
 from ..sales import service as sls
 from . import rag
 from .registry import Registry, Tool
+
+
+def _draft_preview(req, *, detail: str) -> dict:
+    """Draft-first maker-checker (DESIGN §8): an AI-created money request is a DRAFT,
+    never auto-submitted. The model must echo these exact figures to the user and get
+    an explicit confirmation BEFORE submit_request_for_approval — which is the step
+    that catches a fabricated amount before it ever enters the approval chain."""
+    return {
+        "request_no": req.request_no, "status": req.status, "needs_confirmation": True,
+        "total_amount": str(req.total_amount),
+        "confirm": (f"DRAFT only — NOT submitted. Created {req.request_no}: {detail} "
+                    f"= ${req.total_amount}. Show the user these EXACT figures and ask them "
+                    "to confirm. Only AFTER they confirm (their next message) call "
+                    "submit_request_for_approval. If ANY number here was not explicitly "
+                    "given by the user, say so plainly — do not submit invented figures."),
+    }
 
 
 def _create_purchase_request(session: Session, user: User, args: dict) -> dict:
@@ -36,9 +52,7 @@ def _create_purchase_request(session: Session, user: User, args: dict) -> dict:
         lines=[{"description": args.get("description") or args["title"],
                 "qty": qty, "unit_price": price}],
     )
-    appr.submit_request(session, req.id)
-    return {"request_no": req.request_no, "status": req.status,
-            "total_amount": str(req.total_amount)}
+    return _draft_preview(req, detail=f"{qty:g} × ${price:g}")
 
 
 def _create_expense_request(session: Session, user: User, args: dict) -> dict:
@@ -53,9 +67,25 @@ def _create_expense_request(session: Session, user: User, args: dict) -> dict:
         lines=[{"description": args.get("description") or args["title"], "qty": 1,
                 "unit_price": amount}],
     )
+    out = _draft_preview(req, detail=f"${amount:g}")
+    out["type"] = req.type
+    return out
+
+
+def _submit_request_for_approval(session: Session, user: User, args: dict) -> dict:
+    """Submit a DRAFT request into the approval chain. Separate from creation so a
+    human confirms the figures first (maker-checker); the agent loop also forbids
+    calling this in the same turn the draft was created."""
+    req = appr.get_request_by_no(session, args.get("request_no", ""))
+    if req is None:
+        return {"error": "request not found — call list_my_requests for your draft's number"}
+    if req.requester_id != user.id:
+        return {"error": "you can only submit your own request"}
+    if req.status != str(RequestStatus.DRAFT):
+        return {"error": f"request is '{req.status}', not a draft — nothing to submit"}
     appr.submit_request(session, req.id)
-    return {"request_no": req.request_no, "type": req.type, "status": req.status,
-            "total_amount": str(req.total_amount)}
+    return {"request_no": req.request_no, "status": req.status,
+            "note": "submitted into the approval chain"}
 
 
 def _list_my_requests(session: Session, user: User, args: dict) -> list[dict]:
@@ -483,11 +513,23 @@ _BUILTIN = [
     ),
     Tool(
         name="create_purchase_request",
-        description="Create and submit a purchase request for approval (routes via the org chart).",
+        description=("Create a purchase request as a DRAFT (does NOT submit it). Pass qty and "
+                     "unit_price ONLY if the user gave them — never invent a price. Returns a "
+                     "draft to confirm with the user; submit it later with "
+                     "submit_request_for_approval."),
         parameters={"type": "object", "properties": {
             "title": {"type": "string"}, "description": {"type": "string"},
             "qty": {"type": "number"}, "unit_price": {"type": "number"}}, "required": ["title"]},
         handler=_create_purchase_request,
+    ),
+    Tool(
+        name="submit_request_for_approval",
+        description=("Submit a DRAFT purchase/expense request (by request_no) into the approval "
+                     "chain. Call this ONLY after the user has confirmed the draft's figures — "
+                     "never in the same reply that created the draft."),
+        parameters={"type": "object", "properties": {"request_no": {"type": "string"}},
+                    "required": ["request_no"]},
+        handler=_submit_request_for_approval,
     ),
     Tool(
         name="list_my_approvals",
@@ -538,9 +580,10 @@ _BUILTIN = [
     ),
     Tool(
         name="create_expense_request",
-        description=("Submit a travel or expense reimbursement request for approval. Use this "
-                     "for trips, meals, and out-of-pocket costs — NOT for buying goods (that is "
-                     "create_purchase_request). Requires a concrete total amount."),
+        description=("Create a travel or expense reimbursement request as a DRAFT (does NOT "
+                     "submit it). Use this for trips, meals, and out-of-pocket costs — NOT for "
+                     "buying goods (that is create_purchase_request). Requires a concrete total "
+                     "amount the user gave; confirm it, then submit_request_for_approval."),
         parameters={"type": "object", "properties": {
             "title": {"type": "string"}, "amount": {"type": "number"},
             "description": {"type": "string"},
