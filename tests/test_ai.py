@@ -127,6 +127,33 @@ def test_agent_submits_draft_in_a_later_turn(session, users):
     assert any(r.status != "draft" and r.title == "monitors" for r in reqs)
 
 
+def test_corrects_chinese_drift_on_korean_input(session, users):
+    """Deterministic language backstop: a Korean question that drifts to Chinese is
+    regenerated once in Korean (big Qwen drifts ~1 in 5 despite the prompt directives)."""
+    fake = FakeChat(
+        {"role": "assistant", "content": "抱歉，我不能发送电子邮件给联系人，除非通过工具完成。"},
+        {"role": "assistant", "content": "죄송하지만 이메일은 보낼 수 없습니다."},
+    )
+    out = agent.run(session, users["emp"], "협력사에 이메일 보내줘", chat=fake)
+    assert out["reply"] == "죄송하지만 이메일은 보낼 수 없습니다."
+    assert fake.i == 2  # one corrective regeneration happened
+
+
+def test_korean_reply_is_not_regenerated(session, users):
+    fake = FakeChat({"role": "assistant", "content": "현재 미지급금은 $3,200입니다."})
+    out = agent.run(session, users["emp"], "미지급금 얼마야?", chat=fake)
+    assert out["reply"] == "현재 미지급금은 $3,200입니다."
+    assert fake.i == 1  # no drift -> no extra call
+
+
+def test_intentional_chinese_is_left_alone(session, users):
+    """If the user themselves wrote Chinese, the reply is not 'corrected'."""
+    fake = FakeChat({"role": "assistant", "content": "好的，已经记录下来了。"})
+    out = agent.run(session, users["emp"], "请用中文回答：你好吗", chat=fake)
+    assert out["reply"] == "好的，已经记录下来了。"
+    assert fake.i == 1
+
+
 def test_agent_reads_live_stock(session, users):
     p = inv.create_product(session, sku="W1", name="Widget", type=ProductType.INVENTORY)
     session.flush()

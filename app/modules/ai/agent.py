@@ -142,6 +142,35 @@ def _reply_lang_tag(message: str) -> str:
     return "Answer in English only."
 
 
+def _has_chinese(text: str) -> bool:
+    """True if the text carries Chinese Han ideographs (CJK Unified U+4E00–U+9FFF).
+    Korean Hangul (U+AC00–U+D7A3) is a different block, so this does not fire on
+    Korean. Threshold > 3 avoids a false positive on a rare stray Hanja while still
+    catching the failure mode (whole Chinese sentences). System identifiers are ASCII."""
+    return sum(1 for ch in text if "一" <= ch <= "鿿") > 3
+
+
+def _enforce_reply_language(reply: str, message: str, messages: list[dict], chat) -> str:
+    """Deterministic backstop for big-Qwen's drift to Chinese on CJK input (the
+    system/turn directives reduce it but don't eliminate it). If the user did NOT
+    write Chinese yet the reply did, regenerate ONCE in the right language. Best
+    effort: if the rewrite still drifts (or errors), keep the original."""
+    if _has_chinese(message) or not _has_chinese(reply):
+        return reply
+    if any("가" <= ch <= "힣" for ch in message):
+        fix = ("직전 답변에 중국어(中文)가 섞였습니다. 똑같은 내용을 한국어로만 다시 쓰세요. "
+               "중국어·영어 금지. (계좌코드·SKU 등 영문 식별자는 그대로 둡니다.)")
+    else:
+        fix = ("Your previous answer contained Chinese characters. Rewrite the SAME "
+               "content in English only — no Chinese, no Korean.")
+    try:
+        regen = chat([*messages, {"role": "system", "content": fix}], tools=None)
+        fixed = regen.get("content", "") or ""
+        return fixed if (fixed and not _has_chinese(fixed)) else reply
+    except Exception:
+        return reply
+
+
 def _text_toolcalls(content: str) -> list[dict]:
     """Recover a tool call that Qwen sometimes emits as text instead of the
     structured tool_calls field. It can arrive wrapped in <tool_call> tags, a
@@ -202,7 +231,9 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
             # leaking raw JSON to the user.
             recovered = _text_toolcalls(msg.get("content", ""))
             if not recovered:
-                return {"reply": msg.get("content", ""), "tool_calls": used}
+                reply = _enforce_reply_language(
+                    msg.get("content", ""), message, messages, chat)
+                return {"reply": reply, "tool_calls": used}
             calls = recovered
 
         for call in calls:
