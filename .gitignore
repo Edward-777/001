@@ -16,6 +16,10 @@ venv/
 /uploads/
 /backups/
 
+# Local diagnostic output (not source)
+bench_results.txt
+srv*.log
+
 # OS
 Thumbs.db
 .DS_Store
