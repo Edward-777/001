@@ -375,6 +375,9 @@ def _pay_vendor(session: Session, user: User, args: dict) -> dict:
     bill = acct.get_ap_bill_by_no(session, args.get("bill_no", ""))
     if bill is None:
         return {"error": "bill not found — call list_open_bills"}
+    if bill.status == "draft":
+        return {"error": f"bill {bill.bill_no} is still a draft — it must be posted/"
+                         "approved before it can be paid; do NOT pay drafts"}
     if float(bill.balance) <= 0:
         return {"error": "that bill is already paid"}
     amt = float(args.get("amount") or 0)

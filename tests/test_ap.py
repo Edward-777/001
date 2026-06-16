@@ -115,6 +115,24 @@ def test_payment_settles_ap(session):
     assert _ap_balance(session) == Decimal("0.00")
 
 
+def test_cannot_pay_a_draft_bill(session):
+    """A draft bill hasn't posted its AP liability to the GL; paying it would credit
+    cash against an unrecognized payable. create_payment must refuse it."""
+    vendor, inb = _receive(session, qty=10, cost=10)
+    il = inb.lines[0]
+    bill = acct.create_ap_bill(
+        session, vendor_id=vendor.id, bill_date=JAN,
+        lines=[{"qty": 10, "unit_price": 10, "inbound_line_id": il.id}],
+    )
+    # not matched/posted -> still DRAFT
+    assert bill.status == APBillStatus.DRAFT
+    with pytest.raises(ValueError, match="draft"):
+        acct.create_payment(session, vendor_id=vendor.id, payment_date=JAN,
+                            applications=[{"ap_bill_id": bill.id, "amount": 100}])
+    # AP liability never moved
+    assert _ap_balance(session) == Decimal("0.00")
+
+
 def test_full_procure_to_pay_nets_to_cash_and_inventory(session):
     """After receive -> match -> pay: GR/IR=0, AP=0, inventory carries the cost,
     cash is reduced. The clearing account did its job."""

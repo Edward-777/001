@@ -180,6 +180,11 @@ def create_payment(
         bill = session.get(APBill, a["ap_bill_id"])
         if bill is None:
             raise ValueError("bill not found")
+        # A draft bill has not posted its AP liability to the GL yet, so paying it
+        # would credit cash against a payable that was never recognized — broken
+        # double-entry. It must be posted (-> OPEN) before any payment applies.
+        if bill.status == APBillStatus.DRAFT:
+            raise ValueError(f"bill {bill.bill_no} is still a draft — post/approve it before paying")
         new_balance = (Decimal(str(bill.balance)) - amt).quantize(_CENTS)
         bill.balance = new_balance
         bill.status = str(APBillStatus.PAID if new_balance <= 0 else APBillStatus.PARTIALLY_PAID)
