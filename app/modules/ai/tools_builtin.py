@@ -235,9 +235,25 @@ def _get_vendor_summary(session: Session, user: User, args: dict) -> dict:
         # one vendor -> return BOTH figures so the kind param can't be misread
         spend = sum((r["amount"] for r in acct.vendor_summary(session, kind="spend", vendor=vendor, limit=200)), Decimal("0"))
         owed = sum((r["amount"] for r in acct.vendor_summary(session, kind="ap", vendor=vendor, limit=200)), Decimal("0"))
-        if spend == 0 and owed == 0:
+        # GL-party AP (above) misses bills that live only in the AP subledger (e.g.
+        # manually entered or non-imported bills), so also surface this vendor's open
+        # bills directly — otherwise "no activity" is returned while a bill is owed.
+        open_bills, posted_owed = [], Decimal("0")
+        for b in acct.list_open_bills(session):
+            v = proc.get_vendor(session, b.vendor_id)
+            if v and vendor.lower() in v.name.lower():
+                open_bills.append({"bill_no": b.bill_no, "balance": str(b.balance),
+                                   "status": b.status})
+                if b.status != "draft":  # drafts aren't a recognized liability yet
+                    posted_owed += Decimal(str(b.balance))
+        if spend == 0 and owed == 0 and not open_bills:
             return {"vendor": vendor, "note": "no activity found for that vendor name"}
-        return {"vendor": vendor, "total_spend_all_time": str(spend), "amount_owed_now": str(owed)}
+        res = {"vendor": vendor, "total_spend_all_time": str(spend),
+               "amount_owed_now": str(owed)}
+        if open_bills:
+            res["open_bills"] = open_bills
+            res["open_bills_owed"] = str(posted_owed)  # excludes drafts
+        return res
 
     kind = "spend" if args.get("kind") == "spend" else "ap"
     rows = acct.vendor_summary(session, kind=kind, limit=20)

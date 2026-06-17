@@ -66,6 +66,33 @@ def test_finance_tools_inherit_permissions(session, employee):
     assert "get_trial_balance" in {t["function"]["name"] for t in registry.schemas_for(admin)}
 
 
+def test_vendor_summary_surfaces_subledger_open_bills(session, employee):
+    """An AP-subledger bill must show up when asking what we owe a vendor. The GL
+    'party' aggregation alone misses bills not present in (e.g. imported) ledger data,
+    which made the agent answer 'no activity' while a bill was actually owed."""
+    from datetime import date
+
+    from app.modules import accounting, inventory, procurement  # noqa: F401 register
+    from app.modules.accounting import service as acct
+    from app.modules.ai import tools_builtin as T
+    from app.modules.procurement import service as proc
+
+    Base.metadata.create_all(session.get_bind())
+    acct.seed_coa(session)
+    acct.seed_posting_rules(session)
+    v = proc.create_vendor(session, name="AWS")
+    session.flush()
+    exp = next(a for a in acct.list_accounts(session) if a.type == "expense")
+    bill = acct.create_ap_bill(session, vendor_id=v.id, bill_date=date(2026, 1, 15),
+                               lines=[{"description": "cloud", "qty": 1, "unit_price": 3200}])
+    acct.post_direct_bill(session, bill.id, exp.id)  # Dr expense / Cr AP -> status OPEN
+
+    out = T._get_vendor_summary(session, employee, {"vendor": "AWS"})
+    assert out.get("open_bills"), out  # not 'no activity'
+    assert out["open_bills"][0]["bill_no"] == bill.bill_no
+    assert out["open_bills_owed"] == "3200.00"
+
+
 def test_employee_can_see_own_requests_tool(session, employee):
     names = {t["function"]["name"] for t in registry.schemas_for(employee)}
     assert "list_my_requests" in names          # own data — no scope needed
