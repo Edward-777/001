@@ -137,6 +137,26 @@ def test_generate_financials_includes_cf_and_tb(session, month):
     assert fin["trial_balance"]["balanced"]
 
 
+def test_ap_control_excludes_non_trade_payables(session, month):
+    """A 'payable'-named account that is NOT the AP control (payroll/tax payables)
+    must not inflate the AP control balance — system_role is authoritative, name is
+    only a fallback. Regression: it used to sum every account named '%payable%'."""
+    from app.modules.accounting import reports
+    from app.modules.accounting.posting import Line
+
+    base = reports._control_balance(session, receivable=False, as_of=JAN_END)
+    assert base == Decimal("100.00")  # trade AP from the month fixture
+
+    payroll = acct.create_account(session, code="29999",
+                                  name="Payroll Wages & Tax Payables", type="liability")
+    rent = acct.get_account_by_code(session, "6100").id
+    acct.post_journal(session, entry_date=JAN,
+                      lines=[Line(rent, debit=50), Line(payroll.id, credit=50)])
+
+    after = reports._control_balance(session, receivable=False, as_of=JAN_END)
+    assert after == Decimal("100.00"), f"non-trade payable leaked into AP control: {after}"
+
+
 def test_subledger_ties_to_gl_control_accounts(session, month):
     """AP/AR/Inventory subledgers must equal their GL control accounts (P0-4)."""
     chk = acct.subledger_check(session, as_of=JAN_END)

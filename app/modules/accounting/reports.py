@@ -225,15 +225,23 @@ def vendor_summary(session: Session, *, kind: str = "ap", vendor: str | None = N
 
 
 def _control_balance(session: Session, *, receivable: bool, as_of: date | None) -> Decimal:
-    """GL balance of the AP/AR control account(s) — by system_role or name."""
+    """GL balance of the AP/AR control account(s).
+
+    system_role is authoritative: when any account is tagged with the role we sum
+    ONLY those. Name-matching is a fallback for legacy COAs with no role tag — used
+    alone it wrongly sweeps in non-trade accounts that merely contain 'payable'/
+    'receivable' in their name (e.g. 'Payroll Wages & Tax Payables'), so the AP
+    control would not equal trade Accounts Payable."""
     nets = _net_by_account(session, end=as_of)
     role = "ar" if receivable else "ap"
     pat = "receivable" if receivable else "payable"
+    accounts = list(_accounts(session).values())
+    tagged = [a for a in accounts if a.system_role == role]
+    selected = tagged or [a for a in accounts if pat in a.name.lower()]
     total = _ZERO
-    for a in _accounts(session).values():
-        if a.system_role == role or pat in a.name.lower():
-            net = nets.get(a.id, _ZERO)
-            total += net if a.type in ("asset", "expense") else -net
+    for a in selected:
+        net = nets.get(a.id, _ZERO)
+        total += net if a.type in ("asset", "expense") else -net
     return total.quantize(_ZERO)
 
 
