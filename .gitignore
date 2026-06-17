@@ -17,7 +17,7 @@ venv/
 /backups/
 
 # Local diagnostic output (not source)
-bench_results.txt
+bench*results.txt
 srv*.log
 
 # OS
