@@ -4,7 +4,7 @@ agent has memory and chats are reviewable (own; admins audit all)."""
 from __future__ import annotations
 
 import json
-import shutil
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -22,6 +22,42 @@ from .deps import require_login, templates
 
 router = APIRouter()
 _UPLOAD_DIR = Path("uploads")
+_MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+# Documents this ERP actually ingests (invoices, statements, policies, sheets).
+_ALLOWED_UPLOAD_EXT = {
+    ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".csv", ".tsv",
+    ".xlsx", ".xls", ".docx", ".txt", ".ofx", ".qbo",
+}
+
+
+def _safe_upload_dest(filename: str | None) -> Path:
+    """Return a write path GUARANTEED to sit inside _UPLOAD_DIR.
+
+    The client-supplied filename is never used as a path — we take only its
+    extension (allowlisted) and generate the on-disk name — so '..\\..\\dev.db'
+    or an absolute path cannot escape the uploads dir or clobber an existing file.
+    The resolve()+is_relative_to() check is belt-and-suspenders."""
+    ext = Path(filename or "").suffix.lower()
+    if ext not in _ALLOWED_UPLOAD_EXT:
+        raise ValueError(f"file type not allowed: {ext or '(none)'}")
+    base = _UPLOAD_DIR.resolve()
+    dest = (base / f"{uuid.uuid4().hex}{ext}").resolve()
+    if not dest.is_relative_to(base):
+        raise ValueError("unsafe upload path")
+    return dest
+
+
+def _save_capped(src, dest: Path) -> None:
+    """Stream an upload to disk, aborting past the size cap (no unbounded write)."""
+    written = 0
+    with dest.open("wb") as f:
+        while chunk := src.read(1024 * 1024):
+            written += len(chunk)
+            if written > _MAX_UPLOAD_BYTES:
+                f.close()
+                dest.unlink(missing_ok=True)
+                raise ValueError("file too large (max 25 MB)")
+            f.write(chunk)
 
 
 def _format_invoice(d: dict) -> str:
@@ -141,13 +177,11 @@ def assistant_upload(
     """Upload any document → classify it locally (§8.4) → ACL-tag + route: invoices
     are parsed, policies are indexed for RAG, statements are reconciled, else stored."""
     _UPLOAD_DIR.mkdir(exist_ok=True)
-    dest = _UPLOAD_DIR / (file.filename or "upload.bin")
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-
     conv = convo.get_or_create_active(session, user.id)
     note = f"[Uploaded: {file.filename}]"
     try:
+        dest = _safe_upload_dest(file.filename)
+        _save_capped(file.file, dest)
         category = classify.classify_file(str(dest))
         acl_scope, acl_level, route, _ = classify.routing_for(category)
         doc = docs.store_document(session, file_path=str(dest), filename=file.filename,
@@ -158,6 +192,8 @@ def assistant_upload(
         error = None
         convo.add_message(session, conv, "user", note)
         convo.add_message(session, conv, "assistant", reply)
+    except ValueError as exc:  # rejected upload (type/size/unsafe path)
+        reply, error = "", f"Upload rejected: {exc}"
     except Exception as exc:
         reply, error = "", f"Couldn't read that file: {type(exc).__name__}"
     return templates.TemplateResponse(

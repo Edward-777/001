@@ -209,3 +209,22 @@ def test_linkify_escapes_untrusted_llm_html():
 
     html = str(_linkify("<script>alert(1)</script>"))
     assert "<script>" not in html and "&lt;script&gt;" in html
+
+
+def test_upload_dest_is_confined_to_uploads_dir():
+    """Path-traversal / absolute filenames must never escape the uploads dir, and
+    disallowed extensions are rejected before anything is written to disk (F-crit:
+    /assistant/upload used the client filename verbatim -> arbitrary file write)."""
+    from app.web.ai_routes import _UPLOAD_DIR, _safe_upload_dest
+
+    base = _UPLOAD_DIR.resolve()
+    # traversal/absolute names with a disallowed extension are rejected outright
+    for name in ["..\..\dev.db", "../../dev.db", "C:\Windows\System32\evil.dll", "x.exe"]:
+        with pytest.raises(ValueError):
+            _safe_upload_dest(name)
+    # a traversal name with an ALLOWED extension is confined + server-renamed
+    dest = _safe_upload_dest("..\..\..\etc\payload.pdf")
+    assert dest.parent == base                     # stays inside uploads/
+    assert dest.suffix == ".pdf"
+    assert dest.name != "payload.pdf"              # generated name -> cannot clobber
+    assert dest.resolve().is_relative_to(base)
