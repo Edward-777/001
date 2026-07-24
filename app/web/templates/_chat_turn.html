@@ -12,7 +12,22 @@
            class="inline-flex items-center gap-1 mt-3 bg-emerald-600 text-white rounded px-3 py-1.5 text-sm hover:bg-emerald-700">
           ⬇ Download report (.xlsx)</a>
       {% endif %}
-      {% if tools %}
+      {% if timeline %}
+        {# execution timeline: every tool the agent ran this turn, in order #}
+        <div class="mt-3 border-t border-slate-100 pt-2 space-y-1">
+          {% for step in timeline %}
+          <div class="flex items-center gap-2 text-xs text-slate-500 font-mono">
+            {% if step.ok %}<span class="text-emerald-600">✓</span>
+            {% else %}<span class="text-amber-500">⚠</span>{% endif %}
+            <span>{{ step.tool }}</span>
+            {% if step.ms is not none %}
+            <span class="text-slate-300">·</span>
+            <span class="text-slate-400">{{ "%.1f s" | format(step.ms / 1000) if step.ms >= 1000 else step.ms ~ " ms" }}</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      {% elif tools %}
         <div class="mt-2 text-xs text-slate-400">
           {% for t in tools %}<span class="bg-slate-100 rounded px-2 py-0.5 mr-1">{{ t }}</span>{% endfor %}
         </div>

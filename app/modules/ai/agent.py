@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 from sqlalchemy.orm import Session
 
@@ -239,13 +240,16 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
         for call in calls:
             name = call.get("function", {}).get("name", "")
             args = _arguments(call)
+            started = time.perf_counter()
             if name in _SUBMIT_TOOLS and drafted_this_turn:
                 result = dict(_SUBMIT_BLOCKED)
             else:
                 result = registry.execute(name, args, session=session, user=user)
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             if name in _DRAFT_CREATE_TOOLS and "error" not in result:
                 drafted_this_turn = True
-            used.append({"tool": name, "args": args, "result": result})
+            used.append({"tool": name, "args": args, "result": result,
+                         "ok": "error" not in result, "ms": elapsed_ms})
             audit.record(session, actor_user_id=user.id, action="ai_tool",
                          entity_type=name, detail={"args": args, "ok": "error" not in result})
             messages.append({"role": "tool", "name": name, "content": json.dumps(result, default=str)})

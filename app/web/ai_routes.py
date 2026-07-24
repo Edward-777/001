@@ -106,6 +106,9 @@ def assistant_message(
     try:
         out = agent.run(session, user, message, history=history)
         reply, tools = out["reply"], [t["tool"] for t in out["tool_calls"]]
+        # execution timeline: what ran, in order, how long, and whether it succeeded
+        timeline = [{"tool": t["tool"], "ms": t.get("ms"), "ok": t.get("ok", True)}
+                    for t in out["tool_calls"]]
         error = None
         # surface a report download link (if a tool produced one) as a button
         for t in out["tool_calls"]:
@@ -114,14 +117,15 @@ def assistant_message(
                 download = res["download_url"]
                 break
     except Exception as exc:  # Ollama down, etc.
-        reply, tools, error = "", [], f"Assistant unavailable: {type(exc).__name__}"
+        reply, tools, timeline, error = "", [], [], f"Assistant unavailable: {type(exc).__name__}"
 
     if error is None:
         convo.add_message(session, conv, "user", message)
         convo.add_message(session, conv, "assistant", reply, tools=tools)
     return templates.TemplateResponse(
         request, "_chat_turn.html",
-        {"message": message, "reply": reply, "tools": tools, "error": error, "download": download},
+        {"message": message, "reply": reply, "tools": tools, "timeline": timeline,
+         "error": error, "download": download},
     )
 
 
