@@ -148,8 +148,61 @@ def get_po(session: Session, po_id: int) -> PurchaseOrder | None:
     return session.get(PurchaseOrder, po_id)
 
 
+def get_po_by_no(session: Session, po_no: str) -> PurchaseOrder | None:
+    return session.scalar(
+        select(PurchaseOrder).where(PurchaseOrder.po_no == po_no.strip().upper())
+    )
+
+
+def get_po_for_request(session: Session, request_id: int) -> PurchaseOrder | None:
+    return session.scalar(
+        select(PurchaseOrder).where(PurchaseOrder.request_id == request_id)
+    )
+
+
 def list_pos(session: Session, *, status: POStatus | None = None) -> list[PurchaseOrder]:
     stmt = select(PurchaseOrder)
     if status is not None:
         stmt = stmt.where(PurchaseOrder.status == str(status))
     return list(session.scalars(stmt))
+
+
+def cancel_po(session: Session, po_id: int) -> PurchaseOrder:
+    """Cancel a PO nothing has been received against (draft or open only)."""
+    po = session.get(PurchaseOrder, po_id)
+    if po is None:
+        raise ValueError("PO not found")
+    if po.status not in (str(POStatus.DRAFT), str(POStatus.OPEN)):
+        raise ValueError(f"cannot cancel a {po.status} PO")
+    if any(ln.qty_received > 0 for ln in po.lines):
+        raise ValueError("cannot cancel — goods were already received against this PO")
+    po.status = str(POStatus.CANCELED)
+    session.flush()
+    return po
+
+
+def close_po(session: Session, po_id: int) -> PurchaseOrder:
+    """Close a fully received PO."""
+    po = session.get(PurchaseOrder, po_id)
+    if po is None:
+        raise ValueError("PO not found")
+    if po.status != str(POStatus.RECEIVED):
+        raise ValueError(f"can only close a fully received PO (is {po.status})")
+    po.status = str(POStatus.CLOSED)
+    session.flush()
+    return po
+
+
+def deliver_po(session: Session, po_id: int) -> dict:
+    """How an issued PO reaches the vendor. Today: a downloadable document the
+    user sends themselves; at launch an email branch slots in HERE so no tool
+    or route has to change."""
+    po = session.get(PurchaseOrder, po_id)
+    if po is None:
+        raise ValueError("PO not found")
+    vendor = session.get(Vendor, po.vendor_id) if po.vendor_id else None
+    return {
+        "method": "download",
+        "download_url": f"/po/{po.id}/document",
+        "vendor_email": vendor.email if vendor else None,
+    }

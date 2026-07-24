@@ -75,6 +75,7 @@ def create_app() -> FastAPI:
     from .web.auth_routes import router as auth_router
     from .web.fleet_routes import router as fleet_router
     from .web.main_routes import router as main_router
+    from .web.procurement_routes import router as procurement_router
     from .web.sales_routes import router as sales_router
 
     app.include_router(auth_router)
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(ai_router)
     app.include_router(fleet_router)
     app.include_router(sales_router)
+    app.include_router(procurement_router)
 
     # Nightly backup scheduler (production only; off in dev/tests).
     if settings.enable_scheduler:

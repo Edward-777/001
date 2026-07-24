@@ -263,6 +263,86 @@ def _attach_document_to_vendor(session: Session, user: User, args: dict) -> dict
             "note": "attached"}
 
 
+def _resolve_po_ref(session: Session, args: dict):
+    """Find a PO by po_no, or via the approved request_no that spawned it."""
+    if args.get("po_no"):
+        return proc.get_po_by_no(session, str(args["po_no"]))
+    if args.get("request_no"):
+        req = appr.get_request_by_no(session, str(args["request_no"]))
+        return proc.get_po_for_request(session, req.id) if req else None
+    return None
+
+
+def _issue_po(session: Session, user: User, args: dict) -> dict:
+    po = _resolve_po_ref(session, args)
+    if po is None:
+        return {"error": "PO not found — pass po_no or the approved request_no "
+                         "(call list_pos to see drafts)"}
+    vendor = proc.find_vendor_by_name(session, str(args.get("vendor") or ""))
+    if vendor is None:
+        return {"error": "vendor not found — register it first with create_vendor"}
+    expected = None
+    if args.get("expected_date"):
+        try:
+            expected = date.fromisoformat(str(args["expected_date"]))
+        except ValueError:
+            return {"error": "expected_date must be YYYY-MM-DD"}
+    po = proc.issue_po(session, po.id, vendor_id=vendor.id, expected_date=expected)
+    delivery = proc.deliver_po(session, po.id)
+    return {"po_no": po.po_no, "status": po.status, "vendor": vendor.name,
+            "total": str(po.total), "expected_date": str(po.expected_date or ""),
+            "download_url": delivery["download_url"],
+            "note": ("PO issued. Give the user the download link so they can send the "
+                     "document to the vendor (email delivery arrives at launch).")}
+
+
+def _list_pos(session: Session, user: User, args: dict) -> list[dict]:
+    from ..procurement.models import POStatus
+
+    status = None
+    if args.get("status"):
+        try:
+            status = POStatus(str(args["status"]))
+        except ValueError:
+            pass
+    out = []
+    for po in proc.list_pos(session, status=status):
+        vendor = proc.get_vendor(session, po.vendor_id) if po.vendor_id else None
+        req = appr.get_request(session, po.request_id) if po.request_id else None
+        out.append({"po_no": po.po_no, "status": po.status,
+                    "vendor": vendor.name if vendor else None,
+                    "total": str(po.total),
+                    "request_no": req.request_no if req else None,
+                    "expected_date": str(po.expected_date or "")})
+    return out
+
+
+def _get_po(session: Session, user: User, args: dict) -> dict:
+    po = _resolve_po_ref(session, args)
+    if po is None:
+        return {"error": "PO not found — call list_pos"}
+    vendor = proc.get_vendor(session, po.vendor_id) if po.vendor_id else None
+    res = {"po_no": po.po_no, "status": po.status,
+           "vendor": vendor.name if vendor else None,
+           "order_date": str(po.order_date or ""),
+           "expected_date": str(po.expected_date or ""),
+           "total": str(po.total),
+           "lines": [{"description": ln.description, "qty_ordered": str(ln.qty_ordered),
+                      "qty_received": str(ln.qty_received), "unit_price": str(ln.unit_price),
+                      "amount": str(ln.amount)} for ln in po.lines]}
+    if po.status != "draft":
+        res["download_url"] = proc.deliver_po(session, po.id)["download_url"]
+    return res
+
+
+def _cancel_po(session: Session, user: User, args: dict) -> dict:
+    po = proc.get_po_by_no(session, str(args.get("po_no") or ""))
+    if po is None:
+        return {"error": "PO not found — call list_pos"}
+    po = proc.cancel_po(session, po.id)
+    return {"po_no": po.po_no, "status": po.status}
+
+
 def _get_vendor_details(session: Session, user: User, args: dict) -> dict:
     from ..documents import service as docs
 
@@ -847,6 +927,43 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {"vendor": {"type": "string"}},
                     "required": ["vendor"]},
         handler=_get_vendor_details, scope="procurement", level=1,
+    ),
+    Tool(
+        name="issue_po",
+        description=("Issue a DRAFT purchase order to a vendor (draft → open, ready to "
+                     "receive). The spend was already approved via the request chain — "
+                     "naming the vendor is the confirmation. Identify the PO by po_no or "
+                     "by the approved request_no. USE THIS for '발주해줘 / order it from X'."),
+        parameters={"type": "object", "properties": {
+            "po_no": {"type": "string"},
+            "request_no": {"type": "string"},
+            "vendor": {"type": "string"},
+            "expected_date": {"type": "string", "description": "YYYY-MM-DD (optional)"}},
+            "required": ["vendor"]},
+        handler=_issue_po, scope="procurement", level=2,
+    ),
+    Tool(
+        name="list_pos",
+        description=("List purchase orders (optionally by status: draft/open/"
+                     "partially_received/received/closed/canceled). Draft POs are approved "
+                     "spend still waiting for a vendor."),
+        parameters={"type": "object", "properties": {"status": {"type": "string"}}},
+        handler=_list_pos, scope="procurement", level=1,
+    ),
+    Tool(
+        name="get_po",
+        description="A purchase order's header, lines (ordered vs received), and document link.",
+        parameters={"type": "object", "properties": {
+            "po_no": {"type": "string"}, "request_no": {"type": "string"}}},
+        handler=_get_po, scope="procurement", level=1,
+    ),
+    Tool(
+        name="cancel_po",
+        description=("Cancel a draft/open purchase order nothing has been received "
+                     "against. Only when the user explicitly asks to cancel it."),
+        parameters={"type": "object", "properties": {"po_no": {"type": "string"}},
+                    "required": ["po_no"]},
+        handler=_cancel_po, scope="procurement", level=3,
     ),
     Tool(
         name="list_customers",

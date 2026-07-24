@@ -15,8 +15,18 @@ from . import service
 def on_request_approved(event: RequestApproved, session: Session) -> None:
     if event.request_type != "purchase":
         return
-    service.create_po_from_request(
+    po = service.create_po_from_request(
         session, request_id=event.request_id, lines=event.lines
+    )
+    # Tell the requester their spend is authorized and a draft PO awaits a vendor —
+    # they know where they wanted to buy, and in a founder-run org they can act on it.
+    from ..notifications import service as notify
+
+    notify.notify(
+        session, user_id=event.requester_id, type="po",
+        title=f"Draft PO {po.po_no} created",
+        body="Approved — tell the assistant which vendor to order from to issue it.",
+        link=f"/requests/{event.request_id}",
     )
 
 
