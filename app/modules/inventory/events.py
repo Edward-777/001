@@ -16,7 +16,9 @@ from ...core.events import Event
 class InboundPosted(Event):
     inbound_id: int
     entry_date: date
+    # lines: {product_id, product_type, qty, unit_cost, amount, po_line_id?}
     lines: list[dict] = field(default_factory=list)
+    po_id: int | None = None  # set when the receipt was made against a PO
 
 
 @dataclass

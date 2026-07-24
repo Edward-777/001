@@ -192,13 +192,15 @@ def post_inbound(session: Session, inbound_id: int) -> Inbound:
                 "qty": qty,
                 "unit_cost": unit_cost,
                 "amount": amount,
+                "po_line_id": line.po_line_id,
             }
         )
 
     inb.status = str(PostingStatus.POSTED)
     session.flush()
     bus.emit(
-        InboundPosted(inbound_id=inb.id, entry_date=inb.received_date, lines=snapshot),
+        InboundPosted(inbound_id=inb.id, entry_date=inb.received_date, lines=snapshot,
+                      po_id=inb.po_id),
         session,
     )
     return inb

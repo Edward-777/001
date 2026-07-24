@@ -246,12 +246,24 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
             else:
                 result = registry.execute(name, args, session=session, user=user)
             elapsed_ms = int((time.perf_counter() - started) * 1000)
-            if name in _DRAFT_CREATE_TOOLS and "error" not in result:
+            # errors live at the top level (registry/permission) OR inside the handler
+            # result ({"result": {"error": ...}}) — both mean the action did NOT happen.
+            inner = result.get("result")
+            failed = "error" in result or (isinstance(inner, dict) and "error" in inner)
+            if failed:
+                # Deterministic honesty backstop: qwen has been observed claiming success
+                # after a failed call. Stamp the failure into the very data it reads back.
+                result = dict(result)
+                result["action_failed"] = True
+                result["instruction"] = ("THIS ACTION FAILED — nothing was recorded. Tell "
+                                         "the user it failed and why. Do NOT claim it "
+                                         "succeeded or invent an outcome.")
+            if name in _DRAFT_CREATE_TOOLS and not failed:
                 drafted_this_turn = True
             used.append({"tool": name, "args": args, "result": result,
-                         "ok": "error" not in result, "ms": elapsed_ms})
+                         "ok": not failed, "ms": elapsed_ms})
             audit.record(session, actor_user_id=user.id, action="ai_tool",
-                         entity_type=name, detail={"args": args, "ok": "error" not in result})
+                         entity_type=name, detail={"args": args, "ok": not failed})
             messages.append({"role": "tool", "name": name, "content": json.dumps(result, default=str)})
 
     return {"reply": "(stopped: tool-iteration limit reached)", "tool_calls": used}

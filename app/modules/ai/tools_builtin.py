@@ -442,18 +442,67 @@ def _get_trial_balance(session: Session, user: User, args: dict) -> dict:
 # ---- procure-to-pay (operational writes) --------------------------------
 
 def _receive_inventory(session: Session, user: User, args: dict) -> dict:
-    """Record a goods receipt → updates stock + books Dr Inventory / Cr GR-IR."""
-    p = inv.get_product_by_sku(session, args.get("sku", ""))
+    """Record a goods receipt → updates stock + books Dr Inventory / Cr GR-IR.
+    With po_no: receipt is validated against the PO (over-receipt rejected) and
+    the unit cost defaults to the PO line's price — the humanly-approved figure."""
+    from decimal import Decimal
+
+    qty = float(args.get("qty") or 0)
+    if qty <= 0:
+        return {"error": "need qty > 0 — ask the user first"}
+
+    po = po_line = None
+    if args.get("po_no"):
+        po = proc.get_po_by_no(session, str(args["po_no"]))
+        if po is None:
+            return {"error": "PO not found — call list_pos"}
+        if po.status == "draft":
+            return {"error": f"{po.po_no} is still a draft — issue it to a vendor first (issue_po)"}
+        if po.status not in ("open", "partially_received"):
+            return {"error": f"{po.po_no} is {po.status} — nothing left to receive against it"}
+
+    p = inv.get_product_by_sku(session, args.get("sku", "")) if args.get("sku") else None
+    if po is not None:
+        if p is not None:
+            po_line = next((ln for ln in po.lines if ln.product_id == p.id), None)
+        open_lines = [ln for ln in po.lines
+                      if Decimal(str(ln.qty_received)) < Decimal(str(ln.qty_ordered))]
+        if po_line is None and len(open_lines) == 1:
+            po_line = open_lines[0]
+            if p is None and po_line.product_id:
+                p = inv.get_product(session, po_line.product_id)
+        if po_line is None:
+            return {"error": f"{po.po_no} has multiple open lines — specify which SKU: "
+                    + "; ".join(f"'{ln.description}' ({ln.qty_ordered - ln.qty_received} open)"
+                                for ln in open_lines)}
+        errors = proc.validate_receipt_against_po(po, [{"po_line_id": po_line.id, "qty": qty}])
+        if errors:
+            return {"error": errors[0] + " — a genuine overshipment must be received "
+                                         "WITHOUT the po_no (ad-hoc receipt)"}
     if p is None:
         return {"error": "product not found — call list_products for valid SKUs"}
-    qty, cost = float(args.get("qty") or 0), float(args.get("unit_cost") or 0)
-    if qty <= 0 or cost <= 0:
-        return {"error": "need qty AND unit_cost (both > 0) — ask the user first"}
-    inb = inv.create_inbound(session, lines=[{"product_id": p.id, "qty": qty, "unit_cost": cost}])
+
+    cost = float(args.get("unit_cost") or 0)
+    if cost <= 0:
+        if po_line is not None:
+            cost = float(po_line.unit_price)  # cost comes from the approved PO, not the model
+        else:
+            return {"error": "need qty AND unit_cost (both > 0) — ask the user first"}
+
+    line = {"product_id": p.id, "qty": qty, "unit_cost": cost}
+    if po_line is not None:
+        line["po_line_id"] = po_line.id
+    inb = inv.create_inbound(session, po_id=po.id if po else None, lines=[line])
     inv.post_inbound(session, inb.id)
     bal = inv.get_stock(session, p.id)
-    return {"inbound_no": inb.inbound_no, "sku": p.sku, "received_qty": str(qty),
-            "qty_on_hand": str(bal.qty_on_hand) if bal else "0"}
+    res = {"inbound_no": inb.inbound_no, "sku": p.sku, "received_qty": str(qty),
+           "unit_cost": str(cost),
+           "qty_on_hand": str(bal.qty_on_hand) if bal else "0"}
+    if po is not None:
+        remaining = Decimal(str(po_line.qty_ordered)) - Decimal(str(po_line.qty_received))
+        res.update({"po_no": po.po_no, "po_status": po.status,
+                    "remaining_on_line": str(remaining)})
+    return res
 
 
 def _issue_inventory(session: Session, user: User, args: dict) -> dict:
@@ -1022,12 +1071,17 @@ _BUILTIN = [
     ),
     Tool(
         name="receive_inventory",
-        description=("Record a goods receipt: increases stock and books it. Needs the product "
-                     "SKU, quantity, and unit cost. Returns the inbound number (use it to record "
-                     "the vendor's bill)."),
+        description=("Record a goods receipt: increases stock and books it. If the user "
+                     "mentioned an order/PO, pass po_no — the receipt is then validated "
+                     "against the PO (over-receipt is rejected; receive a genuine "
+                     "overshipment WITHOUT po_no) and unit_cost defaults to the PO price. "
+                     "Without a PO: needs sku, qty AND unit_cost. Returns the inbound "
+                     "number (use it to record the vendor's bill)."),
         parameters={"type": "object", "properties": {
-            "sku": {"type": "string"}, "qty": {"type": "number"}, "unit_cost": {"type": "number"}},
-            "required": ["sku", "qty", "unit_cost"]},
+            "sku": {"type": "string"}, "qty": {"type": "number"},
+            "unit_cost": {"type": "number"},
+            "po_no": {"type": "string", "description": "e.g. PO-2026-0001"}},
+            "required": ["qty"]},
         handler=_receive_inventory, scope="inventory", level=2,
     ),
     Tool(

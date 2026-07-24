@@ -193,6 +193,46 @@ def close_po(session: Session, po_id: int) -> PurchaseOrder:
     return po
 
 
+def validate_receipt_against_po(po: PurchaseOrder, allocations: list[dict]) -> list[str]:
+    """Reject over-receipts BEFORE anything posts. allocations: [{po_line_id, qty}].
+    Genuine overshipments are received ad hoc (without a PO) — a deliberate escape
+    hatch so an AI-typed quantity can never silently overrun the ordered amount."""
+    errors: list[str] = []
+    by_id = {ln.id: ln for ln in po.lines}
+    for alloc in allocations:
+        ln = by_id.get(alloc.get("po_line_id"))
+        if ln is None:
+            errors.append(f"line {alloc.get('po_line_id')} is not on {po.po_no}")
+            continue
+        remaining = Decimal(str(ln.qty_ordered)) - Decimal(str(ln.qty_received))
+        if Decimal(str(alloc.get("qty", 0))) > remaining:
+            errors.append(
+                f"over-receipt on '{ln.description}': {alloc.get('qty')} exceeds the "
+                f"remaining {remaining} of {ln.qty_ordered} ordered"
+            )
+    return errors
+
+
+def apply_receipt(session: Session, *, po_id: int, receipts: list[dict]) -> PurchaseOrder:
+    """Roll received quantities into the PO and advance its status. Driven by the
+    InboundPosted event so every receiving path (chat, web, fleet) behaves alike."""
+    po = session.get(PurchaseOrder, po_id)
+    if po is None:
+        raise ValueError("PO not found")
+    by_id = {ln.id: ln for ln in po.lines}
+    for r in receipts:
+        ln = by_id.get(r.get("po_line_id"))
+        if ln is None:
+            continue
+        ln.qty_received = Decimal(str(ln.qty_received)) + Decimal(str(r["qty"]))
+    if all(Decimal(str(ln.qty_received)) >= Decimal(str(ln.qty_ordered)) for ln in po.lines):
+        po.status = str(POStatus.RECEIVED)
+    elif any(Decimal(str(ln.qty_received)) > 0 for ln in po.lines):
+        po.status = str(POStatus.PARTIALLY_RECEIVED)
+    session.flush()
+    return po
+
+
 def deliver_po(session: Session, po_id: int) -> dict:
     """How an issued PO reaches the vendor. Today: a downloadable document the
     user sends themselves; at launch an email branch slots in HERE so no tool
