@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    app_name: str = "001 ERP"
+    app_name: str = "001"
 
     # Dev: SQLite for instant run. Production: PostgreSQL (30 users + pgvector).
     database_url: str = "sqlite:///./dev.db"

@@ -1,7 +1,8 @@
-# 001 — AI-native Local ERP
+# 001 — Enterprise AI Operating System
 
-Lightweight, fully-local, AI-driven ERP for small businesses. Competes with QuickBooks;
-sold as a single-tenant appliance bundled with server hardware.
+A fully-local AI operating system for running a company: AI agents execute the work
+(finance, procurement, inventory, sales — with IT/HR and more to come), humans approve,
+everything is audited. Sold as a single-tenant appliance bundled with server hardware.
 
 ## Docs
 - **[OVERVIEW.md](OVERVIEW.md)** — one-page master summary (start here)

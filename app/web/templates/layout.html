@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}001 ERP{% endblock %}</title>
+  <title>{% block title %}001{% endblock %}</title>
   <!-- NOTE: CDN for dev; a fully-local appliance vendors these assets (DESIGN). -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
@@ -12,7 +12,7 @@
 {% if user %}
 <div class="flex min-h-screen">
   <aside class="w-56 bg-slate-900 text-slate-200 p-4 space-y-1">
-    <div class="text-lg font-bold text-white mb-4">001 ERP</div>
+    <div class="text-lg font-bold text-white mb-4">001</div>
     <a href="/" class="block px-3 py-2 rounded hover:bg-slate-700">Dashboard</a>
     <a href="/assistant" class="block px-3 py-2 rounded hover:bg-slate-700">✨ Assistant</a>
     <a href="/fleet" class="block px-3 py-2 rounded hover:bg-slate-700">📥 Inbox</a>

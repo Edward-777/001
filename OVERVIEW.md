@@ -1,4 +1,4 @@
-# 001 — 마스터 요약 (한 장)
+# 001 — Enterprise AI Operating System · 마스터 요약 (한 장)
 
 > 프로젝트 **001** 설계의 전체 그림. 상세는 6개 문서로. (2026-06-05 갱신 — D6 자율 플릿·O2C·코드리뷰 반영)
 > 📂 [DESIGN.md](DESIGN.md) · [docs/SCHEMA.md](docs/SCHEMA.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/POLICIES.md](docs/POLICIES.md) · [docs/AI-AGENT.md](docs/AI-AGENT.md)
