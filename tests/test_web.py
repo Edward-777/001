@@ -198,7 +198,7 @@ def test_linkify_makes_report_link_downloadable():
         "FS: [/reports/export?kind=closing_package&period=2025]"
         "(/reports/export?kind=closing_package&period=2025)"))
     assert '<a href="/reports/export?kind=closing_package&amp;period=2025"' in html
-    assert "download" in html and "리포트 다운로드" in html
+    assert "download" in html and "Download report" in html
     # bare URL form is linkified too
     assert "<a href=" in str(_linkify("get /reports/export?kind=financials&period=2025"))
 

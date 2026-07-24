@@ -26,7 +26,7 @@ work into role-drafted tasks the founder approves from an **Approval Inbox
 month-end close, ⚠️ anomaly alerts, 📊 cash-runway insight (cash/burn/runway/
 "can we afford X"), and a full **order-to-cash pipeline (`/sales`)** — quote →
 PO → ship (packing list) → invoice, with downloadable customer documents.
-Everything is draft-only until a human approves. **213 tests passing.**
+Everything is draft-only until a human approves. **227 tests passing.**
 
 ## Setup (requires Python 3.12+)
 ```bash
@@ -37,7 +37,7 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 213 tests
+pytest                          # 227 tests
 ```
 
 > Dev uses SQLite for instant run. Production = PostgreSQL (set `DATABASE_URL`).
