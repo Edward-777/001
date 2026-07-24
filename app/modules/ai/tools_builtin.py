@@ -408,13 +408,45 @@ def _pay_vendor(session: Session, user: User, args: dict) -> dict:
 
 
 def _list_my_approvals(session: Session, user: User, args: dict) -> list[dict]:
-    return [{"id": r.id, "request_no": r.request_no, "title": r.title,
-             "amount": str(r.total_amount)} for r in appr.pending_for_user(session, user.id)]
+    out = []
+    for r in appr.pending_for_user(session, user.id):
+        requester = auth.get_user(session, r.requester_id)
+        lines = [{"description": ln.description, "qty": str(ln.qty),
+                  "unit_price": str(ln.estimated_unit_price)}
+                 for ln in appr.request_lines(session, r.id)]
+        out.append({"id": r.id, "request_no": r.request_no, "title": r.title,
+                    "type": r.type, "amount": str(r.total_amount),
+                    "requester": requester.name if requester else None,
+                    "lines": lines})
+    return out
+
+
+def _resolve_request_ref(session: Session, args: dict):
+    """Find a request by request_no (preferred) or legacy numeric request_id."""
+    no = str(args.get("request_no") or "").strip()
+    if no:
+        return appr.get_request_by_no(session, no)
+    rid = args.get("request_id")
+    if rid is not None:
+        return appr.get_request(session, int(rid))
+    return None
 
 
 def _approve_request(session: Session, user: User, args: dict) -> dict:
-    req = appr.approve(session, int(args["request_id"]), user.id)
+    req = _resolve_request_ref(session, args)
+    if req is None:
+        return {"error": "request not found — call list_my_approvals for the current list"}
+    req = appr.approve(session, req.id, user.id, comment=args.get("comment"))
     return {"request_no": req.request_no, "status": req.status}
+
+
+def _reject_request(session: Session, user: User, args: dict) -> dict:
+    req = _resolve_request_ref(session, args)
+    if req is None:
+        return {"error": "request not found — call list_my_approvals for the current list"}
+    req = appr.reject(session, req.id, user.id, comment=args.get("comment"))
+    return {"request_no": req.request_no, "status": req.status,
+            "comment": args.get("comment")}
 
 
 def _get_stock(session: Session, user: User, args: dict) -> dict:
@@ -552,16 +584,33 @@ _BUILTIN = [
     ),
     Tool(
         name="list_my_approvals",
-        description="List requests currently awaiting the current user's approval.",
+        description=("List requests currently awaiting the current user's approval, with "
+                     "requester and line items. USE THIS for 'what do I need to approve / "
+                     "내가 승인할 거 뭐야'."),
         parameters={"type": "object", "properties": {}},
         handler=_list_my_approvals,
     ),
     Tool(
         name="approve_request",
-        description="Approve a request that is awaiting the current user's approval.",
-        parameters={"type": "object", "properties": {"request_id": {"type": "integer"}},
-                    "required": ["request_id"]},
+        description=("Approve a request awaiting the current user's approval, by request_no "
+                     "(e.g. REQ-2026-0003). Optional comment. Approve ONLY requests the user "
+                     "explicitly named — never approve on your own initiative."),
+        parameters={"type": "object", "properties": {
+            "request_no": {"type": "string"},
+            "request_id": {"type": "integer"},
+            "comment": {"type": "string"}}},
         handler=_approve_request,
+    ),
+    Tool(
+        name="reject_request",
+        description=("Reject a request awaiting the current user's approval, by request_no. "
+                     "Pass the user's stated reason as comment when they gave one. Reject "
+                     "ONLY requests the user explicitly named."),
+        parameters={"type": "object", "properties": {
+            "request_no": {"type": "string"},
+            "request_id": {"type": "integer"},
+            "comment": {"type": "string"}}},
+        handler=_reject_request,
     ),
     Tool(
         name="get_stock",

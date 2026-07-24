@@ -72,22 +72,67 @@ def request_create(
     return RedirectResponse("/requests", status_code=303)
 
 
+@router.get("/requests/{request_id}", response_class=HTMLResponse)
+def request_detail(request: Request, request_id: int, user=Depends(require_login),
+                   session: Session = Depends(get_session)):
+    """Request detail — the page every approval/rejection notification links to.
+    Visible to the requester, anyone on the approval chain, and admins."""
+    from fastapi import HTTPException
+
+    from ..modules.auth import service as auth
+
+    req = appr.get_request(session, request_id)
+    if req is None:
+        raise HTTPException(status_code=404)
+    chain = appr.approval_lines(session, req.id)
+    allowed = (req.requester_id == user.id
+               or any(ln.approver_id == user.id for ln in chain)
+               or user.role == "admin")
+    if not allowed:
+        raise HTTPException(status_code=404)  # don't reveal existence
+    names = {uid: (auth.get_user(session, uid).name if auth.get_user(session, uid) else f"#{uid}")
+             for uid in {req.requester_id, *(ln.approver_id for ln in chain)}}
+    return templates.TemplateResponse(request, "request_detail.html", {
+        "user": user, "req": req, "lines": appr.request_lines(session, req.id),
+        "chain": chain, "names": names,
+    })
+
+
+def _render_approvals(request: Request, user, session: Session, error: str | None = None):
+    pending = appr.pending_for_user(session, user.id)
+    lines_by_req = {r.id: appr.request_lines(session, r.id) for r in pending}
+    from ..modules.auth import service as auth
+    requesters = {r.id: (auth.get_user(session, r.requester_id).name
+                         if auth.get_user(session, r.requester_id) else "")
+                  for r in pending}
+    return templates.TemplateResponse(request, "approvals.html", {
+        "user": user, "pending": pending, "lines_by_req": lines_by_req,
+        "requesters": requesters, "error": error,
+    })
+
+
 @router.get("/approvals", response_class=HTMLResponse)
 def approvals_inbox(request: Request, user=Depends(require_login), session: Session = Depends(get_session)):
-    pending = appr.pending_for_user(session, user.id)
-    return templates.TemplateResponse(request, "approvals.html", {"user": user, "pending": pending})
+    return _render_approvals(request, user, session)
 
 
 @router.post("/approvals/{request_id}/approve")
-def approve(request_id: int, user=Depends(require_login), session: Session = Depends(get_session)):
-    appr.approve(session, request_id, user.id)
+def approve(request: Request, request_id: int, user=Depends(require_login),
+            session: Session = Depends(get_session)):
+    try:
+        appr.approve(session, request_id, user.id)
+    except (PermissionError, ValueError) as exc:  # stale click / not your turn — no 500
+        return _render_approvals(request, user, session, error=str(exc))
     return RedirectResponse("/approvals", status_code=303)
 
 
 @router.post("/approvals/{request_id}/reject")
-def reject(request_id: int, comment: str = Form(""), user=Depends(require_login),
-           session: Session = Depends(get_session)):
-    appr.reject(session, request_id, user.id, comment=comment)
+def reject(request: Request, request_id: int, comment: str = Form(""),
+           user=Depends(require_login), session: Session = Depends(get_session)):
+    try:
+        appr.reject(session, request_id, user.id, comment=comment)
+    except (PermissionError, ValueError) as exc:
+        return _render_approvals(request, user, session, error=str(exc))
     return RedirectResponse("/approvals", status_code=303)
 
 

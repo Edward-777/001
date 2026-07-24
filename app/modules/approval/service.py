@@ -252,6 +252,17 @@ def get_request_by_no(session: Session, request_no: str) -> Request | None:
     return session.scalar(select(Request).where(Request.request_no == request_no))
 
 
+def request_lines(session: Session, request_id: int) -> list[RequestLine]:
+    """Line items of a request — approval surfaces show WHAT is being bought,
+    not just a title and a total."""
+    return list(
+        session.scalars(
+            select(RequestLine).where(RequestLine.request_id == request_id)
+            .order_by(RequestLine.id)
+        )
+    )
+
+
 def approval_lines(session: Session, request_id: int) -> list[ApprovalLine]:
     """The approval steps (ordered) for a request — real routing, not a guess."""
     return _lines(session, request_id)

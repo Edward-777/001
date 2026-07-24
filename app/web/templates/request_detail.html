@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+{% block title %}{{ req.request_no }} — 001{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+  <div class="flex items-center justify-between mb-1">
+    <h1 class="text-2xl font-bold">{{ req.title }}</h1>
+    {% set badge = {'draft': 'bg-slate-100 text-slate-600',
+                    'submitted': 'bg-amber-100 text-amber-700',
+                    'approved': 'bg-emerald-100 text-emerald-700',
+                    'rejected': 'bg-rose-100 text-rose-700'} %}
+    <span class="text-xs rounded-full px-3 py-1 {{ badge.get(req.status, 'bg-slate-100 text-slate-600') }}">{{ req.status }}</span>
+  </div>
+  <div class="text-sm text-slate-500 mb-6">
+    {{ req.request_no }} · {{ req.type }} · requested by {{ names.get(req.requester_id, '?') }}
+    {% if req.submitted_at %} · submitted {{ req.submitted_at.strftime('%Y-%m-%d') }}{% endif %}
+  </div>
+
+  {% if req.description %}
+  <div class="bg-white rounded-xl shadow p-4 mb-4 text-sm text-slate-700 whitespace-pre-wrap">{{ req.description }}</div>
+  {% endif %}
+
+  <div class="bg-white rounded-xl shadow p-4 mb-4">
+    <h2 class="text-sm font-semibold text-slate-500 uppercase mb-2">Lines</h2>
+    <table class="w-full text-sm">
+      <tr class="text-left text-slate-400">
+        <th class="py-1">Description</th><th class="py-1 text-right">Qty</th>
+        <th class="py-1 text-right">Unit price</th><th class="py-1 text-right">Amount</th>
+      </tr>
+      {% for ln in lines %}
+      <tr class="border-t border-slate-100">
+        <td class="py-1.5">{{ ln.description }}</td>
+        <td class="py-1.5 text-right">{{ ln.qty | money }}</td>
+        <td class="py-1.5 text-right">${{ ln.estimated_unit_price | money }}</td>
+        <td class="py-1.5 text-right">${{ ln.amount | money }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="border-t-2 border-slate-200 font-semibold">
+        <td class="py-1.5" colspan="3">Total</td>
+        <td class="py-1.5 text-right">${{ req.total_amount | money }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="bg-white rounded-xl shadow p-4">
+    <h2 class="text-sm font-semibold text-slate-500 uppercase mb-2">Approval chain</h2>
+    {% if not chain %}
+    <div class="text-sm text-slate-400">Auto-approved — no approver above the requester.</div>
+    {% endif %}
+    <div class="space-y-1">
+      {% for ln in chain %}
+      <div class="flex items-center gap-3 text-sm">
+        <span class="text-slate-400 w-12">Step {{ ln.step_no }}</span>
+        <span class="w-40">{{ names.get(ln.approver_id, '?') }}</span>
+        {% if ln.status == 'approved' %}<span class="text-emerald-600">✓ approved</span>
+        {% elif ln.status == 'rejected' %}<span class="text-rose-600">✗ rejected</span>
+        {% elif ln.status == 'pending' %}<span class="text-amber-600">● pending</span>
+        {% else %}<span class="text-slate-400">{{ ln.status }}</span>{% endif %}
+        {% if ln.comment %}<span class="text-slate-500 italic">— "{{ ln.comment }}"</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

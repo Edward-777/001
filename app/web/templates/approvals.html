@@ -2,21 +2,42 @@
 {% block title %}Approvals — 001{% endblock %}
 {% block content %}
 <h1 class="text-2xl font-bold mb-6">Approvals inbox</h1>
+{% if error %}
+<div class="mb-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-2 text-sm">{{ error }}</div>
+{% endif %}
 <div class="space-y-3">
 {% for r in pending %}
-  <div class="bg-white rounded-xl shadow p-5 flex items-center justify-between">
-    <div>
-      <div class="font-semibold">{{ r.title }}</div>
-      <div class="text-sm text-slate-500">{{ r.request_no }} · {{ r.type }} · ${{ r.total_amount | money }}</div>
+  <div class="bg-white rounded-xl shadow p-5">
+    <div class="flex items-center justify-between">
+      <div>
+        <a href="/requests/{{ r.id }}" class="font-semibold hover:underline">{{ r.title }}</a>
+        <div class="text-sm text-slate-500">{{ r.request_no }} · {{ r.type }} · ${{ r.total_amount | money }}
+          {% if requesters.get(r.id) %} · requested by {{ requesters[r.id] }}{% endif %}</div>
+      </div>
+      <div class="flex gap-2 items-start">
+        <form method="post" action="/approvals/{{ r.id }}/approve">
+          <button class="bg-emerald-600 text-white rounded px-4 py-2 hover:bg-emerald-700">Approve</button>
+        </form>
+        <form method="post" action="/approvals/{{ r.id }}/reject" class="flex gap-2">
+          <input name="comment" placeholder="Reason (optional)"
+                 class="border rounded px-2 py-2 text-sm w-40">
+          <button class="bg-rose-600 text-white rounded px-4 py-2 hover:bg-rose-700">Reject</button>
+        </form>
+      </div>
     </div>
-    <div class="flex gap-2">
-      <form method="post" action="/approvals/{{ r.id }}/approve">
-        <button class="bg-emerald-600 text-white rounded px-4 py-2 hover:bg-emerald-700">Approve</button>
-      </form>
-      <form method="post" action="/approvals/{{ r.id }}/reject">
-        <button class="bg-rose-600 text-white rounded px-4 py-2 hover:bg-rose-700">Reject</button>
-      </form>
-    </div>
+    {% set rl = lines_by_req.get(r.id) or [] %}
+    {% if rl %}
+    <table class="text-sm mt-3 text-slate-600">
+      {% for ln in rl %}
+      <tr>
+        <td class="pr-4">{{ ln.description }}</td>
+        <td class="pr-4 text-slate-400">× {{ ln.qty | money }}</td>
+        <td class="pr-4">@ ${{ ln.estimated_unit_price | money }}</td>
+        <td>= ${{ ln.amount | money }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
   </div>
 {% else %}
   <div class="text-slate-400">Nothing awaiting your approval.</div>

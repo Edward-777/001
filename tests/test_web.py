@@ -228,3 +228,36 @@ def test_upload_dest_is_confined_to_uploads_dir():
     assert dest.suffix == ".pdf"
     assert dest.name != "payload.pdf"              # generated name -> cannot clobber
     assert dest.resolve().is_relative_to(base)
+
+
+def test_request_detail_visible_to_participants_only(client):
+    _login(client, "staff@x")
+    client.post("/requests", data={"title": "Chairs", "type": "purchase",
+                                   "qty": 2, "unit_price": 50})
+    r = client.get("/requests/1")
+    assert r.status_code == 200 and "Chairs" in r.text  # requester sees it
+    _login(client, "ceo@x")
+    assert client.get("/requests/1").status_code == 200  # approver (and admin) sees it
+    _login(client, "clerk@x")
+    assert client.get("/requests/1").status_code == 404  # stranger: hidden, not 403
+
+
+def test_out_of_turn_approval_is_friendly_error_not_500(client):
+    _login(client, "staff@x")
+    client.post("/requests", data={"title": "Desks", "type": "purchase",
+                                   "qty": 1, "unit_price": 80})
+    _login(client, "clerk@x")  # not the approver
+    r = client.post("/approvals/1/approve")
+    assert r.status_code == 200
+    assert "not your turn" in r.text
+
+
+def test_reject_with_comment_persists_to_detail_page(client):
+    _login(client, "staff@x")
+    client.post("/requests", data={"title": "Sofas", "type": "purchase",
+                                   "qty": 1, "unit_price": 300})
+    _login(client, "ceo@x")
+    r = client.post("/approvals/1/reject", data={"comment": "too pricey"})
+    assert r.status_code == 303
+    detail = client.get("/requests/1")
+    assert "too pricey" in detail.text
