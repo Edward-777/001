@@ -39,7 +39,7 @@ def _linkify(text: str | None) -> Markup:
         href = m.group(2) or m.group(3)
         label = m.group(1)
         if not label or label.startswith("/reports/export"):
-            label = "⬇ 리포트 다운로드 (.xlsx)"
+            label = "⬇ Download report (.xlsx)"
         return (f'<a href="{href}" download '
                 'class="text-emerald-700 font-medium underline '
                 f'hover:text-emerald-900">{label}</a>')
