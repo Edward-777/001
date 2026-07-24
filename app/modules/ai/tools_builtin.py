@@ -206,6 +206,77 @@ def _list_vendors(session: Session, user: User, args: dict) -> list[dict]:
     return [{"name": v.name, "terms": v.payment_terms} for v in proc.list_vendors(session)]
 
 
+def _create_vendor(session: Session, user: User, args: dict) -> dict:
+    from ..documents import service as docs  # noqa: F401  (import parity with attach)
+    from ..procurement.models import PaymentTerms
+
+    name = str(args.get("name") or "").strip()
+    if not name:
+        return {"error": "vendor name is required"}
+    existing = proc.find_vendor_by_name(session, name)
+    if existing is not None:
+        return {"error": f"vendor already exists: {existing.name} (vendor_id {existing.id}) "
+                         "— use update_vendor to change its details"}
+    try:
+        terms = PaymentTerms(args.get("payment_terms") or "net30")
+    except ValueError:
+        return {"error": "unknown payment_terms — one of due_on_receipt/net15/net30/net60"}
+    v = proc.create_vendor(
+        session, name=name, payment_terms=terms, tax_id=args.get("tax_id"),
+        is_1099=bool(args.get("is_1099", False)), email=args.get("email"),
+        phone=args.get("phone"), address=args.get("address"),
+    )
+    return {"vendor_id": v.id, "name": v.name, "payment_terms": v.payment_terms,
+            "email": v.email, "phone": v.phone, "address": v.address,
+            "tax_id": v.tax_id, "is_1099": v.is_1099,
+            "note": ("Registered. Ask the user to upload required documents (e.g. a W-9); "
+                     "after they upload one, call attach_document_to_vendor.")}
+
+
+def _update_vendor(session: Session, user: User, args: dict) -> dict:
+    v = proc.find_vendor_by_name(session, str(args.get("vendor") or ""))
+    if v is None:
+        return {"error": "vendor not found — call list_vendors"}
+    updates = {k: args[k] for k in
+               ("name", "email", "phone", "address", "tax_id", "payment_terms", "is_1099")
+               if k in args and args[k] is not None}
+    if not updates:
+        return {"error": "no fields to update — pass the fields the user wants changed"}
+    v = proc.update_vendor(session, v.id, **updates)
+    return {"vendor_id": v.id, "name": v.name, "updated": sorted(updates)}
+
+
+def _attach_document_to_vendor(session: Session, user: User, args: dict) -> dict:
+    from ..documents import service as docs
+
+    v = proc.find_vendor_by_name(session, str(args.get("vendor") or ""))
+    if v is None:
+        return {"error": "vendor not found — call list_vendors"}
+    doc_id = args.get("document_id")
+    doc = docs.get_document(session, int(doc_id)) if doc_id else \
+        docs.latest_unlinked_upload(session, user.id)
+    if doc is None:
+        return {"error": "no document to attach — ask the user to upload the file first, "
+                         "then call this again"}
+    docs.link_document(session, doc.id, linked_type="vendor", linked_id=v.id)
+    return {"vendor": v.name, "document_id": doc.id, "filename": doc.filename,
+            "note": "attached"}
+
+
+def _get_vendor_details(session: Session, user: User, args: dict) -> dict:
+    from ..documents import service as docs
+
+    v = proc.find_vendor_by_name(session, str(args.get("vendor") or ""))
+    if v is None:
+        return {"error": "vendor not found — call list_vendors"}
+    attached = [{"document_id": d.id, "filename": d.filename}
+                for d in docs.list_linked(session, "vendor", v.id)]
+    return {"vendor_id": v.id, "name": v.name, "email": v.email, "phone": v.phone,
+            "address": v.address, "tax_id": v.tax_id, "is_1099": v.is_1099,
+            "payment_terms": v.payment_terms, "active": v.is_active,
+            "documents": attached}
+
+
 def _list_customers(session: Session, user: User, args: dict) -> list[dict]:
     return [{"name": c.name, "terms": c.payment_terms} for c in sls.list_customers(session)]
 
@@ -725,6 +796,57 @@ _BUILTIN = [
         description="List active vendors (suppliers).",
         parameters={"type": "object", "properties": {}},
         handler=_list_vendors, scope="procurement", level=1,
+    ),
+    Tool(
+        name="create_vendor",
+        description=("Register a NEW vendor (supplier) in the master data. Pass ONLY the "
+                     "fields the user explicitly stated — the name alone is enough to start; "
+                     "NEVER invent an email, EIN, or address. After registering, ask the "
+                     "user to upload required documents (e.g. a W-9)."),
+        parameters={"type": "object", "properties": {
+            "name": {"type": "string"},
+            "email": {"type": "string"},
+            "phone": {"type": "string"},
+            "address": {"type": "string"},
+            "tax_id": {"type": "string", "description": "US EIN, only if the user gave it"},
+            "payment_terms": {"type": "string",
+                              "enum": ["due_on_receipt", "net15", "net30", "net60"]},
+            "is_1099": {"type": "boolean"}},
+            "required": ["name"]},
+        handler=_create_vendor, scope="procurement", level=2,
+    ),
+    Tool(
+        name="update_vendor",
+        description=("Update an existing vendor's master data (email/phone/address/tax_id/"
+                     "payment_terms/is_1099/name). Pass only the fields the user stated."),
+        parameters={"type": "object", "properties": {
+            "vendor": {"type": "string", "description": "current vendor name"},
+            "name": {"type": "string"}, "email": {"type": "string"},
+            "phone": {"type": "string"}, "address": {"type": "string"},
+            "tax_id": {"type": "string"},
+            "payment_terms": {"type": "string",
+                              "enum": ["due_on_receipt", "net15", "net30", "net60"]},
+            "is_1099": {"type": "boolean"}},
+            "required": ["vendor"]},
+        handler=_update_vendor, scope="procurement", level=2,
+    ),
+    Tool(
+        name="attach_document_to_vendor",
+        description=("Attach an uploaded document (e.g. a W-9) to a vendor. Defaults to the "
+                     "user's most recent unattached upload; pass document_id (shown as "
+                     "'doc #N' in the upload reply) to pick a specific one."),
+        parameters={"type": "object", "properties": {
+            "vendor": {"type": "string"},
+            "document_id": {"type": "integer"}},
+            "required": ["vendor"]},
+        handler=_attach_document_to_vendor, scope="procurement", level=2,
+    ),
+    Tool(
+        name="get_vendor_details",
+        description="A vendor's contact info, terms, 1099 flag, and attached documents.",
+        parameters={"type": "object", "properties": {"vendor": {"type": "string"}},
+                    "required": ["vendor"]},
+        handler=_get_vendor_details, scope="procurement", level=1,
     ),
     Tool(
         name="list_customers",

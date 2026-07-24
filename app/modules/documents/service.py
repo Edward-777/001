@@ -4,6 +4,7 @@ Default-Deny (DESIGN §8.4/§8.6): store_document quarantines and does NOT index
 only an explicit classify() promotes a document and assigns its ACL."""
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Document, DocStatus, Relevance
@@ -16,6 +17,7 @@ def store_document(
     filename: str | None = None,
     mime: str | None = None,
     extracted_text: str | None = None,
+    uploaded_by: int | None = None,
 ) -> Document:
     """Register an uploaded file — quarantined, unindexed, most-restrictive ACL."""
     doc = Document(
@@ -23,6 +25,7 @@ def store_document(
         filename=filename,
         mime=mime,
         extracted_text=extracted_text,
+        uploaded_by=uploaded_by,
         acl_level=3,                       # Default-Deny
         status=str(DocStatus.QUARANTINED),
         is_indexed=False,
@@ -30,6 +33,38 @@ def store_document(
     session.add(doc)
     session.flush()
     return doc
+
+
+def link_document(session: Session, document_id: int, *, linked_type: str,
+                  linked_id: int) -> Document:
+    """Attach a stored document to a business entity (e.g. a vendor's W-9)."""
+    doc = session.get(Document, document_id)
+    if doc is None:
+        raise ValueError("document not found")
+    doc.linked_type = linked_type
+    doc.linked_id = linked_id
+    session.flush()
+    return doc
+
+
+def latest_unlinked_upload(session: Session, user_id: int) -> Document | None:
+    """The user's most recent upload not yet attached to anything — the default
+    target of 'attach the file I just uploaded'."""
+    return session.scalar(
+        select(Document)
+        .where(Document.uploaded_by == user_id, Document.linked_id.is_(None))
+        .order_by(Document.id.desc())
+    )
+
+
+def list_linked(session: Session, linked_type: str, linked_id: int) -> list[Document]:
+    return list(
+        session.scalars(
+            select(Document)
+            .where(Document.linked_type == linked_type, Document.linked_id == linked_id)
+            .order_by(Document.id)
+        )
+    )
 
 
 def classify(

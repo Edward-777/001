@@ -52,6 +52,7 @@ class Document(PKMixin, TimestampMixin, Base):
     extracted_text: Mapped[str | None] = mapped_column(String, nullable=True)
     linked_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     linked_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     classified_by: Mapped[str | None] = mapped_column(String(10), nullable=True)  # ai | human
     confidence: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default=DocStatus.QUARANTINED)

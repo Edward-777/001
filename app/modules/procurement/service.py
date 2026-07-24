@@ -21,6 +21,8 @@ def create_vendor(
     tax_id: str | None = None,
     is_1099: bool = False,
     email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
 ) -> Vendor:
     v = Vendor(
         name=name,
@@ -28,8 +30,36 @@ def create_vendor(
         tax_id=tax_id,
         is_1099=is_1099,
         email=email,
+        phone=phone,
+        address=address,
     )
     session.add(v)
+    session.flush()
+    return v
+
+
+_VENDOR_UPDATABLE = {"name", "email", "phone", "address", "tax_id", "payment_terms", "is_1099"}
+
+
+def update_vendor(session: Session, vendor_id: int, **fields) -> Vendor:
+    """Update vendor master data (whitelisted fields only)."""
+    v = session.get(Vendor, vendor_id)
+    if v is None:
+        raise ValueError("vendor not found")
+    for key, value in fields.items():
+        if key not in _VENDOR_UPDATABLE:
+            raise ValueError(f"field not updatable: {key}")
+        if value is not None:
+            setattr(v, key, str(value) if key == "payment_terms" else value)
+    session.flush()
+    return v
+
+
+def deactivate_vendor(session: Session, vendor_id: int) -> Vendor:
+    v = session.get(Vendor, vendor_id)
+    if v is None:
+        raise ValueError("vendor not found")
+    v.is_active = False
     session.flush()
     return v
 

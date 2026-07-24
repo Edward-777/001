@@ -168,7 +168,10 @@ def _route_document(session, *, route, category, dest, doc, acl_scope, acl_level
             doc.is_indexed = True
             return header + f"Indexed into the knowledge base ({n} chunks) — ask me about it."
         return header + "Stored, but I couldn't extract text to index it."
-    return header + "Stored for reference (not indexed)."
+    return header + (
+        f"Stored for reference (doc #{doc.id}, not indexed). If this belongs to a "
+        "vendor (e.g. a W-9), tell me which one and I'll attach it."
+    )
 
 
 @router.post("/assistant/upload", response_class=HTMLResponse)
@@ -189,7 +192,7 @@ def assistant_upload(
         category = classify.classify_file(str(dest))
         acl_scope, acl_level, route, _ = classify.routing_for(category)
         doc = docs.store_document(session, file_path=str(dest), filename=file.filename,
-                                  mime=file.content_type)
+                                  mime=file.content_type, uploaded_by=user.id)
         doc.acl_scope, doc.acl_level, doc.classified_by = acl_scope, acl_level, "ai"
         reply = _route_document(session, route=route, category=category, dest=dest,
                                 doc=doc, acl_scope=acl_scope, acl_level=acl_level)
