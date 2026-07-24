@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Dev bootstraps tables via create_all; production uses Alembic migrations.
     auto_create_tables: bool = True
 
+    # AP 3-way match: allowed bill-vs-PO total variance, percent (0 = exact,
+    # a 1-cent absolute floor always applies).
+    ap_match_tolerance_pct: float = 0.0
+
     # Local AI (Phase 2) — Ollama runtime; model is swappable per deployment.
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:14b"

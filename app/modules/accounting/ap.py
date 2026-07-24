@@ -81,8 +81,13 @@ def create_ap_bill(
 
 
 def match_ap_bill(session: Session, bill_id: int) -> APBill:
-    """3-way match: compare the bill to goods received. On a clean match, clear
-    GR/IR (Dr GR/IR / Cr AP) and open the bill; otherwise flag an exception."""
+    """Match the bill to goods received (receipt leg), and — when the bill carries
+    a PO — also to the PO itself (vendor + total within tolerance): a true 3-way
+    match. Without a PO it remains the receipt-vs-bill 2-way GR/IR match. On a
+    clean match, clear GR/IR (Dr GR/IR / Cr AP) and open the bill; otherwise flag
+    an exception with the reason in match_note (an exception never posts)."""
+    from ...core.config import settings
+
     bill = session.get(APBill, bill_id)
     if bill is None or bill.status != APBillStatus.DRAFT:
         raise ValueError("bill not in draft")
@@ -98,7 +103,35 @@ def match_ap_bill(session: Session, bill_id: int) -> APBill:
             received += (Decimal(str(il.qty_received)) * Decimal(str(il.unit_cost))).quantize(_CENTS)
 
     bill_amount = Decimal(str(bill.amount))
-    if linked and bill_amount > 0 and abs(received - bill_amount) <= _CENTS:
+    problems: list[str] = []
+    if not linked:
+        problems.append("no goods-receipt line is linked to the bill")
+    elif abs(received - bill_amount) > _CENTS:
+        problems.append(f"bill ${bill_amount} vs received ${received}")
+    if bill_amount <= 0:
+        problems.append("bill amount is zero")
+
+    note = None
+    if not problems and bill.po_id is not None:
+        from ..procurement import service as proc
+
+        po = proc.get_po(session, bill.po_id)
+        if po is None:
+            problems.append(f"bill references PO id {bill.po_id}, which does not exist")
+        elif po.vendor_id and po.vendor_id != bill.vendor_id:
+            problems.append(f"vendor on the bill differs from the vendor on {po.po_no}")
+        else:
+            po_total = Decimal(str(po.total))
+            tolerance = max(
+                (po_total * Decimal(str(settings.ap_match_tolerance_pct)) / 100).quantize(_CENTS),
+                _CENTS,
+            )
+            if abs(bill_amount - po_total) > tolerance:
+                problems.append(f"bill ${bill_amount} vs {po.po_no} total ${po_total}")
+            else:
+                note = f"3-way matched against {po.po_no}"
+
+    if not problems:
         apply_rule(
             session,
             event_type="ap_bill.matched",
@@ -110,8 +143,10 @@ def match_ap_bill(session: Session, bill_id: int) -> APBill:
         )
         bill.match_status = str(APMatchStatus.MATCHED)
         bill.status = str(APBillStatus.OPEN)
+        bill.match_note = note
     else:
         bill.match_status = str(APMatchStatus.EXCEPTION)
+        bill.match_note = "; ".join(problems)
     session.flush()
     return bill
 

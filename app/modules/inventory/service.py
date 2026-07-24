@@ -157,6 +157,16 @@ def create_inbound(
     return inb
 
 
+def list_posted_inbounds_for_po(session: Session, po_id: int) -> list[Inbound]:
+    """Posted goods receipts made against a PO — the receipt leg of a 3-way match."""
+    return list(
+        session.scalars(
+            select(Inbound).where(Inbound.po_id == po_id,
+                                  Inbound.status == str(PostingStatus.POSTED))
+        )
+    )
+
+
 def post_inbound(session: Session, inbound_id: int) -> Inbound:
     """Post a goods receipt: update stock for inventory items, then emit
     InboundPosted so accounting books it (same transaction = all-or-nothing)."""

@@ -55,6 +55,7 @@ class APBill(PKMixin, TimestampMixin, Base):
     amount: Mapped[float] = mapped_column(Money, nullable=False, default=0)
     balance: Mapped[float] = mapped_column(Money, nullable=False, default=0)
     match_status: Mapped[str] = mapped_column(String(12), nullable=False, default=APMatchStatus.UNMATCHED)
+    match_note: Mapped[str | None] = mapped_column(String(400), nullable=True)  # WHY it (mis)matched
     source: Mapped[str] = mapped_column(String(12), nullable=False, default=BillSource.MANUAL)
     attachment_path: Mapped[str | None] = mapped_column(String(400), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=APBillStatus.DRAFT)

@@ -543,8 +543,14 @@ def _record_vendor_bill(session: Session, user: User, args: dict) -> dict:
     bill = acct.create_ap_bill(session, vendor_id=v.id, lines=lines, po_id=inb.po_id,
                                vendor_invoice_no=args.get("invoice_no"))
     acct.match_ap_bill(session, bill.id)
-    return {"bill_no": bill.bill_no, "vendor": v.name, "amount": str(bill.amount),
-            "match_status": bill.match_status, "status": bill.status}
+    res = {"bill_no": bill.bill_no, "vendor": v.name, "amount": str(bill.amount),
+           "match_status": bill.match_status, "status": bill.status}
+    if inb.po_id:
+        po = proc.get_po(session, inb.po_id)
+        res["po_no"] = po.po_no if po else None
+    if bill.match_note:
+        res["match_note"] = bill.match_note
+    return res
 
 
 def _list_open_bills(session: Session, user: User, args: dict) -> list[dict]:

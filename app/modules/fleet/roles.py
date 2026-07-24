@@ -40,7 +40,12 @@ def _suggest_expense_account(session: Session) -> Account | None:
 
 def spend_handle(session: Session, task: Task) -> None:
     """invoice/receipt -> draft AP bill + suggested account, parked for approval.
-    Never posts; that waits for the founder (spend_approve)."""
+    Never posts; that waits for the founder (spend_approve). When the invoice
+    names a PO whose goods were received, the draft is set up for a 3-way match."""
+    from decimal import Decimal
+
+    from ..inventory import service as inv
+
     payload = task.payload or {}
     parsed = payload.get("parsed", payload)
     vendor_name = (parsed.get("vendor_name") or "").strip()
@@ -55,21 +60,58 @@ def spend_handle(session: Session, task: Task) -> None:
         # master data, not a ledger action — safe to create now; surfaced to founder.
         vendor = proc.create_vendor(session, name=vendor_name)
 
+    # The vision parser extracts the PO number the invoice references — use it.
+    po_number = str(parsed.get("po_number") or "").strip()
+    po = proc.get_po_by_no(session, po_number) if po_number else None
+    receipt_lines = []
+    if po is not None:
+        receipt_lines = [ln for inb in inv.list_posted_inbounds_for_po(session, po.id)
+                         for ln in inb.lines]
+
     invoice_no = parsed.get("invoice_no")
+    po_matched = False
+    notes: list[str] = []
+    lines = [{"description": f"{vendor_name} invoice {invoice_no or ''}".strip(),
+              "qty": 1, "unit_price": total}]
+    if po is not None and receipt_lines:
+        received_value = sum(
+            (Decimal(str(ln.qty_received)) * Decimal(str(ln.unit_cost)) for ln in receipt_lines),
+            Decimal("0"),
+        )
+        if abs(received_value - Decimal(str(total))) <= Decimal("0.01"):
+            # bill mirrors the receipts -> approving runs the 3-way match
+            lines = [{"description": f"{vendor_name} invoice {invoice_no or ''} (receipt match)".strip(),
+                      "qty": ln.qty_received, "unit_price": ln.unit_cost,
+                      "inbound_line_id": ln.id} for ln in receipt_lines]
+            po_matched = True
+            notes.append(f"{po.po_no} matched — approving runs the 3-way match (clears GR/IR).")
+        else:
+            notes.append(f"invoice ${total} vs received ${received_value} on {po.po_no} — "
+                         "resolve the variance before approving.")
+    elif po is not None:
+        notes.append(f"{po.po_no} exists but no goods receipt is posted — approve to expense "
+                     "now, or receive the goods first and re-upload to 3-way match.")
+    elif po_number:
+        notes.append(f"invoice references PO '{po_number}' — no such PO found.")
+    if po is not None and po.vendor_id and po.vendor_id != vendor.id:
+        notes.append(f"⚠ vendor on the invoice differs from the vendor on {po.po_no}.")
+
     bill = acct.create_ap_bill(
         session,
         vendor_id=vendor.id,
         vendor_invoice_no=invoice_no,
-        lines=[{"description": f"{vendor_name} invoice {invoice_no or ''}".strip(),
-                "qty": 1, "unit_price": total}],
+        po_id=po.id if po else None,
+        lines=lines,
     )
     suggested = _suggest_expense_account(session)
     goods_received = payload.get("goods_received")
-    if goods_received is False:
-        note = ("Goods not received yet — on approval this posts as a direct expense, or "
-                "you can wait for the goods-receipt number to 3-way match it.")
-    else:
-        note = "Looks like a service / direct cost. Approving posts it to the suggested account."
+    if not notes:
+        if goods_received is False:
+            notes.append("Goods not received yet — on approval this posts as a direct expense, "
+                         "or you can wait for the goods-receipt number to 3-way match it.")
+        else:
+            notes.append("Looks like a service / direct cost. Approving posts it to the "
+                         "suggested account.")
 
     q.request_approval(session, task, result={
         "draft_bill_id": bill.id,
@@ -78,17 +120,27 @@ def spend_handle(session: Session, task: Task) -> None:
         "vendor_name": vendor.name,
         "new_vendor": new_vendor,
         "amount": str(bill.amount),
+        "po_no": po.po_no if po else None,
+        "po_matched": po_matched,
         "suggested_account_code": suggested.code if suggested else None,
         "suggested_account_name": suggested.name if suggested else None,
         "goods_received": goods_received,
-        "note": note,
+        "note": " ".join(notes),
     })
 
 
 def spend_approve(session: Session, task: Task) -> None:
-    """Founder approved the draft bill -> post it (Dr expense / Cr AP), mark done."""
+    """Founder approved the draft bill. PO-matched bills run the 3-way match
+    (an EXCEPTION never posts); everything else posts as a direct bill."""
     result = task.result or {}
     bill_id = result.get("draft_bill_id")
+    if result.get("po_matched"):
+        bill = acct.match_ap_bill(session, bill_id)
+        if bill.match_status == "exception":
+            q.fail(session, task, reason=f"3-way match failed: {bill.match_note}")
+            return
+        q.resolve_approval(session, task, approved=True)
+        return
     code = result.get("suggested_account_code")
     account = acct.get_account_by_code(session, code) if code else None
     if bill_id is None or account is None:
