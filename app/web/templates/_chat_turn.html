@@ -6,6 +6,21 @@
     {% if error %}
       <span class="text-rose-600">{{ error }}</span>
     {% else %}
+      {% if plan %}
+        {# plan-then-execute: the decomposition the agent ran, step by step #}
+        <div class="mb-3 border-l-2 border-sky-300 pl-3 space-y-0.5">
+          <div class="text-xs font-semibold text-sky-600 uppercase tracking-wide">Plan</div>
+          {% for step in plan %}
+          <div class="flex items-center gap-2 text-xs text-slate-600">
+            {% if step.status == 'done' %}<span class="text-emerald-600">✓</span>
+            {% elif step.status == 'failed' %}<span class="text-rose-500">✗</span>
+            {% elif step.status == 'skipped' %}<span class="text-slate-300">–</span>
+            {% else %}<span class="text-slate-300">○</span>{% endif %}
+            <span{% if step.status == 'skipped' %} class="text-slate-400 line-through"{% endif %}>{{ step.title }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
       <div class="whitespace-pre-wrap">{{ reply | linkify }}</div>
       {% if download %}
         <a href="{{ download }}"

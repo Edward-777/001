@@ -205,10 +205,11 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
     from datetime import date
 
     from . import memory as user_memory
+    from . import planner
 
     tools = registry.schemas_for(user)
     memory_block = user_memory.prompt_block(session, user.id)
-    messages = [
+    base_messages = [
         # Qwen's chat template only reliably honors system messages at the TOP; a
         # system turn placed after the user message is ignored (it then drifts to
         # Chinese on CJK input). Keep the language directive here, near the front.
@@ -218,15 +219,74 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
          "Resolve 'now', 'current', 'this month', 'as of today' against it."},
         *([{"role": "system", "content": memory_block}] if memory_block else []),
         *(history or []),
-        # Append the language tag to the user turn itself (not just a system line):
-        # it's the most recent token the model sees, so it overrides English/Chinese
-        # text sitting in history (e.g. an English invoice readout) that otherwise
-        # makes big Qwen drift to Chinese. Only the LLM copy is tagged; storage isn't.
-        {"role": "user", "content": f"{message}\n\n[{_reply_lang_tag(message)}]"},
     ]
+    # Append the language tag to the user turn itself (not just a system line):
+    # it's the most recent token the model sees, so it overrides English/Chinese
+    # text sitting in history (e.g. an English invoice readout) that otherwise
+    # makes big Qwen drift to Chinese. Only the LLM copy is tagged; storage isn't.
+    user_turn = {"role": "user", "content": f"{message}\n\n[{_reply_lang_tag(message)}]"}
     used: list[dict] = []
-    drafted_this_turn = False
+    # Maker-checker state spans the WHOLE user turn, including every plan step —
+    # a plan cannot create a money draft in one step and submit it in the next.
+    state = {"drafted": False}
 
+    plan_titles = planner.maybe_plan(message, chat=chat)
+    if not plan_titles:
+        messages = [*base_messages, user_turn]
+        reply = _tool_loop(session, user, message, messages, tools, chat, max_iters,
+                           used, state)
+        return {"reply": reply if reply is not None
+                else "(stopped: tool-iteration limit reached)",
+                "tool_calls": used}
+
+    # ---- plan-then-execute -------------------------------------------------
+    numbered = "\n".join(f"{i}. {t}" for i, t in enumerate(plan_titles, 1))
+    plan = [{"title": t, "status": "pending"} for t in plan_titles]
+    summaries: list[str] = []
+    for i, title in enumerate(plan_titles, 1):
+        done = "\n".join(summaries) or "(none yet)"
+        step_directive = {
+            "role": "system",
+            "content": (f"PLAN for the user's request:\n{numbered}\n"
+                        f"Results of completed steps:\n{done}\n"
+                        f"Execute ONLY step {i} now: '{title}'. When it is done, state "
+                        "its outcome in one or two sentences (include key figures/ids)."),
+        }
+        messages = [*base_messages, step_directive, user_turn]
+        marker = len(used)
+        result_text = _tool_loop(session, user, message, messages, tools, chat,
+                                 max_iters, used, state)
+        step_calls = used[marker:]
+        step_failed = result_text is None or (
+            step_calls and all(not c["ok"] for c in step_calls))
+        plan[i - 1]["status"] = "failed" if step_failed else "done"
+        if step_failed:
+            summaries.append(f"{i}. {title}: FAILED"
+                             + (f" — {result_text}" if result_text else ""))
+            for remaining in plan[i:]:
+                remaining["status"] = "skipped"
+            break
+        summaries.append(f"{i}. {title}: {result_text}")
+
+    compose = {
+        "role": "system",
+        "content": ("The plan has finished executing. Step results:\n"
+                    + "\n".join(summaries)
+                    + "\nWrite the final answer to the user summarizing the outcome. "
+                      "If any step FAILED, say so plainly — never claim it succeeded."),
+    }
+    final = chat([*base_messages, compose, user_turn], tools=None)
+    reply = _enforce_reply_language(final.get("content", "") or "", message,
+                                    [*base_messages, compose, user_turn], chat)
+    return {"reply": reply, "tool_calls": used, "plan": plan}
+
+
+def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
+               tools: list[dict], chat, max_iters: int, used: list[dict],
+               state: dict) -> str | None:
+    """The permission-checked tool loop for one (sub-)task. Appends every call to
+    `used`, shares maker-checker state across the turn via `state`, and returns
+    the model's final text — or None when the iteration limit is exhausted."""
     for _ in range(max_iters):
         msg = chat(messages, tools=tools)
         messages.append(msg)
@@ -236,16 +296,15 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
             # leaking raw JSON to the user.
             recovered = _text_toolcalls(msg.get("content", ""))
             if not recovered:
-                reply = _enforce_reply_language(
+                return _enforce_reply_language(
                     msg.get("content", ""), message, messages, chat)
-                return {"reply": reply, "tool_calls": used}
             calls = recovered
 
         for call in calls:
             name = call.get("function", {}).get("name", "")
             args = _arguments(call)
             started = time.perf_counter()
-            if name in _SUBMIT_TOOLS and drafted_this_turn:
+            if name in _SUBMIT_TOOLS and state["drafted"]:
                 result = dict(_SUBMIT_BLOCKED)
             else:
                 result = registry.execute(name, args, session=session, user=user)
@@ -263,11 +322,11 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
                                          "the user it failed and why. Do NOT claim it "
                                          "succeeded or invent an outcome.")
             if name in _DRAFT_CREATE_TOOLS and not failed:
-                drafted_this_turn = True
+                state["drafted"] = True
             used.append({"tool": name, "args": args, "result": result,
                          "ok": not failed, "ms": elapsed_ms})
             audit.record(session, actor_user_id=user.id, action="ai_tool",
                          entity_type=name, detail={"args": args, "ok": not failed})
             messages.append({"role": "tool", "name": name, "content": json.dumps(result, default=str)})
 
-    return {"reply": "(stopped: tool-iteration limit reached)", "tool_calls": used}
+    return None
