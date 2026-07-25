@@ -143,10 +143,10 @@ def match_ap_bill(session: Session, bill_id: int) -> APBill:
         )
         bill.match_status = str(APMatchStatus.MATCHED)
         bill.status = str(APBillStatus.OPEN)
-        bill.match_note = note
+        bill.match_note = note[:400] if note else None
     else:
         bill.match_status = str(APMatchStatus.EXCEPTION)
-        bill.match_note = "; ".join(problems)
+        bill.match_note = "; ".join(problems)[:400]
     session.flush()
     return bill
 

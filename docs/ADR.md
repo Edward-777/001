@@ -181,3 +181,37 @@ other. When the model misbehaves, the ledger itself is the detector — the
 built-in invariants is the right proving ground for trustworthy agents;
 domains with fuzzier ground truth (support, HR) inherit the hardened
 machinery afterwards.
+
+---
+
+## ADR-10 · Learning is governed: mined, proposed, approved, measured
+
+**Decision.** The system gets smarter through *learned rules*, not weight drift.
+A deterministic miner scans decisions and data the platform already records
+(every approval with its reason, every match exception with its cause, every
+tool call with its outcome) for repeating patterns. Each pattern becomes a
+**proposal card in the same approval inbox** as every other consequential
+action. Approval activates the rule; behavior changes on the very next
+occurrence; `applied_count` on the rule row measures the payoff. Rejection is
+remembered and never re-proposed. Rules are rows — inspectable, revocable.
+
+**First shipped loop (from a real incident).** During development an uploaded
+invoice said "Office Depot, Inc." while the master data had "Office Depot"; the
+spend agent auto-created a duplicate vendor and the books began splitting
+across the two. The miner now detects vendors sharing a normalized name
+(punctuation/legal-suffix folding), proposes *"treat 'Office Depot, Inc.' as
+'Office Depot' and deactivate the duplicate"*, and — once approved — every
+vendor lookup (invoice parsing, packing lists, chat tools) resolves through the
+alias. The failure that motivated the rule cannot recur, and the rule row
+counts how often it fired.
+
+**Rejected alternative.** Implicit adaptation — fine-tuning on outcomes, or
+prompt-injecting recent failures. Rejected for the same reason as ADR-6: an
+enterprise must be able to answer *"what has this system learned, who approved
+it, and how do we undo it?"* with a table, not a research project. Learning
+that cannot be audited is drift.
+
+**Consequences.** Learning velocity is bounded by human approval — deliberate:
+each rule is reviewed once and pays off forever after. The miner framework is
+kind-extensible (per-vendor match tolerances and approval-band suggestions are
+natural next kinds mined from `match_note` and approval histories).

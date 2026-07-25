@@ -41,10 +41,12 @@ PO-validated receiving (over-receipt rejected, cost anchored to the PO), and a
 **Agent architecture** — **plan-then-execute** with a visible step checklist
 (template plans for known intents like month-end close; gated LLM planning
 otherwise), **cross-conversation memory** written only by audited tool calls,
-a per-reply execution timeline (tool · status · latency), and a deterministic
-honesty backstop so a failed action can never be reported as a success.
-Why it's built this way: **[docs/ADR.md](docs/ADR.md)**.
-**44 audited AI tools · 287 tests passing.**
+a **governed learning loop** (patterns mined from human resolutions become
+rule proposals in the approval inbox; approved rules change behavior and count
+their own applications), a per-reply execution timeline (tool · status ·
+latency), and a deterministic honesty backstop so a failed action can never be
+reported as a success. Why it's built this way: **[docs/ADR.md](docs/ADR.md)**.
+**44 audited AI tools · 293 tests passing.**
 
 ## Setup (requires Python 3.12+)
 ```bash

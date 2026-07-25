@@ -76,8 +76,25 @@ def list_vendors(session: Session, *, active_only: bool = True) -> list[Vendor]:
 
 
 def find_vendor_by_name(session: Session, name: str) -> Vendor | None:
-    """Case-insensitive name lookup so the AI can resolve 'Acme' to a vendor."""
-    return session.scalar(select(Vendor).where(Vendor.name.ilike(f"%{name}%")))
+    """Case-insensitive name lookup so the AI can resolve 'Acme' to a vendor.
+    Only active vendors — a deactivated duplicate must never win a match."""
+    return session.scalar(
+        select(Vendor).where(Vendor.name.ilike(f"%{name}%"),
+                             Vendor.is_active.is_(True))
+    )
+
+
+def resolve_vendor(session: Session, name: str) -> Vendor | None:
+    """Name → vendor, with learned aliases: direct match first, then any active
+    human-approved vendor_alias rule ('Office Depot, Inc.' → 'Office Depot').
+    The application is counted on the rule — the learning loop's payoff metric."""
+    vendor = find_vendor_by_name(session, name)
+    if vendor is not None:
+        return vendor
+    from ..learning import service as learn
+
+    canonical_id = learn.resolve_vendor_alias(session, name)
+    return get_vendor(session, canonical_id) if canonical_id else None
 
 
 # ---- purchase orders (M6) ----------------------------------------------

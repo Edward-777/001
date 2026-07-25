@@ -96,3 +96,13 @@ def test_user_price_beats_url(session, employee, monkeypatch):
     line = appr.request_lines(session, 1)[0]
     assert line.price_source == "user"
     assert line.product_url == "https://shop.example/asus-27"  # link still attached
+
+
+def test_non_http_url_is_dropped_not_stored(session, employee):
+    out = registry.execute("create_purchase_request",
+                           {"title": "Monitor", "qty": 1, "unit_price": 180,
+                            "product_url": "javascript:alert(1)"},
+                           session=session, user=employee)["result"]
+    assert out["total_amount"] == "180.00"
+    line = appr.request_lines(session, 1)[0]
+    assert line.product_url is None  # never rendered as a clickable link

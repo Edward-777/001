@@ -13,6 +13,7 @@ def register_all_handlers(*, force: bool = False) -> None:
     if _registered and not force:
         return
 
+    from .modules import learning  # noqa: F401  register learned_rules table
     from .modules.accounting.handlers import register_handlers as accounting
     from .modules.assets.handlers import register_handlers as assets
     from .modules.expense.handlers import register_handlers as expense

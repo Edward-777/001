@@ -44,6 +44,8 @@ def _create_purchase_request(session: Session, user: User, args: dict) -> dict:
     qty = float(args.get("qty") or 0)
     price = float(args.get("unit_price") or 0)
     url = str(args.get("product_url") or "").strip() or None
+    if url and not url.lower().startswith(("http://", "https://")):
+        url = None  # only web links are stored/rendered — never javascript:/file: schemes
     price_source = "user" if price > 0 else None
     description = args.get("description") or args.get("title", "")
 
@@ -232,7 +234,7 @@ def _create_vendor(session: Session, user: User, args: dict) -> dict:
     name = str(args.get("name") or "").strip()
     if not name:
         return {"error": "vendor name is required"}
-    existing = proc.find_vendor_by_name(session, name)
+    existing = proc.resolve_vendor(session, name)
     if existing is not None:
         return {"error": f"vendor already exists: {existing.name} (vendor_id {existing.id}) "
                          "— use update_vendor to change its details"}
@@ -253,7 +255,7 @@ def _create_vendor(session: Session, user: User, args: dict) -> dict:
 
 
 def _update_vendor(session: Session, user: User, args: dict) -> dict:
-    v = proc.find_vendor_by_name(session, str(args.get("vendor") or ""))
+    v = proc.resolve_vendor(session, str(args.get("vendor") or ""))
     if v is None:
         return {"error": "vendor not found — call list_vendors"}
     updates = {k: args[k] for k in
@@ -268,7 +270,7 @@ def _update_vendor(session: Session, user: User, args: dict) -> dict:
 def _attach_document_to_vendor(session: Session, user: User, args: dict) -> dict:
     from ..documents import service as docs
 
-    v = proc.find_vendor_by_name(session, str(args.get("vendor") or ""))
+    v = proc.resolve_vendor(session, str(args.get("vendor") or ""))
     if v is None:
         return {"error": "vendor not found — call list_vendors"}
     doc_id = args.get("document_id")
@@ -297,7 +299,7 @@ def _issue_po(session: Session, user: User, args: dict) -> dict:
     if po is None:
         return {"error": "PO not found — pass po_no or the approved request_no "
                          "(call list_pos to see drafts)"}
-    vendor = proc.find_vendor_by_name(session, str(args.get("vendor") or ""))
+    vendor = proc.resolve_vendor(session, str(args.get("vendor") or ""))
     if vendor is None:
         return {"error": "vendor not found — register it first with create_vendor"}
     expected = None
@@ -365,7 +367,7 @@ def _cancel_po(session: Session, user: User, args: dict) -> dict:
 def _get_vendor_details(session: Session, user: User, args: dict) -> dict:
     from ..documents import service as docs
 
-    v = proc.find_vendor_by_name(session, str(args.get("vendor") or ""))
+    v = proc.resolve_vendor(session, str(args.get("vendor") or ""))
     if v is None:
         return {"error": "vendor not found — call list_vendors"}
     attached = [{"document_id": d.id, "filename": d.filename}
@@ -551,7 +553,7 @@ def _record_vendor_bill(session: Session, user: User, args: dict) -> dict:
     """Record a vendor invoice against a goods receipt and 3-way match it
     (clears GR/IR → Accounts Payable). The amount comes from the receipt, so it
     is never fabricated; a mismatch is flagged as an exception, not posted."""
-    v = proc.find_vendor_by_name(session, args.get("vendor", ""))
+    v = proc.resolve_vendor(session, args.get("vendor", ""))
     if v is None:
         return {"error": f"vendor '{args.get('vendor')}' not found — call list_vendors"}
     inb = inv.get_inbound_by_no(session, args.get("against_inbound_no", ""))
@@ -590,7 +592,7 @@ def _record_direct_bill(session: Session, user: User, args: dict) -> dict:
     """A vendor bill with NO goods receipt (services, or a direct purchase). Posts
     Dr <account_code> / Cr AP — the account_code must be chosen (expense vs asset),
     not guessed, so the agent should confirm it with the user first."""
-    v = proc.find_vendor_by_name(session, args.get("vendor", ""))
+    v = proc.resolve_vendor(session, args.get("vendor", ""))
     if v is None:
         return {"error": f"vendor '{args.get('vendor')}' not found — call list_vendors"}
     amount = float(args.get("amount") or 0)

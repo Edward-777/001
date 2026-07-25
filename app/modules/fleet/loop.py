@@ -17,6 +17,14 @@ def run_once(session: Session, *, max_tasks: int = 100) -> int:
     """Process queued tasks for every role that has a handler. Returns the count
     processed. A handler must move its task off QUEUED; if it doesn't, we stop
     that role to avoid reprocessing the same row forever."""
+    # Learning-loop producer: propose rules mined from recorded human resolutions
+    # (idempotent, deterministic; mining must never break the work loop).
+    from . import miner
+    try:
+        miner.mine(session)
+    except Exception:
+        pass
+
     processed = 0
     for role, handler in roles.HANDLERS.items():
         while processed < max_tasks:

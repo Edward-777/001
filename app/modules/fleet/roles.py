@@ -54,7 +54,7 @@ def spend_handle(session: Session, task: Task) -> None:
         q.fail(session, task, reason="invoice missing vendor name or total — needs a human")
         return
 
-    vendor = proc.find_vendor_by_name(session, vendor_name)
+    vendor = proc.resolve_vendor(session, vendor_name)
     new_vendor = vendor is None
     if vendor is None:
         # master data, not a ledger action — safe to create now; surfaced to founder.
@@ -178,7 +178,7 @@ def supply_handle(session: Session, task: Task) -> None:
             q.fail(session, task, reason=f"delivery references PO '{po_number}' — no such PO")
             return
     else:
-        vendor = proc.find_vendor_by_name(session, vendor_name) if vendor_name else None
+        vendor = proc.resolve_vendor(session, vendor_name) if vendor_name else None
         if vendor is not None:
             candidates = [p for p in proc.list_pos(session)
                           if p.vendor_id == vendor.id
@@ -340,6 +340,24 @@ def accounting_approve(session: Session, task: Task) -> None:
     q.resolve_approval(session, task, approved=True)
 
 
+# ---- 📊 insight (alerts + learned-rule proposals) -------------------------
+
+def insight_approve(session: Session, task: Task) -> None:
+    """Approving an insight card: a learned-rule proposal ACTIVATES the rule
+    (+ its side effects); an alert approval is just an acknowledgement."""
+    if task.category == "learned_rule":
+        from ..learning import service as learn
+
+        result = task.result or {}
+        rule = learn.create_rule(session, kind=result["kind"],
+                                 params=result.get("params") or {},
+                                 evidence=result.get("evidence"))
+        for vendor_id in result.get("deactivate_vendor_ids") or []:
+            proc.deactivate_vendor(session, vendor_id)
+        task.result = {**result, "rule_id": rule.id}
+    q.resolve_approval(session, task, approved=True)
+
+
 # ---- role registries ----------------------------------------------------
 
 # role -> handler that processes a freshly claimed task
@@ -355,6 +373,7 @@ APPROVERS: dict[str, Callable[[Session, Task], None]] = {
     Role.REVENUE: revenue_approve,
     Role.SUPPLY: supply_approve,
     Role.ACCOUNTING: accounting_approve,
+    Role.INSIGHT: insight_approve,
 }
 
 
