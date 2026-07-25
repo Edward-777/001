@@ -150,6 +150,112 @@ def spend_approve(session: Session, task: Task) -> None:
     q.resolve_approval(session, task, approved=True)
 
 
+# ---- 📦 supply (packing list -> draft goods receipt) ---------------------
+
+def supply_handle(session: Session, task: Task) -> None:
+    """packing_list -> DRAFT inbound (unposted) matched to an open PO, parked for
+    approval. Valuation comes from the PO line prices (packing lists carry no
+    prices). Any ambiguity — no PO, several candidate POs, unmapped or over-
+    shipped lines — fails loudly to a human; the role never guesses (default-deny)."""
+    from decimal import Decimal
+
+    from ..inventory import service as inv
+
+    payload = task.payload or {}
+    parsed = payload.get("parsed", payload)
+    vendor_name = (parsed.get("vendor_name") or "").strip()
+    parsed_lines = parsed.get("lines") or []
+    if not parsed_lines:
+        q.fail(session, task, reason="packing list has no readable lines — needs a human")
+        return
+
+    # 1) resolve the PO: explicit po_number, else the vendor's single receivable PO
+    po = None
+    po_number = str(parsed.get("po_number") or "").strip()
+    if po_number:
+        po = proc.get_po_by_no(session, po_number)
+        if po is None:
+            q.fail(session, task, reason=f"delivery references PO '{po_number}' — no such PO")
+            return
+    else:
+        vendor = proc.find_vendor_by_name(session, vendor_name) if vendor_name else None
+        if vendor is not None:
+            candidates = [p for p in proc.list_pos(session)
+                          if p.vendor_id == vendor.id
+                          and p.status in ("open", "partially_received")]
+            if len(candidates) == 1:
+                po = candidates[0]
+        if po is None:
+            q.fail(session, task, reason="cannot match this delivery to a single open PO "
+                                         "— needs a human")
+            return
+    if po.status not in ("open", "partially_received"):
+        q.fail(session, task, reason=f"{po.po_no} is {po.status} — cannot receive against it")
+        return
+
+    # 2) map parsed lines -> PO lines (by SKU, then description containment)
+    allocations, receipt_lines = [], []
+    for ln in parsed_lines:
+        target = None
+        sku = (ln.get("sku") or "").strip()
+        if sku:
+            product = inv.get_product_by_sku(session, sku)
+            if product is not None:
+                target = next((pl for pl in po.lines if pl.product_id == product.id), None)
+        if target is None:
+            desc = (ln.get("description") or "").lower()
+            target = next((pl for pl in po.lines
+                           if pl.description and (pl.description.lower() in desc
+                                                  or desc in pl.description.lower())), None)
+        if target is None or target.product_id is None:
+            q.fail(session, task, reason=f"cannot map delivery line '{ln.get('description')}' "
+                                         f"to a line on {po.po_no} — needs a human")
+            return
+        qty = Decimal(str(ln.get("qty") or 0))
+        if qty <= 0:
+            q.fail(session, task, reason=f"line '{ln.get('description')}' has no quantity")
+            return
+        allocations.append({"po_line_id": target.id, "qty": qty})
+        receipt_lines.append({"product_id": target.product_id, "qty": qty,
+                              "unit_cost": target.unit_price,  # PO price, never guessed
+                              "po_line_id": target.id})
+
+    # 3) over-receipt check (same policy as chat receiving: reject)
+    errors = proc.validate_receipt_against_po(po, allocations)
+    if errors:
+        q.fail(session, task, reason=errors[0] + " — needs a human")
+        return
+
+    # 4) DRAFT inbound only — posting waits for the founder (supply_approve)
+    inb = inv.create_inbound(session, po_id=po.id, lines=receipt_lines)
+    q.request_approval(session, task, result={
+        "inbound_id": inb.id,
+        "inbound_no": inb.inbound_no,
+        "po_no": po.po_no,
+        "vendor_name": vendor_name,
+        "amount": str(sum((r["qty"] * Decimal(str(r["unit_cost"])) for r in receipt_lines),
+                          Decimal("0"))),
+        "lines": [{"description": ln.get("description"), "qty": str(ln.get("qty"))}
+                  for ln in parsed_lines],
+        "note": (f"Approving posts goods receipt {inb.inbound_no} against {po.po_no}: "
+                 "stock in + Dr Inventory / Cr GR-IR, and updates the PO."),
+    })
+
+
+def supply_approve(session: Session, task: Task) -> None:
+    """Founder approved the draft receipt -> post it. The InboundPosted handler
+    rolls POLine.qty_received and the PO status."""
+    from ..inventory import service as inv
+
+    result = task.result or {}
+    inbound_id = result.get("inbound_id")
+    if inbound_id is None:
+        q.fail(session, task, reason="cannot post: missing draft inbound")
+        return
+    inv.post_inbound(session, inbound_id)
+    q.resolve_approval(session, task, approved=True)
+
+
 # ---- 💰 revenue (customer invoice) --------------------------------------
 
 def _find_customer(session: Session, name: str):
@@ -240,12 +346,14 @@ def accounting_approve(session: Session, task: Task) -> None:
 HANDLERS: dict[str, Callable[[Session, Task], None]] = {
     Role.SPEND: spend_handle,
     Role.REVENUE: revenue_handle,
+    Role.SUPPLY: supply_handle,
 }
 
 # role -> approver that does the real side-effect when the founder approves
 APPROVERS: dict[str, Callable[[Session, Task], None]] = {
     Role.SPEND: spend_approve,
     Role.REVENUE: revenue_approve,
+    Role.SUPPLY: supply_approve,
     Role.ACCOUNTING: accounting_approve,
 }
 

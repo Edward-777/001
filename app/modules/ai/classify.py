@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from . import llm
 
-CATEGORIES = ("invoice", "bank_statement", "receipt", "policy", "contract", "other")
+CATEGORIES = ("invoice", "bank_statement", "receipt", "packing_list", "policy",
+              "contract", "other")
 
 # category -> (acl_scope, acl_level, route, index_into_rag)
 _ROUTING: dict[str, tuple[str, int, str, bool]] = {
     "invoice":        ("finance", 2, "ap_bill", False),
     "bank_statement": ("finance", 2, "reconcile", False),
     "receipt":        ("finance", 1, "expense", False),
+    "packing_list":   ("inventory", 2, "supply", False),
     "policy":         ("general", 1, "rag", True),
     "contract":       ("finance", 3, "store", False),
     # Default-Deny (§8.6): an unrecognized document is UNCERTAIN, so it gets the
@@ -25,7 +27,9 @@ _ROUTING: dict[str, tuple[str, int, str, bool]] = {
 
 _PROMPT = (
     "Classify this business document into EXACTLY ONE category from this list: "
-    "invoice, bank_statement, receipt, policy, contract, other. "
+    "invoice, bank_statement, receipt, packing_list, policy, contract, other. "
+    "packing_list = a packing list / packing slip / delivery note from a supplier "
+    "(shipment contents and quantities, usually NO prices). "
     "Reply with ONLY the single category word, nothing else."
 )
 

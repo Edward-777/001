@@ -24,6 +24,7 @@ ROLE_FOR_CATEGORY: dict[str, Role] = {
     "customer_invoice": Role.REVENUE,  # money in (phase 2)
     "po_request": Role.SUPPLY,         # phase 4
     "goods_receipt": Role.SUPPLY,
+    "packing_list": Role.SUPPLY,       # supplier delivery -> draft goods receipt
     "hr_doc": Role.PEOPLE,
     "customer_email": Role.SUPPORT,    # phase 3
 }

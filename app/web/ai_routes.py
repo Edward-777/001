@@ -160,6 +160,29 @@ def _route_document(session, *, route, category, dest, doc, acl_scope, acl_level
             f"Auto-matched {r['matched']} to existing entries; {r['unmatched']} unmatched "
             f"(fees/interest — tell me how to categorize them). Statement balance {tie}."
         )
+    if route == "supply":
+        from ..modules.ai import packing_list as packing_parser
+        from ..modules.fleet import dispatcher as fleet_disp
+        from ..modules.fleet.models import TaskSource
+
+        parsed = packing_parser.parse_packing_list(str(dest))
+        doc.extracted_text = json.dumps(parsed)
+        fleet_disp.dispatch(
+            session, category="packing_list",
+            title=(f"{parsed.get('vendor_name') or 'Supplier'} delivery — "
+                   f"PO {parsed.get('po_number') or '?'}"),
+            source=TaskSource.UPLOAD, payload={"parsed": parsed},
+            source_ref=f"doc:{doc.id}", idempotency_key=f"doc:{doc.id}:packing_list",
+        )
+        lines = "\n".join(f"  • {ln.get('description')}  × {ln.get('qty')}"
+                          for ln in (parsed.get("lines") or []))
+        return header + (
+            f"I read this packing list (local vision model):\n"
+            f"Vendor: {parsed.get('vendor_name')}   PO: {parsed.get('po_number')}\n"
+            f"{lines}\n\n"
+            "I've drafted a goods receipt and placed it in your **Approval Inbox "
+            "(/fleet)** — approving posts the stock and updates the PO."
+        )
     if route == "rag":
         text = invoice_parser.extract_text(str(dest))
         if text.strip():
