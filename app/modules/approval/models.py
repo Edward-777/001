@@ -69,6 +69,10 @@ class RequestLine(PKMixin, Base):
     qty: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=1)
     estimated_unit_price: Mapped[float] = mapped_column(Money, nullable=False, default=0)
     amount: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+    # link-based requests: the product page the requester pointed at, and whether
+    # the price came from the user or was extracted from that page ("user" | "url")
+    product_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    price_source: Mapped[str | None] = mapped_column(String(12), nullable=True)
 
 
 class ApprovalLine(PKMixin, Base):

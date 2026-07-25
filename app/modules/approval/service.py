@@ -74,6 +74,8 @@ def create_request(
                 qty=qty,
                 estimated_unit_price=price,
                 amount=amount,
+                product_url=ln.get("product_url"),
+                price_source=ln.get("price_source"),
             )
         )
     req.total_amount = total

@@ -43,16 +43,35 @@ def _create_purchase_request(session: Session, user: User, args: dict) -> dict:
     # Require concrete amounts — never create a record with guessed/empty values.
     qty = float(args.get("qty") or 0)
     price = float(args.get("unit_price") or 0)
+    url = str(args.get("product_url") or "").strip() or None
+    price_source = "user" if price > 0 else None
+    description = args.get("description") or args.get("title", "")
+
+    if qty > 0 and price <= 0 and url:
+        # the user linked a product page instead of stating a price — read it locally
+        from . import product_page
+
+        fetched = product_page.fetch_product(url)
+        if "error" in fetched:
+            return {"error": f"{fetched['error']} — ask the user for the unit price "
+                             "(never guess it); the link will still be attached"}
+        price = float(fetched["price"])
+        price_source = "url"
+        if fetched.get("title"):
+            description = f"{description} — {fetched['title']}"[:400]
     if qty <= 0 or price <= 0:
         return {"error": "need quantity AND unit_price (both > 0) before creating — "
                          "ask the user for the missing values first"}
     req = appr.create_request(
         session, type=RequestType.PURCHASE, requester_id=user.id,
         title=args["title"], description=args.get("description", ""),
-        lines=[{"description": args.get("description") or args["title"],
-                "qty": qty, "unit_price": price}],
+        lines=[{"description": description, "qty": qty, "unit_price": price,
+                "product_url": url, "price_source": price_source}],
     )
-    return _draft_preview(req, detail=f"{qty:g} × ${price:g}")
+    detail = f"{qty:g} × ${price:g}"
+    if price_source == "url":
+        detail += " (price read from the linked page — have the user verify it)"
+    return _draft_preview(req, detail=detail)
 
 
 def _create_expense_request(session: Session, user: User, args: dict) -> dict:
@@ -618,7 +637,11 @@ def _list_my_approvals(session: Session, user: User, args: dict) -> list[dict]:
     for r in appr.pending_for_user(session, user.id):
         requester = auth.get_user(session, r.requester_id)
         lines = [{"description": ln.description, "qty": str(ln.qty),
-                  "unit_price": str(ln.estimated_unit_price)}
+                  "unit_price": str(ln.estimated_unit_price),
+                  **({"product_url": ln.product_url,
+                      "price_note": "price was read from the linked page — verify it"
+                      if ln.price_source == "url" else None}
+                     if ln.product_url else {})}
                  for ln in appr.request_lines(session, r.id)]
         out.append({"id": r.id, "request_no": r.request_no, "title": r.title,
                     "type": r.type, "amount": str(r.total_amount),
@@ -771,12 +794,19 @@ _BUILTIN = [
     Tool(
         name="create_purchase_request",
         description=("Create a purchase request as a DRAFT (does NOT submit it). Pass qty and "
-                     "unit_price ONLY if the user gave them — never invent a price. Returns a "
-                     "draft to confirm with the user; submit it later with "
+                     "unit_price ONLY if the user gave them — never invent a price. If the user "
+                     "shared a product LINK instead of a price, pass it as product_url: the "
+                     "page is read locally and the extracted price prefills the draft (the "
+                     "approver double-checks against the link). Retail sites often block "
+                     "fetches — on failure, ask the user for the price; do NOT retry. Returns "
+                     "a draft to confirm with the user; submit it later with "
                      "submit_request_for_approval."),
         parameters={"type": "object", "properties": {
             "title": {"type": "string"}, "description": {"type": "string"},
-            "qty": {"type": "number"}, "unit_price": {"type": "number"}}, "required": ["title"]},
+            "qty": {"type": "number"}, "unit_price": {"type": "number"},
+            "product_url": {"type": "string",
+                            "description": "product page URL the user shared"}},
+            "required": ["title"]},
         handler=_create_purchase_request,
     ),
     Tool(

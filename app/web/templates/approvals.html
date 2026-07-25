@@ -30,7 +30,15 @@
     <table class="text-sm mt-3 text-slate-600">
       {% for ln in rl %}
       <tr>
-        <td class="pr-4">{{ ln.description }}</td>
+        <td class="pr-4">{{ ln.description }}
+          {% if ln.product_url %}
+          <a href="{{ ln.product_url }}" target="_blank" rel="noopener"
+             class="text-sky-600 underline ml-1">product link ↗</a>
+          {% if ln.price_source == 'url' %}
+          <span class="ml-1 text-xs bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">price from link — verify</span>
+          {% endif %}
+          {% endif %}
+        </td>
         <td class="pr-4 text-slate-400">× {{ ln.qty | money }}</td>
         <td class="pr-4">@ ${{ ln.estimated_unit_price | money }}</td>
         <td>= ${{ ln.amount | money }}</td>
