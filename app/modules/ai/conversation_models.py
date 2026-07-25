@@ -32,6 +32,20 @@ class Conversation(PKMixin, Base):
     )
 
 
+class UserMemory(PKMixin, Base):
+    """A remembered preference/fact about a user, carried ACROSS conversations.
+    Written deterministically (an audited tool call when the user states a
+    preference) — never silently extracted by the model."""
+    __tablename__ = "user_memories"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    fact: Mapped[str] = mapped_column(String(400), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="stated")
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )
+
+
 class Message(PKMixin, Base):
     __tablename__ = "ai_messages"
 

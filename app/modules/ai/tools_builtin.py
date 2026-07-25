@@ -688,6 +688,29 @@ def _get_stock(session: Session, user: User, args: dict) -> dict:
             "avg_unit_cost": str(bal.avg_unit_cost) if bal else "0"}
 
 
+def _remember_preference(session: Session, user: User, args: dict) -> dict:
+    from . import memory
+
+    fact = str(args.get("fact") or "").strip()
+    if not fact:
+        return {"error": "nothing to remember — pass the user's stated preference as fact"}
+    mem = memory.remember(session, user.id, fact)
+    return {"remembered": mem.fact,
+            "note": "Saved. It will be applied in future conversations."}
+
+
+def _forget_preference(session: Session, user: User, args: dict) -> dict:
+    from . import memory
+
+    needle = str(args.get("about") or "").strip()
+    if not needle:
+        return {"error": "say what to forget (a keyword from the remembered preference)"}
+    n = memory.forget(session, user.id, needle)
+    if n == 0:
+        return {"error": f"no remembered preference mentions '{needle}'"}
+    return {"forgotten": n}
+
+
 def _search_company_policy(session: Session, user: User, args: dict) -> dict:
     hits = rag.search(session, args["query"], user=user, top_k=4)
     if not hits:
@@ -881,6 +904,23 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {"query": {"type": "string"}},
                     "required": ["query"]},
         handler=_search_company_policy,  # company policy is readable by all staff (chunk ACL applies)
+    ),
+    Tool(
+        name="remember_preference",
+        description=("Save a preference/fact about the CURRENT user for future conversations "
+                     "(e.g. '기억해줘 / remember that I prefer net15 terms'). Store the "
+                     "user's own words — call ONLY when they explicitly ask to remember or "
+                     "state a standing preference."),
+        parameters={"type": "object", "properties": {"fact": {"type": "string"}},
+                    "required": ["fact"]},
+        handler=_remember_preference,
+    ),
+    Tool(
+        name="forget_preference",
+        description="Delete a remembered preference of the current user (by a keyword from it).",
+        parameters={"type": "object", "properties": {"about": {"type": "string"}},
+                    "required": ["about"]},
+        handler=_forget_preference,
     ),
     Tool(
         name="create_expense_request",

@@ -204,7 +204,10 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
     max_iters = max_iters or settings.ai_max_tool_iters
     from datetime import date
 
+    from . import memory as user_memory
+
     tools = registry.schemas_for(user)
+    memory_block = user_memory.prompt_block(session, user.id)
     messages = [
         # Qwen's chat template only reliably honors system messages at the TOP; a
         # system turn placed after the user message is ignored (it then drifts to
@@ -213,6 +216,7 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
         {"role": "system", "content": _language_directive(message)},
         {"role": "system", "content": f"Today's date is {date.today().isoformat()}. "
          "Resolve 'now', 'current', 'this month', 'as of today' against it."},
+        *([{"role": "system", "content": memory_block}] if memory_block else []),
         *(history or []),
         # Append the language tag to the user turn itself (not just a system line):
         # it's the most recent token the model sees, so it overrides English/Chinese
