@@ -6,7 +6,7 @@
 ---
 
 ## 한 문장
-**1인~30명 소규모 기업용, 완전 로컬에서 AI가 직접 운전하는 경량 ERP.** 자사 서버 하드웨어에 묶어 파는 단일테넌트 어플라이언스. 경쟁자 = QuickBooks(우리는 더 쉽고·가볍고·재고/자산/SCM까지 강함).
+**회사 운영을 AI 에이전트가 실행하고, 사람은 승인만 하는 Enterprise AI Operating System.** 완전 로컬(데이터·AI 모두 고객 박스 안), 자사 서버 하드웨어에 번들된 단일테넌트 어플라이언스. 재무·구매·재고·판매가 현재 범위, IT·HR 등 운영 전반으로 확장.
 
 ## 비전 / 사업
 - **엔드게임:** 대화만으로 회사 전체 운영. ("출장 가" → AI가 기안·결재·전표까지)
@@ -25,7 +25,7 @@
         + 매출/AR(고객·수주·인보이스·수금)  + 경비정산(Non-PO·직원환급)  + 은행대사(월간 statement 업로드+AI)
         → 모든 단계 자동 복식부기 분개 → 회계기간(마감) → 재무제표(BS/IS/CF/TB/AP·AR aging)
 ```
-- **회계:** US GAAP·USD·sales tax·QuickBooks식 COA. AP=**3-way match**(PO↔입고↔인보이스, GR/IR clearing).
+- **회계:** US GAAP·USD·sales tax·표준 US COA. AP=**3-way match**(PO↔입고↔인보이스, GR/IR clearing).
 - **HR/조직도:** employees+`reports_to` → 결재선·권한경계의 토대.
 - **재고↔자산 양방향 전환**(reclassification, 장부가 분개).
 

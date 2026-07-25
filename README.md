@@ -5,7 +5,8 @@ A fully-local AI operating system for running a company: AI agents execute the w
 everything is audited. Sold as a single-tenant appliance bundled with server hardware.
 
 ## Docs
-- **[OVERVIEW.md](OVERVIEW.md)** — one-page master summary (start here)
+- **[docs/ADR.md](docs/ADR.md)** — architecture decision records: *why* it is built this way (start here if you're an engineer)
+- **[OVERVIEW.md](OVERVIEW.md)** — one-page master summary
 - [DESIGN.md](DESIGN.md) · [ROADMAP.md](ROADMAP.md)
 - [docs/SCHEMA.md](docs/SCHEMA.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/POLICIES.md](docs/POLICIES.md) · [docs/AI-AGENT.md](docs/AI-AGENT.md)
 - **[docs/AGENT-FLEET.md](docs/AGENT-FLEET.md)** — autonomous agent fleet (D6, in progress)
@@ -36,7 +37,14 @@ approver's double-check), org-chart approvals ("what do I need to approve?" →
 approve/reject with reasons), **PO issuance + vendor-ready xlsx document**,
 PO-validated receiving (over-receipt rejected, cost anchored to the PO), and a
 **true 3-way match** (bill vs receipt vs PO) that never posts an exception.
-**42 audited AI tools · 274 tests passing.**
+
+**Agent architecture** — **plan-then-execute** with a visible step checklist
+(template plans for known intents like month-end close; gated LLM planning
+otherwise), **cross-conversation memory** written only by audited tool calls,
+a per-reply execution timeline (tool · status · latency), and a deterministic
+honesty backstop so a failed action can never be reported as a success.
+Why it's built this way: **[docs/ADR.md](docs/ADR.md)**.
+**44 audited AI tools · 287 tests passing.**
 
 ## Setup (requires Python 3.12+)
 ```bash
