@@ -23,11 +23,20 @@ company-policy RAG, vision invoice parsing.
 
 **D6 autonomous agent fleet (in progress)** — a single work loop turns inbound
 work into role-drafted tasks the founder approves from an **Approval Inbox
-(`/fleet`)**: 💸 vendor bills, 💰 customer invoices, 📒 weekly payment runs &
-month-end close, ⚠️ anomaly alerts, 📊 cash-runway insight (cash/burn/runway/
-"can we afford X"), and a full **order-to-cash pipeline (`/sales`)** — quote →
-PO → ship (packing list) → invoice, with downloadable customer documents.
-Everything is draft-only until a human approves. **227 tests passing.**
+(`/fleet`)**: 💸 vendor bills, 💰 customer invoices, 📦 supplier packing lists →
+draft goods receipts, 📒 weekly payment runs & month-end close, ⚠️ anomaly
+alerts, 📊 cash-runway insight (cash/burn/runway/"can we afford X"), and a full
+**order-to-cash pipeline (`/sales`)** — quote → PO → ship (packing list) →
+invoice, with downloadable customer documents. Everything is draft-only until a
+human approves.
+
+**Chat-first procure-to-pay (complete)** — vendor onboarding with W-9 attachment,
+purchase requests from a product **link** (fetched locally, price as the
+approver's double-check), org-chart approvals ("what do I need to approve?" →
+approve/reject with reasons), **PO issuance + vendor-ready xlsx document**,
+PO-validated receiving (over-receipt rejected, cost anchored to the PO), and a
+**true 3-way match** (bill vs receipt vs PO) that never posts an exception.
+**42 audited AI tools · 274 tests passing.**
 
 ## Setup (requires Python 3.12+)
 ```bash
@@ -38,7 +47,7 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 227 tests
+pytest                          # 274 tests
 ```
 
 > Dev uses SQLite for instant run. Production = PostgreSQL (set `DATABASE_URL`).

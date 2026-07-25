@@ -50,7 +50,7 @@
 | 📒 회계·세무 | 기록 | accounting | 위에서 **자동 기표** + 마감·세무·리포트 | ✅ 코어 |
 | 📊 자금·인사이트 | 창업자층 | accounting/bank | 현금·번레이트·런웨이·"살 여유?"·이상알림 | ✅ 코어 |
 | 👤 사람·급여 | 사람 | hr, expense | 급여·계약직·온보딩·경비 정책 | 🔘 선택 |
-| 📦 재고·구매 | 공급 | inventory, procurement | 재고·PO·입고·3-way | 🔘 선택 |
+| 📦 재고·구매 | 공급 | inventory, procurement | 재고·PO·입고·3-way | ✅ 코어 (패킹리스트→입고 드래프트) |
 | 📚 문서·법무 | 가로 | documents, ai/rag | 계약·정책 보관/검색 | 🔘 선택 |
 | 🎧 고객 | 가로 | sales | 문의·갱신·고객 응대 드래프트 | 🔘 선택 |
 | 👔 창업자(CEO) | — | 사람 | 방향·승인/거절·질문 | 사람 |
@@ -144,8 +144,8 @@ bounce_count ≥ 3 → needs_approval  (창업자 에스컬레이션)
 | policy (규정 질문) | 📚 문서·법무 | RAG 답변 | ✅ |
 | contract | 📚 문서·법무 | 요약·분류·보관 | ✅ |
 | customer_invoice/주문 | 💰 매출·수금 | 고객 청구서 초안 | ⚠️ 분류기 확장 |
-| po_request | 📦 재고·구매 | PO 초안 | ⚠️ 확장 |
-| goods_receipt | 📦 재고·구매 | 입고 → 3-way | ⚠️ 확장 |
+| po_request | 📦 재고·구매 | PO 초안 | ⚠️ 확장 (승인된 요청→PO는 이벤트로 자동; 채팅 issue_po로 발주) |
+| goods_receipt / packing_list | 📦 재고·구매 | 입고 드래프트 → 승인 시 포스팅 + PO 롤업 → 3-way | ✅ 출하 |
 | hr_doc | 👤 사람·급여 | 직원 기록 정리 | ⚠️ 확장 |
 | customer_email | 🎧 고객 | 답장 드래프트 | ⚠️ 확장 |
 | other/모호 | 🧭 디스패처 보류 | 모호하면 창업자 에스컬레이션 | ✅ |

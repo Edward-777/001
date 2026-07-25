@@ -140,8 +140,17 @@ def submit_request(session: Session, request_id: int) -> Request:
     req.submitted_at = _now()
     session.flush()
 
-    # No one above the requester (e.g. top of org) -> nothing to approve.
+    # No one above the requester (e.g. top of org) -> nothing to approve. Kept
+    # deliberately (a founder shouldn't need to self-approve), but leave an
+    # explicit audit trail: auto-approval must never be silent.
     if not approvers:
+        from ...core import audit
+
+        audit.record(session, actor_user_id=req.requester_id, action="auto_approved",
+                     entity_type="request",
+                     detail={"request_no": req.request_no,
+                             "amount": str(req.total_amount),
+                             "reason": "no approvers above the requester (org top)"})
         _finalize_approved(session, req)
     else:
         _notify_pending(session, req, approvers[0])
