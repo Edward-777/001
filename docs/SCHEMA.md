@@ -665,3 +665,19 @@ Bank Statement 업로드 → AI 적요 추출 → statement_lines
 - **✅ Q2: 조직도 기반 라우팅이 기본**, 예외는 **admin 권한자가 그때그때 셋팅**(approval_rules에 fixed_role/fixed_employee 라우팅).
 - **✅ Q4: USD 단일 통화.** 다중통화 안 함.
 - **✅ Q6: 재무제표/리포트 필요** (BS/IS/CF/TB/GL detail/AP aging/재고평가). 전표에서 동적 산출, **AI가 대화로 호출 가능**(예: "1월 마감자료"). 회계기간(마감) 개념 포함.
+
+## 2026-07 스키마 추가 (채팅 P2P 완결 + 에이전트 아키텍처)
+
+**새 테이블**
+- `user_memories` — 대화 간 사용자 선호 (user_id FK, fact ≤400, source, created_at). 감사되는 툴로만 기록. (ADR-6)
+- `learned_rules` — 거버넌스 학습 룰 (kind, params JSON, evidence ≤400, status active|revoked, **applied_count**, approved_at). v1 kind=`vendor_alias`. (ADR-10)
+
+**기존 테이블 컬럼 추가**
+- `request_lines.product_url` (≤1000) · `request_lines.price_source` ("user"|"url") — 링크 기반 구매요청, 승인자 더블체크.
+- `ap_bills.match_note` (≤400) — 3-way match 통과/예외 사유.
+- `documents.uploaded_by` (FK users) — "방금 올린 파일 첨부" 해소용.
+
+**동작 변화 (스키마 연관)**
+- `inbounds.po_id`/`inbound_lines.po_line_id`가 실제로 채워짐(PO 기준 입고) → `InboundPosted` 이벤트가 po 정보 운반 → `po_lines.qty_received` 롤업 + PO 상태 전이.
+- `purchase_orders` 전체 수명주기 가동: draft→open(issue)→partially_received→received(→closed/canceled).
+- Alembic: `8b3f2a91c4d7`(컬럼 4종) · `c41d7e55a9b2`(user_memories·learned_rules).

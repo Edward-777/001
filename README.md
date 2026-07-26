@@ -46,7 +46,7 @@ rule proposals in the approval inbox; approved rules change behavior and count
 their own applications), a per-reply execution timeline (tool · status ·
 latency), and a deterministic honesty backstop so a failed action can never be
 reported as a success. Why it's built this way: **[docs/ADR.md](docs/ADR.md)**.
-**44 audited AI tools · 293 tests passing.**
+**44 audited AI tools · 294 tests passing.**
 
 ## Setup (requires Python 3.12+)
 ```bash
@@ -57,7 +57,7 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 274 tests
+pytest                          # 294 tests
 ```
 
 > Dev uses SQLite for instant run. Production = PostgreSQL (set `DATABASE_URL`).
