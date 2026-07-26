@@ -126,3 +126,28 @@ def test_recovers_tool_call_wrapped_in_tags_and_garbage(session, employee):
     out = agent.run(session, employee, "my requests?", chat=lambda m, tools=None: turns.pop(0))
     assert [t["tool"] for t in out["tool_calls"]] == ["list_my_requests"]
     assert out["reply"] == "Here you go."
+
+
+def test_purchase_request_sku_links_product_through_to_the_po(session, employee):
+    """A restock request made in chat carries product_id onto the PO line — the
+    link that lets packing lists and PO-receiving map deliveries automatically."""
+    from app.modules import hr, inventory, notifications, procurement  # noqa: F401
+    from app.modules.approval import service as appr_svc
+    from app.modules.inventory import service as inv_svc
+    from app.modules.inventory.models import ProductType
+
+    Base.metadata.create_all(session.get_bind())
+    product = inv_svc.create_product(session, sku="W-9", name="Widget9",
+                                     type=ProductType.INVENTORY)
+    out = registry.execute("create_purchase_request",
+                           {"title": "Restock W-9", "qty": 10, "unit_price": 5,
+                            "sku": "W-9"},
+                           session=session, user=employee)["result"]
+    line = appr_svc.request_lines(
+        session, appr_svc.get_request_by_no(session, out["request_no"]).id)[0]
+    assert line.product_id == product.id
+
+    bad = registry.execute("create_purchase_request",
+                           {"title": "x", "qty": 1, "unit_price": 5, "sku": "NOPE"},
+                           session=session, user=employee)["result"]
+    assert "unknown SKU" in bad["error"]

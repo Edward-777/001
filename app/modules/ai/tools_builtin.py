@@ -64,10 +64,18 @@ def _create_purchase_request(session: Session, user: User, args: dict) -> dict:
     if qty <= 0 or price <= 0:
         return {"error": "need quantity AND unit_price (both > 0) before creating — "
                          "ask the user for the missing values first"}
+    product_id = None
+    if args.get("sku"):
+        product = inv.get_product_by_sku(session, str(args["sku"]).strip())
+        if product is None:
+            return {"error": f"unknown SKU '{args['sku']}' — call list_products, or omit "
+                             "sku for a non-stock purchase"}
+        product_id = product.id
     req = appr.create_request(
         session, type=RequestType.PURCHASE, requester_id=user.id,
         title=args["title"], description=args.get("description", ""),
         lines=[{"description": description, "qty": qty, "unit_price": price,
+                "product_id": product_id,
                 "product_url": url, "price_source": price_source}],
     )
     detail = f"{qty:g} × ${price:g}"
@@ -829,6 +837,8 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {
             "title": {"type": "string"}, "description": {"type": "string"},
             "qty": {"type": "number"}, "unit_price": {"type": "number"},
+            "sku": {"type": "string",
+                    "description": "product SKU when restocking a known inventory item"},
             "product_url": {"type": "string",
                             "description": "product page URL the user shared"}},
             "required": ["title"]},
