@@ -20,7 +20,7 @@ gained last sprint, and audits can no longer answer "could the AI have done X?"
 by reading one layer.
 
 **Consequences.** Adding any AI capability first means making the *service*
-capability exist — which is why tools are thin (~10-line) wrappers. The 287-test
+capability exist — which is why tools are thin (~10-line) wrappers. The automated test
 suite exercises the same functions the AI calls, so test coverage of the app IS
 test coverage of the agent's action space.
 
