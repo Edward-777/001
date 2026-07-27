@@ -1,5 +1,8 @@
 # 001 — Enterprise AI Operating System
 
+**Finance · Procurement · Inventory · Sales — run by AI agents, approved by
+humans, audited end to end. Fully local LLMs (Ollama), zero cloud calls.**
+
 A fully local system where AI agents run a company's operations — finance,
 procurement, inventory, sales — through the same permission-checked service
 layer as the human UI. Humans approve every consequential action. Everything
