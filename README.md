@@ -1,5 +1,7 @@
 # 001 — Enterprise AI Operating System
 
+![tests](https://github.com/Edward-777/001/actions/workflows/ci.yml/badge.svg)
+
 **Finance · Procurement · Inventory · Sales — run by AI agents, approved by
 humans, audited end to end. Fully local LLMs (Ollama), zero cloud calls.**
 
