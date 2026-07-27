@@ -9,6 +9,21 @@ Runs as a single-tenant appliance: the application, the database, and all
 three models (chat, vision, embeddings) live on the customer's own hardware.
 No data leaves the machine.
 
+"Close June 2026" — the agent plans, executes each step through
+permission-checked tools, and returns the closing package:
+
+![Plan-then-execute: month-end close with a visible step checklist and per-tool execution timeline](docs/img/plan-then-execute.png)
+
+A document that orders the AI to wire money is refused — guardrails are code,
+not prompts:
+
+![An instruction embedded in an uploaded invoice is treated as untrusted data and refused](docs/img/guardrails-injection.png)
+
+The system mines rules from human decisions and proposes them in the same
+approval inbox — learning is never applied silently:
+
+![A learned vendor-alias rule proposed as an approval card](docs/img/learning-loop.png)
+
 ## Documentation
 
 - [docs/ADR.md](docs/ADR.md) — architecture decision records: why the system
