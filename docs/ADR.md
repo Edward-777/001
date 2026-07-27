@@ -67,7 +67,7 @@ match exceptions in draft. The failures that remained were *verbal*: the model
 lied about what had happened. So we added a deterministic honesty backstop —
 any failed tool call is stamped `action_failed` with an instruction to report
 the failure — and re-verified the same scenarios ("only 2 units remain to
-receive…" with a ⚠ in the visible execution timeline).
+receive…" with a warning marker in the visible execution timeline).
 
 **Consequences.** Prompt-rule violations degrade UX, never books. Model
 upgrades don't require re-auditing safety, only quality.

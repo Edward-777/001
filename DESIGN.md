@@ -1,404 +1,404 @@
-# 001 — AI-native ERP — 설계 문서
+# 001 — AI-native ERP — Design Document
 
-> **상태:** v0.1 (살아있는 문서)
-> **작성 시작:** 2026-06-02
-> **이 문서 사용법:** 우리가 대화로 결정한 내용을 여기에 누적한다. `🔲 미결정`은 아직 논의가 필요한 항목, `✅ 결정`은 합의된 항목. 코드보다 이 문서가 먼저다.
-
----
-
-## 1. 비전 (Vision)
-
-1인 ~ 소규모 스타트업이 **인터넷 없이, 데스크톱에서, AI가 직접 운전하는** ERP.
-
-기존 운영 ERP(Flask+PostgreSQL, ~90k LOC, Redis/Celery/Nginx/Docker)는 **엔터프라이즈급으로 무겁다**. 이 프로젝트는 그 도메인 지식은 참고하되, **완전히 새로 가볍게** 만든다.
-
-**엔드게임:** *대화만으로 회사 운영에 전혀 문제가 없는 상태.* 출장 기안은 한 예시일 뿐. 채용·구매·입고·회계·재고·자산 등 회사의 모든 업무를 자연어 대화로 처리할 수 있어야 한다.
-
-**경쟁 상대 = QuickBooks.** 목표는 QB보다 **더 쉽고, 더 가볍고, 전문지식 없이도 쓸 수 있는 "회사 전체 ERP"**. 회계만이 아니라 **재고·자산·SCM까지 단단**해야 한다 (QB는 회계 중심이라 여기가 약점 → 우리의 차별점).
-
-예시 흐름:
-- *"5월 1~15일 컨퍼런스 출장 가"* → AI가 되묻고 → 기안 작성 → **조직도 기반 승인 라우팅** → 승인 → 전달.
-- 인보이스 PDF 첨부 → AI가 읽고 → PO·입고와 3-way match → AP·전표 자동.
-- *"신입 OOO, X팀에 배치"* → AI가 직원 등록 → 소속 조직 따라 이후 결재선 자동 형성.
+> **Status:** v0.1 (living document)
+> **Started:** 2026-06-02
+> **How to use this document:** Decisions made in conversation accumulate here. "Undecided" marks items still under discussion, "Done" marks agreed items. This document comes before the code.
 
 ---
 
-## 2. 목표 / 비목표 (Goals / Non-Goals)
+## 1. Vision
 
-### 목표
-- 🎯 **궁극 목표: QuickBooks 대체.** 회계 모듈은 단순 보조가 아니라 **완전한 장부 시스템**(복식부기 GL + AP/AR + 재무제표 + 뱅크릴레 + 1099)으로 키워, 결국 QB 없이 이 시스템만으로 회계를 닫을 수 있게 한다.
-- **경량**: 기존 대비 코드량 ~1/5 목표. 단일 프로세스, 더블클릭 실행급 단순함.
-- **완전 로컬**: 데이터·AI 모두 로컬. 외부 API 의존 0 (선택적).
-- **연동된 업무 체인**: 기안 → 구매 → 재고 → 자산 → 회계가 데이터로 자연스럽게 이어짐.
-- **AI-native**: 사람과 AI가 *같은 업무 도구*를 호출.
-- **데스크톱 앱** 형태로 배포.
+An ERP for solo founders and small startups that runs **on the desktop, without internet, driven directly by AI**.
 
-### 비목표 (의도적으로 제외 — 경량화의 핵심)
-- ❌ 멀티테넌시 / 멀티조직 (1조직 전제)
-- ❌ 분산 인프라 (Redis/Celery/Nginx/Docker/메시지큐)
-- ❌ OAuth/SSO/외부 IdP (세션 쿠키 로컬 인증으로 충분). 단 **권한 자체는 정교함** — 3축 모델(§8.5). "간단한 인증, 정교한 인가".
-- ❌ 고가용성·수평확장 (단일 사용자~소수)
-- ❌ 클라우드 의존 (선택사항으로만)
+The existing production ERP (Flask+PostgreSQL, ~90k LOC, Redis/Celery/Nginx/Docker) is **enterprise-grade heavy**. This project borrows its domain knowledge but is a **complete, lightweight rebuild from scratch**.
+
+**Endgame:** *Running the company entirely through conversation, with no gaps.* Travel requests are just one example. Hiring, purchasing, receiving, accounting, inventory, assets — every business process should be handled in natural language.
+
+**The competitor is QuickBooks.** The goal is a **whole-company ERP that is easier, lighter, and usable without specialist knowledge** — better than QB. Not just accounting: **inventory, assets, and SCM must be solid** too (QB is accounting-centric and weak there — that is our differentiator).
+
+Example flows:
+- *"I'm going to a conference May 1–15"* → AI asks follow-ups → drafts the request → **org-chart-based approval routing** → approval → handoff.
+- Attach an invoice PDF → AI reads it → 3-way match against PO and receipt → AP and journal entry created automatically.
+- *"New hire OOO, assign to team X"* → AI registers the employee → future approval lines form automatically from the org placement.
 
 ---
 
-## 3. 설계 원칙 (Principles)
+## 2. Goals / Non-Goals
 
-1. **도구-우선 (Tool-first / Agentic core)** — 모든 업무 동작을 명확한 함수("도구")로 정의한다. 사람은 UI로, AI는 함수콜로 *같은 도구*를 호출한다. 이것이 전체 설계의 척추.
-2. **코어는 독립적** — 도메인 로직은 UI·AI 없이 단독으로 동작하고 테스트된다.
-3. **단순함이 기능보다 우선** — 안 쓰면 안 만든다. god-file 금지, 과한 추상화 금지.
-4. **데이터가 진실** — 모든 업무 흐름은 추적 가능한 데이터(감사 로그 포함)로 남는다. 나중에 자체 모델 학습의 근거가 됨.
-5. **로컬 우선, 클라우드 선택** — 기본은 로컬. 클라우드는 끌 수 있는 옵션.
+### Goals
+- **Ultimate goal: replace QuickBooks.** The accounting module is not a mere helper but a **complete bookkeeping system** (double-entry GL + AP/AR + financial statements + bank reconciliation + 1099), so that eventually the books can be closed on this system alone, without QB.
+- **Lightweight**: target ~1/5 the code of the existing system. Single process, double-click-to-run simplicity.
+- **Fully local**: data and AI both local. Zero external API dependencies (optional only).
+- **Connected business chain**: request → purchasing → inventory → assets → accounting flows naturally through data.
+- **AI-native**: humans and AI invoke the *same business tools*.
+- Ship as a **desktop app**.
 
----
-
-## 4. 사용자 & 범위 (Personas & Scope)
-
-- **범위 기준:** 일반적인 소규모 스타트업 표준. (특정 회사에 종속되지 않게 범용적으로.)
-- **✅ 사용 국가: 미국 (US).** → 회계는 **US GAAP**, 통화 **USD**, 세금은 **sales/use tax**(한국식 세금계산서·부가세 ❌). 거래처 1099, 감가상각 book(정액)/tax(MACRS) 구분 가능성. UI 언어 기본 **영어**(D14). 기존 시스템도 QuickBooks 계정을 임포트했으므로 **QuickBooks식 계정과목(COA)** 과 정합 권장.
-- **주요 사용자:** 대표/실무자. 회계·구매·승인 역할이 한 사람에 겹칠 수 있음.
-- **✅ 사용자 수: 진짜 동시접속 최대 30명.** → "각자 데스크톱 앱"이 아니라 **호스트 1대(GPU 박스)가 서버 + 30명이 브라우저로 접속**. LLM이 4090 한 대에서 돌아야 하므로 자연스러운 형태. "데스크톱 앱"은 그 호스트의 포장(선택).
-- **✅ 동시 30명 → PostgreSQL 채택** (SQLite의 단일 쓰기 락 회피). 그래도 단일 서버라 여전히 가볍다.
-- **✅ 네트워크: 내부망(intranet). 외부에서는 VPN으로 내부망 접속 후 사용.** → 앱은 공개 인터넷에 노출 안 됨. 보안 경계 = VPN. 앱 계층은 세션+역할이면 충분.
-- **✅ 모바일/태블릿 접속 = 로컬 위배 아님.** "로컬"의 정의 = **데이터가 고객 박스 안에서 저장·처리됨(제3자 클라우드 미경유)**, ≠ 단일 기기 제한. 폰/태블릿은 또 하나의 브라우저 클라이언트. AI도 여전히 어플라이언스 4090에서 구동 → "폰에서 ERP에게 말 걸기"도 로컬.
-  - 사내=LAN 브라우저 / 외부=VPN(WireGuard) 진입 후 접속 (데이터는 박스 안, 트래픽만 암호화).
-  - **반응형 UI(Tailwind 내장) + PWA**(홈화면 추가, 앱 같은 경험)로 충분 → **네이티브 앱 불필요**, 단일 코드베이스.
-  - 원격 접속 대비: LAN에서도 HTTPS, 원격 2FA 권장.
+### Non-Goals (deliberately excluded — the essence of staying lightweight)
+- No multi-tenancy / multi-org (single organization assumed)
+- No distributed infrastructure (Redis/Celery/Nginx/Docker/message queues)
+- No OAuth/SSO/external IdP (session-cookie local auth is enough). However, **authorization itself is sophisticated** — the 3-axis model (§8.5). "Simple authentication, sophisticated authorization."
+- No high availability / horizontal scaling (single user to a handful)
+- No cloud dependency (optional only)
 
 ---
 
-## 5. 도메인 모델 — 업무 체인 (핵심)
+## 3. Design Principles
 
-> 이 섹션이 "연동이 부족하다"던 바로 그 문제를 푸는 곳. 아래는 초안 골격이며, 다음 대화에서 상세화한다.
+1. **Tool-first (agentic core)** — every business action is defined as an explicit function ("tool"). Humans invoke them via UI, AI via function calls — *the same tools*. This is the spine of the entire design.
+2. **The core stands alone** — domain logic runs and is tested without UI or AI.
+3. **Simplicity beats features** — if it isn't used, don't build it. No god-files, no over-abstraction.
+4. **Data is truth** — every business flow leaves traceable data (including audit logs). This later becomes the basis for training our own model.
+5. **Local first, cloud optional** — local by default. Cloud is an option that can be turned off.
+
+---
+
+## 4. Personas & Scope
+
+- **Scope baseline:** a typical small startup. (Generic — not tied to any specific company.)
+- **Done — Country: United States.** → Accounting is **US GAAP**, currency **USD**, taxes are **sales/use tax** (no Korean-style tax invoices or VAT). Vendor 1099s; possible book (straight-line) vs. tax (MACRS) depreciation split. UI language defaults to **English** (D14). The legacy system imported QuickBooks accounts, so alignment with a **QuickBooks-style chart of accounts (COA)** is recommended.
+- **Primary users:** founder/operators. Accounting, purchasing, and approval roles may overlap in one person.
+- **Done — User count: at most 30 true concurrent users.** → Not "a desktop app per person" but **one host (GPU box) as the server + 30 people connecting via browser**. The LLM has to run on a single 4090, so this shape is natural. The "desktop app" is optional packaging for that host.
+- **Done — 30 concurrent → PostgreSQL** (avoids SQLite's single-writer lock). Still a single server, still lightweight.
+- **Done — Network: intranet only. External access goes through VPN into the internal network.** → The app is never exposed to the public internet. The security boundary is the VPN. Session + roles are sufficient at the app layer.
+- **Done — Mobile/tablet access does not violate "local".** Definition of "local" = **data is stored and processed inside the customer's box (never transits a third-party cloud)**, not "single device only". Phones/tablets are just more browser clients. The AI still runs on the appliance's 4090 → "talking to the ERP from your phone" is still local.
+  - On-site = LAN browser / off-site = enter via VPN (WireGuard), then connect (data stays in the box; only traffic is encrypted).
+  - **Responsive UI (Tailwind built in) + PWA** (add-to-home-screen, app-like experience) is enough → **no native app needed**, single codebase.
+  - For remote access: HTTPS even on the LAN, 2FA recommended for remote.
+
+---
+
+## 5. Domain Model — the Business Chain (core)
+
+> This section is where the "modules don't connect" problem gets solved. Below is a draft skeleton, to be detailed in upcoming conversations.
 
 ```
-[기안/요청]  Request/Draft
-     │  상신
+[Request/Draft]  Request/Draft
+     │  submit
      ▼
-[승인]       Approval ──(승인)──┐
-     │                          │
-     ▼                          ▼
-[구매]       PurchaseOrder   (반려 시 종료)
-     │  입고
+[Approval]       Approval ──(approved)──┐
+     │                                  │
+     ▼                                  ▼
+[Purchasing]     PurchaseOrder    (ends if rejected)
+     │  receive
      ▼
-[재고]       Inventory (입/출고, 수량·단가)
-     │  자산화 / 소비
+[Inventory]      Inventory (in/out, quantity & unit cost)
+     │  capitalize / consume
      ├──────────────┐
      ▼              ▼
-[자산]         [원가/비용]
+[Assets]       [Cost/Expense]
  FixedAsset    Cost/Expense
      │              │
      └──────┬───────┘
             ▼
-[회계]   JournalEntry (전표) → 재무제표
+[Accounting]  JournalEntry → financial statements
 ```
 
-### 5.1 엔티티 지도 (초안 — ⚠️ 최신 정본은 [docs/SCHEMA.md](docs/SCHEMA.md))
+### 5.1 Entity Map (draft — Note: the current source of truth is [docs/SCHEMA.md](docs/SCHEMA.md))
 
-> 아래는 초기 골격. **현재 정본 스키마(~40개 테이블, HR·매출/AR·경비·은행·문서분류·온보딩 포함)는 SCHEMA.md.** 이 지도는 큰 그림 참고용.
+> The list below is the early skeleton. **The current canonical schema (~40 tables, including HR, sales/AR, expenses, banking, document classification, and onboarding) lives in SCHEMA.md.** Use this map for the big picture only.
 
-**마스터 데이터**
-- `User` — 이름, 이메일, 비번해시, 역할, 부서, 활성여부
-- `Department` — 부서(결재 라우팅·집계용)
-- `Vendor` — 매입 거래처
-- `Customer` — 매출 거래처 (🔲 Phase 1 포함 여부 = D10)
-- `Product` — 품목: 종류(재고품/자산/소모품/서비스), 단위, 카테고리, 표준단가
-- `Account` — 계정과목(차트): 코드, 이름, 유형(자산/부채/자본/수익/비용)
+**Master data**
+- `User` — name, email, password hash, role, department, active flag
+- `Department` — department (for approval routing and aggregation)
+- `Vendor` — purchasing counterparty
+- `Customer` — sales counterparty (whether it is in Phase 1 = D10)
+- `Product` — item: type (stock/asset/consumable/service), unit, category, standard price
+- `Account` — chart of accounts: code, name, type (asset/liability/equity/revenue/expense)
 
-**워크플로우 (기안/승인)**
-- `Request` — 기안/품의: 유형(구매/경비/출장/일반), 기안자, 제목, 내용, 금액, 상태(draft→submitted→approved/rejected→closed)
-- `ApprovalLine` — 결재선: request_id, 승인자, 순번, 상태, 결재일, 코멘트
-- `ApprovalRule` — 결재규칙: 금액·유형 → 결재선 자동 구성
+**Workflow (requests/approvals)**
+- `Request` — request/proposal: type (purchase/expense/travel/general), requester, title, body, amount, status (draft→submitted→approved/rejected→closed)
+- `ApprovalLine` — approval line: request_id, approver, sequence, status, decision date, comment
+- `ApprovalRule` — approval rule: amount and type → approval line auto-construction
 
-**구매**
-- `PurchaseOrder` — 발주(승인된 Request에서 생성): vendor, 상태(ordered→partially_received→received→closed)
-- `POLine` — 발주 품목: product, 수량, 단가, 금액
+**Purchasing**
+- `PurchaseOrder` — purchase order (created from an approved Request): vendor, status (ordered→partially_received→received→closed)
+- `POLine` — PO line: product, quantity, unit price, amount
 
-**재고**
-- `StockMovement` — 재고 이동: product, 유형(입고/출고/조정), 수량, 단가, 출처(PO/출고/조정)
-- `StockBalance` — 현재고: product별 수량 + 평균단가(이동평균)
-- `Outbound` — 출고: 소비/판매/생산투입
+**Inventory**
+- `StockMovement` — inventory movement: product, type (inbound/outbound/adjustment), quantity, unit cost, source (PO/issue/adjustment)
+- `StockBalance` — on-hand stock: per-product quantity + average unit cost (moving average)
+- `Outbound` — issue: consumption/sale/production input
 
-**자산**
-- `FixedAsset` — 고정자산(입고품이 자산일 때 생성): 취득원가, 취득일, 내용연수, 상각방법, 감가누계, 상태
-- `DepreciationEntry` — 감가상각 내역(월별)
+**Assets**
+- `FixedAsset` — fixed asset (created when a received item is an asset): acquisition cost, acquisition date, useful life, depreciation method, accumulated depreciation, status
+- `DepreciationEntry` — depreciation records (monthly)
 
-**회계 (모든 흐름이 귀결되는 중심)**
-- `JournalEntry` — 전표: 일자, 적요, 출처(PO입고/자산/지급/수동), 상태(draft→posted)
-- `JournalLine` — 분개: account, 차변, 대변 (차변합=대변합 강제)
-- `APBill` — 미지급금 / `Payment` — 지급
-- (`ARInvoice`/`Receipt` — 매출측, D10에 따라)
+**Accounting (where every flow converges)**
+- `JournalEntry` — journal entry: date, memo, source (PO receipt/asset/payment/manual), status (draft→posted)
+- `JournalLine` — line: account, debit, credit (total debits = total credits enforced)
+- `APBill` — accounts payable / `Payment` — payment
+- (`ARInvoice`/`Receipt` — sales side, per D10)
 
-### 5.2 자동 연동 규칙 (← "연동 부족"을 푸는 핵심)
+### 5.2 Automatic Integration Rules (← the key to solving "modules don't connect")
 
-각 단계 전이 시 **다음 단계 데이터 + 회계 전표가 자동 생성**된다:
+On each stage transition, **the next stage's data plus the accounting entry are generated automatically**:
 
-| 트리거 | 자동 생성되는 것 | 자동 전표(분개) |
+| Trigger | Auto-created | Auto journal entry |
 |--------|-----------------|----------------|
-| Request **승인** | PurchaseOrder | — |
-| PO **입고**(Inbound) | StockMovement(+), StockBalance 갱신 | (차) 재고/비용  (대) 미지급금(AP) |
-| 입고품이 **자산** | FixedAsset 등록 | (차) 유형자산  (대) 미지급금 |
-| **지급**(Payment) | APBill 정산 | (차) 미지급금  (대) 현금/예금 |
-| 월말 **감가상각** | DepreciationEntry | (차) 감가상각비  (대) 감가상각누계액 |
-| **출고**(소비/판매) | StockMovement(−) | (차) 매출원가/비용  (대) 재고 |
+| Request **approved** | PurchaseOrder | — |
+| PO **received** (Inbound) | StockMovement(+), StockBalance updated | Dr Inventory/Expense, Cr Accounts Payable (AP) |
+| Received item is an **asset** | FixedAsset registered | Dr Fixed Assets, Cr Accounts Payable |
+| **Payment** | APBill settled | Dr Accounts Payable, Cr Cash/Bank |
+| Month-end **depreciation** | DepreciationEntry | Dr Depreciation Expense, Cr Accumulated Depreciation |
+| **Issue** (consumption/sale) | StockMovement(−) | Dr COGS/Expense, Cr Inventory |
 
-> 즉 사용자는 "기안→승인→입고" 같은 **업무 행위**만 하고, **회계 전표는 시스템이 자동 분개**한다. 회계 지식이 없어도 장부가 맞는다. 이게 1인/소규모용 ERP의 진짜 가치.
+> In other words, users only perform **business actions** like "request → approve → receive"; **the system books the journal entries automatically**. The ledger stays correct without any accounting knowledge. That is the real value of an ERP for solo/small teams.
 
-### 5.3 확정된 회계/재고 정책
-- **✅ 완전 복식부기 자동분개** (차변=대변, 계정과목, 전표→재무제표 BS/IS). US GAAP 기준.
-- **✅ 매입·매출 양측 모두 Phase 1.** (초기엔 매입측 우선 설계했으나 G1 결정으로 AR/판매도 Phase 1 포함 — §10.5 참조.) 매출/AR=고객·수주·인보이스·수금.
-- **✅ 재고 평가 = 이동평균법** (입고 시마다 평균단가 갱신). 추후 FIFO 확장 가능하게 추상화.
-- **✅ 통화 USD, sales/use tax 체계** (부가세·세금계산서 없음).
+### 5.3 Settled Accounting/Inventory Policies
+- **Done — Full double-entry auto-posting** (debits = credits, chart of accounts, journal entries → BS/IS financial statements). US GAAP.
+- **Done — Both purchasing and sales sides in Phase 1.** (The purchasing side was designed first, but per decision G1 AR/sales is also in Phase 1 — see §10.5.) Sales/AR = customers, sales orders, invoices, receipts.
+- **Done — Inventory valuation = moving average** (average unit cost updated on every receipt). Abstracted so FIFO can be added later.
+- **Done — USD currency, sales/use tax regime** (no VAT, no tax invoices).
 
-### 5.4 확정된 추가 정책
-- **✅ UI 언어 = 영어 기본** (i18n 구조는 깔아두고 한국어 추후 추가)
-- **✅ 감가상각 = 장부상 정액법(straight-line)만.** 세무용 MACRS는 설계만 열어두고 추후/CPA 위임.
+### 5.4 Additional Settled Policies
+- **Done — UI language = English by default** (i18n scaffolding in place; Korean added later)
+- **Done — Depreciation = book straight-line only.** Tax MACRS is design-ready but deferred / delegated to a CPA.
 
-### 5.5 필드 레벨 스키마
-- ✅ D13: **[docs/SCHEMA.md](docs/SCHEMA.md)** 에 전 사이클 ~40개 테이블 작성 완료 (구매·재고·자산·전환·회계·기간/리포트·매출/AR·은행·경비·문서분류·권한·온보딩). Q1~Q6 모두 확정.
+### 5.5 Field-Level Schema
+- Done — D13: **[docs/SCHEMA.md](docs/SCHEMA.md)** covers the full cycle with ~40 tables (purchasing, inventory, assets, conversions, accounting, periods/reports, sales/AR, banking, expenses, document classification, permissions, onboarding). Q1–Q6 all settled.
 
 ---
 
-## 6. 아키텍처 — 4층
+## 6. Architecture — 4 Layers
 
-| 층 | 역할 | 비고 |
+| Layer | Role | Notes |
 |----|------|------|
-| **1. 도메인 코어** | 엔티티 + 업무 "도구" 함수 | UI/AI 없이 단독 동작·테스트 |
-| **2. 로컬 API** | 도구를 함수콜/HTTP로 노출 | 사람UI·AI가 공유 |
-| **3-A. 사람 UI** | 화면(폼/목록/대시보드) | 로컬 웹 → 데스크톱 포장 |
-| **3-B. AI 에이전트** | 자연어→도구호출, 문서파싱, 데이터질의(RAG) | 로컬 LLM |
+| **1. Domain core** | Entities + business "tool" functions | Runs and is tested without UI/AI |
+| **2. Local API** | Exposes tools via function call/HTTP | Shared by human UI and AI |
+| **3-A. Human UI** | Screens (forms/lists/dashboards) | Local web → desktop packaging |
+| **3-B. AI agent** | Natural language → tool calls, document parsing, data queries (RAG) | Local LLM |
 
-원칙: 3-A와 3-B는 **2층을 공유**한다. AI는 "말로 버튼을 누르는 또 다른 사용자".
+Principle: 3-A and 3-B **share layer 2**. The AI is "another user who presses buttons by talking."
 
 ---
 
-## 7. 기술 스택 — ✅ 추천 확정안
+## 7. Tech Stack — Done: recommended and confirmed
 
-30명 사용 + 경량 + AI-native + 완전 로컬을 모두 만족하는 조합:
+The combination that satisfies 30 users + lightweight + AI-native + fully local:
 
-| 영역 | 선택 | 이유 |
+| Area | Choice | Rationale |
 |------|------|------|
-| **언어/코어** | Python 3.12 | 기존 회계 도메인 재활용, 팀 친숙, AI 생태계 |
-| **API 프레임워크** | **FastAPI** | 가볍고, 함수 시그니처→스키마 자동화 → **AI 도구화에 직결** (도구-우선 원칙과 궁합 최고) |
-| **DB** | **PostgreSQL** | 동시 30명 쓰기를 안전하게. 단일 인스턴스라 여전히 가벼움(Redis/Celery 없음). SQLAlchemy로 추상화 |
-| **앱 서버** | uvicorn 멀티워커 (gunicorn 불요) | 동시 30명 처리. 단일 머신 |
-| **ORM / 마이그레이션** | SQLAlchemy 2.0 + Alembic | 표준, DB 교체 용이 |
-| **UI** | **서버렌더링 HTMX + Jinja2 + Tailwind** | 30명 LAN 브라우저에 최적. 빌드 파이프라인 없음, Python만으로 끝, 폼·목록 위주 ERP에 이상적. React보다 훨씬 가벼움 |
-| **인증/인가** | 세션 쿠키 + **3축 권한(§8.5)** | 인증은 단순(세션), 인가는 scope×level×boundary. 역할=employee/manager/accountant/admin |
-| **데스크톱 포장** | (호스트용) **pywebview**, 선택사항 | 30명은 브라우저 접속이 주. 호스트만 앱처럼 포장 |
-| **백그라운드 작업** | **APScheduler** (인프로세스) | 승인 알림 등. Celery/Redis 불필요 |
-| **실시간 알림** | FastAPI SSE | "승인 도착" 푸시. WebSocket보다 단순 |
-| **로컬 LLM 런타임** | **Ollama** (OpenAI 호환 API) | 4090에서 구동, 도구호출 지원 |
-| **LLM 모델** | **교체가능**. 개발=Qwen2.5(4090), 출고=Llama 3.3 70B+Qwen2.5-72B 둘 다 탑재·고객 선택 | 상세 → [docs/AI-AGENT.md](docs/AI-AGENT.md) |
-| **벡터검색(RAG)** | **pgvector** (Postgres 확장) | 같은 DB에 벡터까지. 별도 벡터DB 불필요 |
+| **Language/core** | Python 3.12 | Reuses existing accounting domain knowledge, team familiarity, AI ecosystem |
+| **API framework** | **FastAPI** | Lightweight; function signatures → auto schemas → **directly enables AI tooling** (best fit for the tool-first principle) |
+| **DB** | **PostgreSQL** | Safe concurrent writes for 30 users. Single instance, so still lightweight (no Redis/Celery). Abstracted via SQLAlchemy |
+| **App server** | uvicorn multi-worker (no gunicorn) | Handles 30 concurrent users. Single machine |
+| **ORM / migrations** | SQLAlchemy 2.0 + Alembic | Standard, easy DB swap |
+| **UI** | **Server-rendered HTMX + Jinja2 + Tailwind** | Ideal for 30 LAN-browser users. No build pipeline, Python only, perfect for a form/list-heavy ERP. Much lighter than React |
+| **AuthN/AuthZ** | Session cookie + **3-axis permissions (§8.5)** | Authentication is simple (sessions); authorization is scope×level×boundary. Roles = employee/manager/accountant/admin |
+| **Desktop packaging** | (host only) **pywebview**, optional | The 30 users connect via browser; only the host is packaged as an app |
+| **Background jobs** | **APScheduler** (in-process) | Approval notifications etc. No Celery/Redis |
+| **Real-time notifications** | FastAPI SSE | "Approval arrived" push. Simpler than WebSocket |
+| **Local LLM runtime** | **Ollama** (OpenAI-compatible API) | Runs on the 4090, supports tool calling |
+| **LLM model** | **Swappable**. Dev = Qwen2.5 (4090); ship = both Llama 3.3 70B and Qwen2.5-72B installed, customer picks | Details → [docs/AI-AGENT.md](docs/AI-AGENT.md) |
+| **Vector search (RAG)** | **pgvector** (Postgres extension) | Vectors in the same DB. No separate vector DB |
 
-> 핵심: **PostgreSQL + 단일 Python(FastAPI) 서버 + Ollama**. Redis·Celery·Nginx·Docker **전부 불필요**(원하면 나중에 추가). 그게 경량화의 실체.
-
----
-
-## 8. 로컬 AI 설계
-
-> 에이전트 메커니즘(모델·도구·루프·RAG) 상세는 **[docs/AI-AGENT.md](docs/AI-AGENT.md)**. 이 §8은 거버넌스(학습·자율성·권한·분류·입력관문).
-
-- **하드웨어:** RTX 4090(개발) / 고성능 판매서버(운영). 모델 교체가능(§AI-AGENT 1).
-- **문서 파싱:** 비전모델 또는 OCR+LLM — 인보이스/명세서/영수증 PDF → 자동 회계·대사.
-- **데이터 질의(RAG):** ERP 데이터 임베딩 → pgvector → 권한필터 검색 → 자연어 답변.
-
-### 8.1 AI 학습 전략 (중요 — 흔한 오해 교정)
-
-"매일 들어오는 문서를 매일 파인튜닝으로 학습" 은 **잘못된 도구 선택**이다. AI가 회사를 운영하려면 **두 가지 다른 능력**이 필요하고, 각각 다른 방법으로 얻는다:
-
-| 필요 능력 | 예 | 올바른 방법 |
-|---|---|---|
-| **현재 사실 (fresh facts)** | 오늘 재고, 이번 달 인보이스, X팀 승인자 | **RAG + DB 직접 조회(도구)** — *절대 파인튜닝 아님*. 라이브 DB를 쿼리. 항상 최신, 학습 불필요, 환각 없음 |
-| **운영 역량 (behavior)** | 우리 회사식 결재 관행, 분개 규칙, 말투, 도구 사용 패턴 | **주기적 LoRA 파인튜닝** — 축적된 상호작용 로그로 *일하는 방식*을 학습 |
-
-- ⚠️ **매일 파인튜닝으로 새 문서를 "암기"시키지 않는다.** 사실은 RAG/도구가 담당(항상 정확·최신). 파인튜닝은 *행동·역량* 용도이며 **주/월 단위**면 충분.
-- ✅ **완전 로컬 = 데이터 안 나감.** 파인튜닝도 4090에서 로컬 수행. 프라이버시는 구조적으로 해결됨.
-- ⚠️ **회귀 위험:** 튜닝할 때마다 망가질 수 있으므로 **평가(eval) 하네스가 필수.** "이전보다 나빠지지 않았는가"를 매 튜닝마다 자동 검증. (신뢰의 핵심)
-- **단계:** ① 강한 오픈모델 + 도구호출 + RAG (학습 0) → ② 행동 LoRA 주기 튜닝(데이터 쌓인 뒤) → ③ eval로 가드.
-
-### 8.2 AI 자율성 정책 (D18)
-
-신뢰 가능한 자율성 = **자동 실행 + 불확실성 게이팅 + 주기 감사**:
-
-1. **자동 posting** — AI는 전표를 draft가 아니라 **posted까지 자동** 처리한다. 사람이 매번 승인하지 않는다(그래야 "대화만으로 운영"이 성립).
-2. **불확실성 게이팅** — AI가 애매하면(예: 어느 계정인지, 어느 PO 매칭인지 모호) **자동 진행하지 않고 입력자에게 되묻는다.** 명확할 때만 자동 실행.
-3. **주기 감사** — 주간/월간으로 사람이 AI가 처리한 전표·문서를 검토하고 필요 시 수정. 수정 내역은 행동 튜닝(§8.1)의 학습 데이터가 됨.
-4. **모든 AI 행위는 감사로그**(누가/무엇을/근거 문서)로 추적 가능. (§3 원칙 4)
-
-### 8.3 AI 권한·데이터 접근 모델 (★ AI-native 최대 보안이슈)
-
-문제: 권한 없는 사람이 "야 xxx 연봉 얼마야?" 물으면 LLM이 그냥 답해버릴 수 있다.
-
-**철칙: LLM은 보안 경계가 아니다. 권한 검사는 모델 *아래* 코드에서 결정론적으로.**
-- ❌ 프롬프트로 "민감정보 말하지 마" → 탈옥·혼동·실수로 뚫림. 보안 아님.
-- ✅ **권한 없는 데이터는 애초에 모델 컨텍스트에 안 들어가게** 한다.
-
-**3중 방어:**
-1. **신원(Identity):** AI 에이전트는 **질문자의 세션/권한을 상속**해 그 사람으로서 행동(impersonation). "다 보는 관리자 AI가 무엇을 말할지 판단" ❌.
-2. **도구 게이트:** 모든 service 함수가 `current_user` 권한 검사 → 미달 시 **Forbidden**(데이터 자체를 반환 안 함). G11 권한매트릭스 그대로 적용. AI는 숫자를 못 받음 → "권한 없음" 응답.
-3. **검색 게이트(★ 놓치기 쉬움):** RAG는 **검색 시점에 권한 필터**. 문서/행에 ACL 태그(예: `hr_confidential`) → 권한 없으면 **검색서 제외 = 컨텍스트에 부재.** "생성 후 거르기"가 아니라 **"검색 전에 거르기"**(컨텍스트에 들어가면 프롬프트로 못 막음).
-
-**부가:** 민감 데이터 분류(급여·SSN·은행·인사평가 = 상위권한 전용), 모든 질의·거부를 audit_logs 기록, 차단 시 자연스러운 거부 UX, 프롬프트 가드레일은 *2차* 방어로만.
-
-> 효과: **같은 AI·같은 질문이라도 질문자 권한에 따라 결과가 다르다.** 권한 없으면 AI가 줄 수 있는 정보가 구조적으로 0.
-
-### 8.4 문서 수신 분류 파이프라인 (★ ③검색게이트의 전제 = 시스템 핵심축)
-
-③ 검색 게이트는 **문서 ACL 태그가 정확하다는 전제** 위에 선다. 오분류 한 번 = 보안 붕괴. 그래서 **"수신 시 분류"가 모든 권한통제의 출발점.** 동시에 같은 분류가 자동화도 결정 → 핵심 컴포넌트.
-
-```
-① 캡처 → ② 추출(OCR/텍스트) → ③ 분류(로컬AI) → ④ 게이팅 → ⑤ 태깅 → ⑥ 라우팅 → ⑦ RAG 색인
-③ 분류 산출: 카테고리(인보이스/명세서/영수증/계약/급여/이력서/PO…) + 민감도/ACL + 연결엔티티(벤더·고객·직원·기간·금액)
-```
-- **이중 목적:** 분류 = 누가 보나(보안) + 무엇을 자동처리하나(라우팅). 예: invoice→AP초안+회계권한, payroll→HR권한+인사플로우.
-- **철칙1 Default-Deny:** 민감도 불확실 시 **가장 제한적 등급으로 기본 태깅** 후 확인. 오분류는 *항상 닫는 쪽으로* 실패(너무 열림=누출, 너무 닫힘=접근요청).
-- **철칙2:** 민감 카테고리(급여·계약)는 자동통과 ❌, 사람 확인. 재태깅 가능, 수정은 행동튜닝 데이터.
-
-### 8.5 권한 모델 — 3축 (scope × level × 데이터경계)
-
-단순 서열(employee<manager<accountant<admin)로는 부족하다. 실제 권한은 **3개 축의 곱**:
-
-| 축 | 질문 | 예 |
-|---|---|---|
-| **① scope(도메인)** | 어느 영역? | hr / finance / inventory / system |
-| **② level(등급)** | 그 안 어느 깊이? | hr 1(기본)/2(민감,인사평가)/3(임원,연봉) |
-| **③ data_boundary(데이터경계)** | 누구의 데이터? | self / team / department / all |
-
-**HR 예시 (사원/과장/부장):**
-```
-사원(hr)  : level=1, 경계=self        → 조직도·본인정보
-과장(hr)  : level=2, 경계=team        → 팀원 인사평가 O, 연봉(lvl3) X
-부장(hr)  : level=3, 경계=department  → 부서 연봉까지 O, 타부서 X
-HR임원/admin: level=3, 경계=all
-```
-- 데이터/문서는 **`(scope, level)` 태그** + 연결직원. "연봉"=`(hr,3)`.
-- **판정식:** `user.level[scope] ≥ data.level` **AND** `대상이 user의 data_boundary 안`.
-- **③경계는 조직도가 공짜 제공:** `reports_to_id` 트리의 subtree 포함여부로 self/team/department 판정 → 결재용 조직도를 행(row)단위 접근통제에 재사용. 신규 구조 최소.
-- 경량 구현: `user_scopes(user_id, scope, level, data_boundary)` 몇 줄 + 위 판정식 하나. 역할이 기본 scope묶음 부여, 개인별 가감(경량 RBAC+clearance+ReBAC). UI·AI·RAG에 **동일 적용**.
-
-**★ 전 시스템 공통 원리 (HR 전용 아님):** 같은 3축 공식이 **모든 도메인**에 적용된다. finance(1비용신청/2 AP·AR/3 원장·재무제표), inventory(1조회/2입출고/3평가·조정), procurement(1요청/2 PO/3 계약), system(admin)… HR의 사원/과장/부장 구조가 전 모듈에서 동일 작동.
-- **단일 게이트, 모든 경로:** 사람 UI · AI 도구 · RAG 검색 · API/리포트가 **전부 같은 판정식**을 통과. 사람이 화면서 못 보면 AI·검색·API로도 못 봄(누수 경로 0).
-- **모듈 아키텍처와 합치:** 모든 접근이 service 단일 진입점을 거치므로 게이트를 service에 박으면 전 시스템 보호. 새 모듈 추가 = scope 하나 추가, 권한 코드 불변.
-- **전제:** 전역 적용이므로 **모든 민감 데이터·문서가 `(scope,level)` 태그 필수** → §8.4 "수신 시 자동분류"가 핵심축인 이유. 분류→태그→권한이 한 사슬.
-
-### 8.6 입력 관문 — 관련성·품질 게이트 (잡동사니/부정확 데이터 차단)
-
-문제: 직원이 업무무관 잡동사니나 부정확한 데이터를 집어넣으면? 두 종류로 나눠 막는다.
-
-**철칙: 분류 통과 전엔 라이브 시스템·RAG에 안 들어간다(격리).** 입력은 먼저 quarantine → 분류·검증 통과한 것만 승급.
-
-**(a) 무관 데이터:**
-1. **카테고리 매핑 실패 = 거부** — 알려진 업무 카테고리(인보이스·명세서·영수증·계약·HR…)에 안 맞으면 'uncategorized' 격리, 색인·라우팅 ❌.
-2. **Default-Not-Indexed** — 데이터는 기본 RAG 미색인. "정식 레코드로 승급된 것만" 색인 → 잡동사니는 구조적으로 RAG 진입 불가.
-3. **되묻기** — 애매하면 삼키지 말고 업로더에게 확인(§8.2 재사용). 무응답 → purge.
-
-**(b) 부정확 데이터:**
-4. **카테고리별 검증 룰** — 경비=금액·날짜·영수증 필수, 인보이스=벤더·금액·기간 필수. 누락/이상치 flag.
-5. **중복 제거** — 동일 인보이스 재업로드 감지·차단.
-6. **민감/중요 카테고리 사람 확인**(§8.4).
-
-**악의적 입력(프롬프트 인젝션):** 문서 텍스트는 **항상 데이터로만 취급, 명령으로 해석 ❌.** 검색내용 샌드박스. 권한게이트(§8.5)는 그래도 작동 → 인젝션으로 권한 못 넘음.
-
-> **왜 중요:** 쓰레기가 RAG에 쌓이면 검색품질 저하 + **나중 행동튜닝 오염(garbage-in-garbage-out).** 입력 관문 = AI 품질의 수원지 보호. (참고: *권한 없는* 입력은 §8.5가 이미 차단 — 여기는 *관련성·정확성* 담당)
+> The essence: **PostgreSQL + a single Python (FastAPI) server + Ollama**. Redis, Celery, Nginx, Docker — **all unnecessary** (add later if desired). That is what "lightweight" actually means here.
 
 ---
 
-## 9. 로드맵 (Phases)
+## 8. Local AI Design
 
-| Phase | 내용 | 산출물 |
+> Agent mechanics (model, tools, loop, RAG) are detailed in **[docs/AI-AGENT.md](docs/AI-AGENT.md)**. This §8 covers governance (training, autonomy, permissions, classification, input gating).
+
+- **Hardware:** RTX 4090 (development) / high-end sales server (production). Model is swappable (§AI-AGENT 1).
+- **Document parsing:** vision model or OCR+LLM — invoice/statement/receipt PDFs → automatic accounting and reconciliation.
+- **Data queries (RAG):** ERP data embedded → pgvector → permission-filtered search → natural-language answers.
+
+### 8.1 AI Training Strategy (important — correcting a common misconception)
+
+"Fine-tune daily on each day's incoming documents" is **the wrong tool for the job**. For AI to run a company it needs **two distinct capabilities**, each obtained differently:
+
+| Capability needed | Examples | Correct method |
+|---|---|---|
+| **Fresh facts** | Today's inventory, this month's invoices, team X's approver | **RAG + direct DB queries (tools)** — *never fine-tuning*. Query the live DB. Always current, no training needed, no hallucination |
+| **Operating behavior** | Our company's approval conventions, posting rules, tone, tool-usage patterns | **Periodic LoRA fine-tuning** — learn *how we work* from accumulated interaction logs |
+
+- Note: **never fine-tune daily to make the model "memorize" new documents.** Facts are the job of RAG/tools (always accurate and current). Fine-tuning is for *behavior and capability*, and **weekly/monthly cadence** is enough.
+- Done — **Fully local = data never leaves.** Fine-tuning also runs locally on the 4090. Privacy is solved structurally.
+- Note — **Regression risk:** every tuning run can break things, so an **eval harness is mandatory.** Automatically verify "is it no worse than before" on every tuning run. (This is the core of trust.)
+- **Stages:** (1) strong open model + tool calling + RAG (zero training) → (2) periodic behavior LoRA tuning (once data accumulates) → (3) guard with evals.
+
+### 8.2 AI Autonomy Policy (D18)
+
+Trustworthy autonomy = **automatic execution + uncertainty gating + periodic audit**:
+
+1. **Auto posting** — the AI takes journal entries all the way to **posted**, not just draft. Humans do not approve every entry (otherwise "run the company by conversation" doesn't hold).
+2. **Uncertainty gating** — when the AI is unsure (e.g., which account, which PO to match), it **does not proceed automatically; it asks the submitter.** It only auto-executes when things are clear.
+3. **Periodic audit** — weekly/monthly, a human reviews the AI's entries and documents and corrects as needed. Corrections become training data for behavior tuning (§8.1).
+4. **Every AI action is audit-logged** (who/what/source document) and traceable. (§3 principle 4)
+
+### 8.3 AI Permission & Data Access Model (the biggest AI-native security issue)
+
+Problem: someone without authorization asks "hey, what's xxx's salary?" and the LLM might just answer.
+
+**Iron rule: the LLM is not a security boundary. Permission checks happen deterministically in code *below* the model.**
+- Wrong: telling the model via prompt "don't reveal sensitive info" → defeated by jailbreaks, confusion, or mistakes. Not security.
+- Right: **data the caller cannot access never enters the model's context in the first place.**
+
+**Three-layer defense:**
+1. **Identity:** the AI agent **inherits the asker's session/permissions** and acts as that person (impersonation). "An all-seeing admin AI deciding what to reveal" — no.
+2. **Tool gate:** every service function checks `current_user` permissions → **Forbidden** if insufficient (the data itself is never returned). The G11 permission matrix applies as-is. The AI never receives the numbers → responds "not authorized."
+3. **Retrieval gate (easy to miss):** RAG applies **permission filters at retrieval time**. Documents/rows carry ACL tags (e.g., `hr_confidential`) → without permission they are **excluded from search = absent from context.** Filter **before retrieval**, not "generate then filter" (once something is in context, a prompt can't block it).
+
+**Additionally:** sensitive-data classification (salary, SSN, banking, performance reviews = higher clearance only), all queries and denials recorded in audit_logs, a natural refusal UX when blocked, and prompt guardrails only as a *secondary* defense.
+
+> Effect: **the same AI, same question yields different results depending on the asker's permissions.** Without authorization, the information the AI can give is structurally zero.
+
+### 8.4 Inbound Document Classification Pipeline (the premise of the retrieval gate = a core system axis)
+
+The retrieval gate (3) stands on **the premise that document ACL tags are accurate**. One misclassification = security breach. So **"classify at intake" is the starting point of all access control.** The same classification also drives automation → a core component.
+
+```
+(1) Capture → (2) Extract (OCR/text) → (3) Classify (local AI) → (4) Gate → (5) Tag → (6) Route → (7) RAG index
+(3) Classification outputs: category (invoice/statement/receipt/contract/payroll/resume/PO…) + sensitivity/ACL + linked entities (vendor, customer, employee, period, amount)
+```
+- **Dual purpose:** classification = who can see it (security) + what gets auto-processed (routing). E.g., invoice → AP draft + accounting permission; payroll → HR permission + HR flow.
+- **Iron rule 1 — Default-Deny:** when sensitivity is uncertain, **default-tag at the most restrictive level** and then confirm. Misclassification must *always fail closed* (too open = leak; too closed = an access request).
+- **Iron rule 2:** sensitive categories (payroll, contracts) never auto-pass — human confirmation required. Re-tagging is possible; corrections become behavior-tuning data.
+
+### 8.5 Permission Model — 3 Axes (scope × level × data boundary)
+
+A simple hierarchy (employee < manager < accountant < admin) is not enough. Real permissions are the **product of three axes**:
+
+| Axis | Question | Example |
+|---|---|---|
+| **(1) scope (domain)** | Which area? | hr / finance / inventory / system |
+| **(2) level (grade)** | How deep within it? | hr 1 (basic) / 2 (sensitive, performance reviews) / 3 (executive, salaries) |
+| **(3) data_boundary** | Whose data? | self / team / department / all |
+
+**HR example (staff / manager / director):**
+```
+Staff (hr)    : level=1, boundary=self        → org chart, own info
+Manager (hr)  : level=2, boundary=team        → team performance reviews yes, salaries (lvl3) no
+Director (hr) : level=3, boundary=department  → department salaries yes, other departments no
+HR exec/admin : level=3, boundary=all
+```
+- Data/documents carry a **`(scope, level)` tag** plus the linked employee. "Salary" = `(hr,3)`.
+- **Decision formula:** `user.level[scope] >= data.level` **AND** `target is within user's data_boundary`.
+- **Axis (3) comes free from the org chart:** self/team/department is decided by subtree membership in the `reports_to_id` tree → the approval org chart is reused for row-level access control. Minimal new structure.
+- Lightweight implementation: a small `user_scopes(user_id, scope, level, data_boundary)` table + the single formula above. Roles grant default scope bundles, adjusted per person (lightweight RBAC + clearance + ReBAC). Applied **identically** to UI, AI, and RAG.
+
+**A system-wide principle (not HR-specific):** the same 3-axis formula applies to **every domain**. finance (1 expense requests / 2 AP·AR / 3 ledger & financial statements), inventory (1 view / 2 in-out / 3 valuation & adjustments), procurement (1 request / 2 PO / 3 contracts), system (admin)… The staff/manager/director structure from HR works identically across all modules.
+- **Single gate, every path:** human UI, AI tools, RAG retrieval, API/reports **all pass through the same formula**. If a person can't see it on screen, they can't see it via AI, search, or API either (zero leak paths).
+- **Fits the module architecture:** all access goes through the single service entry point, so putting the gate in the service protects the whole system. Adding a module = adding one scope; permission code unchanged.
+- **Prerequisite:** because it applies globally, **every sensitive datum/document must carry a `(scope,level)` tag** → which is why §8.4 "auto-classify at intake" is a core axis. Classification → tag → permission is one chain.
+
+### 8.6 Input Gate — Relevance & Quality (blocking junk and inaccurate data)
+
+Problem: what if employees dump in irrelevant junk or inaccurate data? Handle the two kinds separately.
+
+**Iron rule: nothing enters the live system or RAG before passing classification (quarantine).** Input goes to quarantine first → only what passes classification and validation is promoted.
+
+**(a) Irrelevant data:**
+1. **Category-mapping failure = rejection** — if it matches no known business category (invoice, statement, receipt, contract, HR…), quarantine as 'uncategorized'; no indexing, no routing.
+2. **Default-Not-Indexed** — data is not RAG-indexed by default. Only "promoted-to-official records" get indexed → junk structurally cannot enter RAG.
+3. **Ask back** — when ambiguous, don't swallow it; confirm with the uploader (reusing §8.2). No response → purge.
+
+**(b) Inaccurate data:**
+4. **Per-category validation rules** — expenses require amount/date/receipt; invoices require vendor/amount/period. Flag omissions and outliers.
+5. **Deduplication** — detect and block re-uploads of the same invoice.
+6. **Human confirmation for sensitive/critical categories** (§8.4).
+
+**Malicious input (prompt injection):** document text is **always treated as data, never interpreted as instructions.** Retrieved content is sandboxed. The permission gate (§8.5) still applies regardless → injection cannot cross permissions.
+
+> **Why it matters:** garbage accumulating in RAG degrades retrieval quality and **poisons later behavior tuning (garbage in, garbage out).** The input gate protects the wellspring of AI quality. (Note: *unauthorized* input is already blocked by §8.5 — this section handles *relevance and accuracy*.)
+
+---
+
+## 9. Roadmap (Phases)
+
+| Phase | Contents | Deliverable |
 |-------|------|--------|
-| **1. 경량 코어 (전 사이클)** | 도메인 모델+도구+UI. AI 없이 수동 동작: 기안→조직도승인→구매→입고→재고⇄자산→출고, **+매출/AR +경비정산 +은행대사 +회계기간/리포트**. 권한 3축·채번·감사·백업 | 동작하는 ERP 골격 |
-| **2. 에이전트 연결** | 로컬 LLM이 도구 호출. 출장 시나리오. 권한게이트·불확실성 게이팅 | "말하면 처리되는" ERP |
-| **3. 문서파싱+질의+분류** | 인보이스/명세서/영수증 자동 처리, 수신분류 파이프라인, 권한필터 RAG 질의 | AI 비서 |
-| **GTM. 온보딩/이행** | 마스터데이터 임포트+기초잔액+AI 계정매핑 (기존고객 판매용) | 상용 출고 |
-| **4. 자체 파인튜닝** | 축적 데이터로 행동 LoRA + eval 하네스 | 회사 특화 LLM |
+| **1. Lightweight core (full cycle)** | Domain model + tools + UI. Manual operation without AI: request → org-chart approval → purchasing → receiving → inventory ⇄ assets → issue, **plus sales/AR, expense reimbursement, bank reconciliation, accounting periods/reports**. 3-axis permissions, numbering, audit, backup | A working ERP skeleton |
+| **2. Agent hookup** | Local LLM calls the tools. Travel scenario. Permission gate, uncertainty gating | An ERP that "does what you say" |
+| **3. Document parsing + queries + classification** | Automatic invoice/statement/receipt processing, intake classification pipeline, permission-filtered RAG queries | AI assistant |
+| **GTM. Onboarding/migration** | Master-data import + opening balances + AI account mapping (for selling to existing customers) | Commercial release |
+| **4. Self fine-tuning** | Behavior LoRA on accumulated data + eval harness | Company-specific LLM |
 
-> Phase 1이 "구매측만"이 아니라 **전 회계 사이클**임에 주의(G1~G3 결정 반영). GTM=go-to-market.
+> Note that Phase 1 is **the full accounting cycle**, not "purchasing side only" (reflecting decisions G1–G3). GTM = go-to-market.
 
 ---
 
-## 10. 미결정 사항 로그 (Open Decisions)
+## 10. Open Decisions Log
 
-| # | 항목 | 상태 |
+| # | Item | Status |
 |---|------|------|
-| D1 | 프로젝트 이름 | ✅ **001** |
-| D2 | 사용자 수 | ✅ 최대 30명 (동시/등록 구분은 D8) |
-| D3 | 기술 스택 | ✅ 추천안 확정 (§7) — 사용자 최종 승인 대기 |
-| D4 | 도메인 엔티티 상세 (필드/상태/전이규칙) | 🟡 진행중 (§5 초안 작성됨) |
-| D10 | 매출/AR Phase 1 포함 | ✅ 구매측 우선, AR은 Phase 1.5 |
-| D11 | 회계 깊이 | ✅ 완전 복식부기 자동분개 (US GAAP) |
-| D12 | 재고 평가방법 | ✅ 이동평균법 |
-| D13 | 엔티티 필드 레벨 상세 + 상태전이도 | 🔲 ← 다음 작업 |
-| D14 | UI 언어 | ✅ 영어 기본 (i18n 구조 준비) |
-| D15 | 감가상각 | ✅ 정액법만 (MACRS 추후) |
-| 국가 | 미국 (US GAAP, USD, sales tax) | ✅ |
-| D5 | 로컬 LLM 모델 확정 | ◑ 설계됨 → [docs/AI-AGENT.md]. 추천 Qwen2.5-14B(기본)/32B(품질). 14 vs 32 사용자 선택만 남음 |
-| D6 | 권한/인증 수준 (역할 구분) | ✅ 세션+역할(기안자/승인자/관리자) |
-| D7 | 기존 코드 재활용 | ✅ **재활용 안 함** (구식 코드, 백지에서) |
-| D16 | HR/조직도 모듈 | ✅ **포함** (employees+보고라인, 결재 토대) |
-| D17 | SCM/재고 깊이 | ✅ 단순 입출고+이동평균. **모델명+시리얼#** 추적(판매재고·자산). 다창고/BOM/생산 ❌ |
-| D18 | AI 자율성 | ✅ **AI 자동 posting** + 불확실 시 되묻기 + 주/월 사람 감사·수정 |
-| 데이터이행 | 마이그레이션 | ✅ **안 함** (백지 시작) |
-| D8 | "30명" 의미 → DB | ✅ 동시 30명 → **PostgreSQL** |
-| D9 | 배포/네트워크 | ✅ 호스트1대+브라우저, **내부망+VPN** |
+| D1 | Project name | Done: **001** |
+| D2 | User count | Done: max 30 (concurrent vs. registered distinction is D8) |
+| D3 | Tech stack | Done: recommendation confirmed (§7) — awaiting final user sign-off |
+| D4 | Domain entity details (fields/states/transition rules) | In progress (§5 draft written) |
+| D10 | Sales/AR in Phase 1 | Done: purchasing side first, AR in Phase 1.5 |
+| D11 | Accounting depth | Done: full double-entry auto-posting (US GAAP) |
+| D12 | Inventory valuation | Done: moving average |
+| D13 | Field-level entity detail + state diagrams | Undecided ← next task |
+| D14 | UI language | Done: English default (i18n scaffolding ready) |
+| D15 | Depreciation | Done: straight-line only (MACRS later) |
+| Country | United States (US GAAP, USD, sales tax) | Done |
+| D5 | Local LLM model selection | Partial: designed → [docs/AI-AGENT.md]. Recommended Qwen2.5-14B (default) / 32B (quality). Only the 14 vs. 32 user choice remains |
+| D6 | Permission/auth level (role split) | Done: session + roles (requester/approver/admin) |
+| D7 | Reuse of existing code | Done: **no reuse** (dated code; clean slate) |
+| D16 | HR/org-chart module | Done: **included** (employees + reporting lines, foundation for approvals) |
+| D17 | SCM/inventory depth | Done: simple in/out + moving average. **Model name + serial #** tracking (sale stock and assets). No multi-warehouse/BOM/production |
+| D18 | AI autonomy | Done: **AI auto-posting** + asking back when uncertain + weekly/monthly human audit and correction |
+| Data migration | Migration | Done: **none** (clean-slate start) |
+| D8 | Meaning of "30 users" → DB | Done: 30 concurrent → **PostgreSQL** |
+| D9 | Deployment/network | Done: one host + browsers, **intranet + VPN** |
 
 ---
 
-## 10.5 설계 갭 리뷰 (2026-06-02) — 미결정
+## 10.5 Design Gap Review (2026-06-02) — Open
 
-아키텍처 완성 후 아키텍트 관점에서 찾은 빈틈. QB 대체 목표상 빠지면 안 되는 것들.
+Gaps found from an architect's perspective after the architecture was completed. Things that cannot be missing given the QB-replacement goal.
 
-**A. 구조적 — 지금 방향 정해야 (스키마/모듈 영향)**
-| # | 갭 | 비고 |
+**A. Structural — direction must be set now (affects schema/modules)**
+| # | Gap | Notes |
 |---|---|---|
-| G1 | **AR/판매** (고객·수주·고객Invoice·수금·고객aging) | ✅ **Phase 1 포함**. 매입측의 거울구조 |
-| G2 | **은행·현금 + 은행대사(reconciliation)** | ✅ 포함. **방식=월간 Statement 업로드→AI 적요 추출→대사**(라이브 피드 ❌, 완전 로컬). 문서파싱 로컬AI 활용처 |
-| G3 | ★ **경비/비용 정산 (Non-PO 지출, 직원 환급)** | ✅ **Phase 1 포함**. 출장 예시의 종착점 |
-| G4 | **기초잔액/마이그레이션 (Opening balances)** | ⚠️ 본인용=0시작(불필요). **BUT 상용 제품으론 필수** → 기존고객(QB 등) 이행 = **온보딩 마일스톤**: 마스터데이터 임포트 + cutover일 기초잔액(→Opening Balance Equity) + 미결 AP/AR/재고/자산 as-of 시드 + **AI가 QB 익스포트 파싱·계정매핑**. Phase=go-to-market |
+| G1 | **AR/sales** (customers, sales orders, customer invoices, receipts, customer aging) | Done: **in Phase 1**. Mirror structure of the purchasing side |
+| G2 | **Bank & cash + bank reconciliation** | Done: included. **Method = monthly statement upload → AI extracts descriptions → reconcile** (no live feeds; fully local). A use case for local-AI document parsing |
+| G3 | **Expense reimbursement (non-PO spend, employee reimbursements)** | Done: **in Phase 1**. The endpoint of the travel example |
+| G4 | **Opening balances / migration** | Note: for our own use = start from zero (unnecessary). **BUT mandatory for a commercial product** → migrating existing customers (QB etc.) = **onboarding milestone**: master-data import + cutover-date opening balances (→ Opening Balance Equity) + open AP/AR/inventory/asset as-of seeding + **AI parses QB exports and maps accounts**. Phase = go-to-market |
 
-**B. 도메인 보완 — Phase로 미룰 수 있음**
-| # | 갭 | 비고 |
+**B. Domain additions — can be deferred to later phases**
+| # | Gap | Notes |
 |---|---|---|
-| G5 | 반품 (매입반품/판매반품) | 재고+회계 역분개 |
-| G6 | 재고 실사/조정 | 실사차이·파손·평가감 |
-| G7 | 급여(Payroll) | 범위? 수동JE vs 연동 |
-| G8 | 예산통제 | 구매요청 시 예산체크 (소규모면 생략 가능) |
+| G5 | Returns (purchase returns / sales returns) | Inventory + accounting reversal entries |
+| G6 | Physical inventory count / adjustment | Count variances, damage, write-downs |
+| G7 | Payroll | Scope? Manual JE vs. integration |
+| G8 | Budget control | Budget check at purchase request (can be skipped for small teams) |
 
-**C. 정책/디테일 — 작지만 전역적**
-| # | 갭 | 비고 |
+**C. Policy/detail — small but global**
+| # | Gap | Notes |
 |---|---|---|
-| G9 | 전기 전표 수정정책 | ✅ 삭제금지·**역분개로만**. closed기간 잠금. 감사로그 → [POLICIES.md] |
-| G10 | 문서 채번 | ✅ PREFIX-YYYY-NNNN 유형별·gapless(트랜잭션 내 할당) |
-| G11 | 권한 매트릭스 | ✅ 역할 4단계(employee/manager/accountant/admin). 경비신청자 GL ❌. AI는 호출자 권한 상속 |
-| G12 | 알림 | ✅ in-app 알림센터+SSE 실시간. 이메일은 옵션 |
-| G13 | 백업/복구 | ✅ 야간 pg_dump+uploads, 일7/주4/월12 회전, 원클릭 복원 |
+| G9 | Posted-entry correction policy | Done: no deletion — **reversal entries only**. Closed periods locked. Audit log → [POLICIES.md] |
+| G10 | Document numbering | Done: PREFIX-YYYY-NNNN per type, gapless (allocated inside the transaction) |
+| G11 | Permission matrix | Done: 4 roles (employee/manager/accountant/admin). Expense requesters get no GL access. AI inherits the caller's permissions |
+| G12 | Notifications | Done: in-app notification center + SSE real-time. Email optional |
+| G13 | Backup/restore | Done: nightly pg_dump + uploads, 7 daily / 4 weekly / 12 monthly rotation, one-click restore |
 
-> C그룹 전체 상세 → [docs/POLICIES.md](docs/POLICIES.md)
+> Full detail for group C → [docs/POLICIES.md](docs/POLICIES.md)
 
-## 11. 결정 로그 (Decisions Made)
+## 11. Decision Log (Decisions Made)
 
-- **2026-06-02** — 새 시스템을 *처음부터 가볍게 재구축*하기로. 기존 ERP는 참고용. (스코프: 일반 소규모 스타트업 표준, 데스크톱 앱, 완전 로컬, RTX 4090.)
-- **2026-06-02** — 핵심 설계원칙 = **도구-우선(agentic core)**. 사람과 AI가 같은 도구 호출.
-- **2026-06-02** — 프로젝트명 **001**. 사용자 최대 30명 → 호스트 1대 서버 + LAN 브라우저 형태로 방향.
-- **2026-06-02** — 기술 스택 확정(§7): Python+FastAPI+**PostgreSQL**+SQLAlchemy+HTMX/Jinja2/Tailwind+세션인증+APScheduler+Ollama+pgvector. Redis/Celery/Nginx/Docker 불필요.
-- **2026-06-02** — 동시접속 30명 → PostgreSQL. 내부망+VPN 접속(공개 노출 없음).
-- **2026-06-02** — **미국 사용**: US GAAP, USD, sales/use tax(부가세 없음), QuickBooks식 COA 권장. 회계=완전 복식부기 자동분개, 구매측 우선(AR=Phase 1.5), 재고=이동평균법.
-- **2026-06-02** — UI 영어 기본(i18n 준비), 감가상각 정액법만. AP=**3-way match**(PO↔입고↔인보이스, GR/IR clearing). 입고=별도 문서. COA=QuickBooks 기본 시드. 🎯 **전략목표: QuickBooks 대체.**
-- **2026-06-02** — 비전 구체화: *대화만으로 회사 전체 운영*. QB는 경쟁상대(우리는 더 쉽고·가볍고·전문지식 불필요 + 재고/자산/SCM 강함). 결재=**조직도 기반 라우팅**. 기존 코드 재활용 ❌, 데이터 마이그레이션 ❌(백지 시작).
-- **2026-06-02** — AI 학습전략 확정(§8.1): **사실은 RAG/도구, 행동만 주기적 LoRA**. 매일 파인튜닝 ❌. eval 하네스 필수. 완전 로컬로 프라이버시 해결.
-- **2026-06-02** — HR/조직도 모듈 포함(employees+reports_to, 결재선 토대). 재고 깊이=단순 입출고+이동평균+모델명/시리얼# 추적(다창고·BOM·생산 제외). AI 자율성(§8.2)=자동 posting+불확실시 되묻기+주/월 사람 감사.
-- **2026-06-02** — USD 단일통화. 결재=조직도 기본+admin 예외설정. 재무제표/리포트(BS/IS/CF/TB/GL/AP aging/재고평가) 전표에서 산출+**AI 대화 호출**. **회계기간(마감)** 개념 포함 → 마감 시 해당 기간 전표 잠금.
-- **2026-06-02** — ⭐ **사업모델 공개:** 자사 서버 하드웨어에 묶어 파는 **상용 제품**. 고객마다 **단일테넌트 로컬 어플라이언스**(데이터 밖으로 안 나감 = 셀링포인트). 항상 0에서 시작(마이그레이션 영구히 없음), per-customer 셋업(조직도·COA·posting 규칙) 중요. SaaS 멀티테넌트 ❌.
-- **2026-06-02** — 갭 결정: G1(AR/판매) Phase1 포함, G2(은행대사)=월간 statement 업로드→AI 적요 대사, G3(경비정산) Phase1 포함, G4(기초잔액) 불필요(0 시작).
-- **2026-06-02** — 마이그레이션 재평가: 본인용 0시작이나 **상용 판매 시 기존고객 이행은 필수 제품기능**(온보딩 마일스톤). AI가 QB 익스포트 파싱·계정매핑 → 이행도 차별점.
-- **2026-06-02** — 은행 라이브피드 = 모듈 어댑터로 미래 확장 가능(Plaid 등을 bank모듈 어댑터로 추가 → 나머지 불변, 고객별 on/off).
-- **2026-06-02** — ★ 문서 수신·분류 파이프라인(§8.4)이 ③검색게이트의 전제 = 핵심축. 분류=보안(민감도ACL)+자동화(라우팅) 이중목적. Default-Deny(불확실시 최제한 등급). documents/document_categories/document_chunks 추가. → 권한모델 정정(§8.5): 단순서열→**3축(scope×level×data_boundary)**. 같은 부서서도 사원/과장/부장이 level·경계로 갈림(예 연봉=(hr,3)). ③경계는 reports_to 트리 재사용. user_scopes 테이블+판정식 하나로 경량 구현.
-- **2026-06-02** — ★ AI 권한·데이터접근 모델 확정(§8.3): **LLM은 보안경계 아님**, 권한검사는 모델 아래 코드에서 결정론적. 3중방어=신원상속+도구게이트(Forbidden)+**검색게이트(RAG를 검색시점 ACL 필터 → 권한없는 데이터는 컨텍스트에 부재)**. "검색 전에 거르기". 프롬프트 가드레일은 2차만.
-- **2026-06-02** — 모바일/태블릿 접속 명확화: "로컬"=데이터 박스 내 처리(클라우드 미경유), 기기수 제한 아님. 폰/태블릿=브라우저 클라이언트. 외부는 VPN. **반응형+PWA로 네이티브앱 불필요**. 원격 대비 HTTPS+2FA.
-- **2026-06-02** — C그룹 정책 마감 → [docs/POLICIES.md]: G9 역분개only+closed잠금, G10 gapless 채번(PREFIX-YYYY-NNNN), G11 역할 4단계 권한매트릭스(employee/manager/accountant/admin, 경비신청자 GL불가, AI는 호출자 권한 상속), G12 in-app+SSE 알림, G13 야간 백업+원클릭 복원.
-- **2026-06-02** — 은행 실시간연동 결정: 라이브 피드는 **애그리게이터(Plaid/Yodlee/MX) = 클라우드**라 "완전 로컬·데이터 비유출" 셀링포인트와 충돌. → 기본=**Statement 업로드+AI 파싱(은행무관·로컬)**, +OFX/QFX/CSV 파일 지원, Plaid는 옵션형 클라우드 애드온(로컬성 포기 명시)으로만.
-- **2026-06-02** — Posting 규칙 = **설정형 테이블**(admin이 계정매핑 변경 가능) 확정.
-- **2026-06-02** — 모듈 아키텍처 확정 → [docs/ARCHITECTURE.md]. 모듈러 모놀리스(단일프로세스, 엄격분리). 모듈 유일 진입점=service.py. 연동=동기호출(command/query)+도메인이벤트(reaction). 회계는 이벤트구독+posting 규칙테이블로만 디커플 연결(동일 트랜잭션 동기 디스패치). AI도구=service 얇은 래퍼 → 사람UI와 AI가 같은 API.
-- **2026-06-02** — 입고는 product.type으로 자산/판매재고 라인별 자동분기. **재고↔자산 양방향 전환(reclassification)** 기능 추가: 재고→자산(이동평균가), 자산→재고(장부가NBV), 시리얼 승계, 자동분개. 출고(Outbound) 문서 추가(판매/소비/폐기/이동, 유형별 분개).
+- **2026-06-02** — Rebuild the new system *from scratch, lightweight*. The existing ERP is reference only. (Scope: typical small startup, desktop app, fully local, RTX 4090.)
+- **2026-06-02** — Core design principle = **tool-first (agentic core)**. Humans and AI call the same tools.
+- **2026-06-02** — Project name **001**. Max 30 users → direction set as one host server + LAN browsers.
+- **2026-06-02** — Tech stack confirmed (§7): Python + FastAPI + **PostgreSQL** + SQLAlchemy + HTMX/Jinja2/Tailwind + session auth + APScheduler + Ollama + pgvector. No Redis/Celery/Nginx/Docker.
+- **2026-06-02** — 30 concurrent users → PostgreSQL. Intranet + VPN access (no public exposure).
+- **2026-06-02** — **US market**: US GAAP, USD, sales/use tax (no VAT), QuickBooks-style COA recommended. Accounting = full double-entry auto-posting, purchasing side first (AR = Phase 1.5), inventory = moving average.
+- **2026-06-02** — UI English by default (i18n ready), depreciation straight-line only. AP = **3-way match** (PO ↔ receipt ↔ invoice, GR/IR clearing). Receiving = separate document. COA = QuickBooks default seed. **Strategic goal: replace QuickBooks.**
+- **2026-06-02** — Vision sharpened: *run the whole company by conversation alone*. QB is the competitor (we are easier, lighter, no expertise required, plus strong inventory/assets/SCM). Approvals = **org-chart-based routing**. No reuse of existing code, no data migration (clean slate).
+- **2026-06-02** — AI training strategy settled (§8.1): **facts via RAG/tools, behavior only via periodic LoRA**. No daily fine-tuning. Eval harness mandatory. Privacy solved by being fully local.
+- **2026-06-02** — HR/org-chart module included (employees + reports_to, foundation for approval lines). Inventory depth = simple in/out + moving average + model name/serial # tracking (no multi-warehouse, BOM, or production). AI autonomy (§8.2) = auto posting + asking back when uncertain + weekly/monthly human audit.
+- **2026-06-02** — USD single currency. Approvals = org chart by default + admin exception config. Financial statements/reports (BS/IS/CF/TB/GL/AP aging/inventory valuation) derived from journal entries + **callable via AI conversation**. **Accounting periods (close)** included → closing locks that period's entries.
+- **2026-06-02** — **Business model disclosed:** a **commercial product** sold bundled with our own server hardware. Each customer gets a **single-tenant local appliance** (data never leaves = the selling point). Always starts from zero (no migration, permanently), per-customer setup (org chart, COA, posting rules) matters. No SaaS multi-tenancy.
+- **2026-06-02** — Gap decisions: G1 (AR/sales) in Phase 1, G2 (bank reconciliation) = monthly statement upload → AI description matching, G3 (expense reimbursement) in Phase 1, G4 (opening balances) unnecessary (zero start).
+- **2026-06-02** — Migration re-evaluated: zero start for our own use, but **migrating existing customers is a mandatory product feature for commercial sales** (onboarding milestone). AI parses QB exports and maps accounts → migration is also a differentiator.
+- **2026-06-02** — Bank live feeds = future extension via a module adapter (add Plaid etc. as a bank-module adapter → everything else unchanged, per-customer on/off).
+- **2026-06-02** — The inbound document classification pipeline (§8.4) is the premise of the retrieval gate = a core axis. Classification = security (sensitivity ACL) + automation (routing), dual purpose. Default-Deny (most restrictive level when uncertain). Added documents/document_categories/document_chunks. → Permission model corrected (§8.5): simple hierarchy → **3 axes (scope×level×data_boundary)**. Even within one department, staff/manager/director diverge by level and boundary (e.g., salary = (hr,3)). Axis (3) reuses the reports_to tree. Lightweight implementation: a user_scopes table + one decision formula.
+- **2026-06-02** — AI permission & data access model settled (§8.3): **the LLM is not a security boundary**; permission checks are deterministic in code below the model. Triple defense = identity inheritance + tool gate (Forbidden) + **retrieval gate (RAG ACL-filtered at retrieval time → unauthorized data is absent from context)**. "Filter before retrieval." Prompt guardrails secondary only.
+- **2026-06-02** — Mobile/tablet access clarified: "local" = data processed inside the box (no cloud transit), not a device-count limit. Phones/tablets = browser clients. External access via VPN. **Responsive + PWA makes a native app unnecessary**. HTTPS + 2FA for remote.
+- **2026-06-02** — Group C policies closed → [docs/POLICIES.md]: G9 reversal-only + closed-period lock, G10 gapless numbering (PREFIX-YYYY-NNNN), G11 4-role permission matrix (employee/manager/accountant/admin; expense requesters get no GL; AI inherits caller permissions), G12 in-app + SSE notifications, G13 nightly backup + one-click restore.
+- **2026-06-02** — Live bank feed decision: live feeds require **aggregators (Plaid/Yodlee/MX) = cloud**, conflicting with the "fully local, no data egress" selling point. → Default = **statement upload + AI parsing (bank-agnostic, local)**, plus OFX/QFX/CSV file support; Plaid only as an optional cloud add-on (explicitly surrendering locality).
+- **2026-06-02** — Posting rules = **configurable table** (admin can change account mappings). Confirmed.
+- **2026-06-02** — Module architecture confirmed → [docs/ARCHITECTURE.md]. Modular monolith (single process, strict separation). A module's sole entry point = service.py. Integration = synchronous calls (command/query) + domain events (reaction). Accounting connects only via event subscription + the posting rules table, decoupled (synchronous dispatch in the same transaction). AI tools = thin wrappers over services → human UI and AI share the same API.
+- **2026-06-02** — Receiving auto-branches per line into asset vs. sale stock via product.type. Added **bidirectional inventory ↔ asset reclassification**: inventory → asset (moving-average cost), asset → inventory (net book value, NBV), serial numbers carried over, automatic journal entries. Added an Outbound document (sale/consumption/disposal/transfer, per-type journal entries).

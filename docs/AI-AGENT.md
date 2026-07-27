@@ -1,155 +1,155 @@
-# 001 — AI 에이전트 레이어 설계 (D5)
+# 001 — AI Agent Layer Design (D5)
 
-> §8.1~8.6은 AI 거버넌스(학습·자율성·권한·분류·입력관문). 이 문서는 **에이전트가 실제로 어떻게 도는가** — 모델·도구·루프·RAG.
+> Sections 8.1–8.6 cover AI governance (learning, autonomy, permissions, classification, input gateway). This document covers **how the agent actually runs** — model, tools, loop, RAG.
 
 ---
 
-## 1. 로컬 모델 선정 — 교체 가능 + 개발/운영 2단
+## 1. Local model selection — swappable + two tiers for dev/production
 
-**원칙: 모델은 고정하지 않고 교체 가능.** Ollama(OpenAI 호환 API)라 모델 교체 = 설정 한 줄. 출신국·체급을 배포마다 선택.
+**Principle: never pin the model; keep it swappable.** With Ollama (OpenAI-compatible API), swapping models = one line of config. Country of origin and size class are chosen per deployment.
 
-> **완전 로컬 = 출신국이 데이터유출과 무관.** 오픈웨이트는 가중치 파일일 뿐, 로컬 실행 시 제작사로 아무것도 안 감(인터넷 불필요). 출신국은 *데이터 위험*이 아니라 *고객 인식/편향* 이슈일 뿐.
+> **Fully local = country of origin is irrelevant to data leakage.** Open weights are just weight files; when run locally, nothing goes back to the maker (no internet required). Country of origin is a *customer perception/bias* issue, not a *data risk* issue.
 
-**후보 모델:**
-| 모델 | 출신 | 라이선스 | 특징 |
+**Candidate models:**
+| Model | Origin | License | Notes |
 |---|---|---|---|
-| Qwen2.5 (14B/32B/72B) | 알리바바 🇨🇳 | Apache 2.0 | 동급 **도구호출 최강** |
-| **Llama 3.3 70B** | Meta 🇺🇸 | 오픈(커뮤니티) | 미국산·강력·**미국시장 인식 좋음** |
-| Mistral/Mixtral | Mistral 🇫🇷 | Apache 2.0 | EU산 |
-| Gemma 2 | Google 🇺🇸 | 오픈 | 미국산·경량 |
+| Qwen2.5 (14B/32B/72B) | Alibaba (China) | Apache 2.0 | **Best-in-class tool calling** for its size |
+| **Llama 3.3 70B** | Meta (US) | Open (community) | US-made, strong, **good perception in the US market** |
+| Mistral/Mixtral | Mistral (France) | Apache 2.0 | EU-made |
+| Gemma 2 | Google (US) | Open | US-made, lightweight |
 
-**2단 전략 (사용자 상황):**
-- **개발(RTX 4090/24GB):** Qwen2.5-14B 또는 32B로 빠른 프로토타이핑.
-- **운영(판매용 고성능 서버):** **70B급(Llama 3.3 70B 또는 Qwen2.5-72B)** → **속도·품질 동시 확보**, 30명 동시성 걱정도 완화. "속도 vs 품질"은 4090 한정 트레이드오프, 강서버에선 둘 다.
-- **추천 기본값(미국 상용):** Llama 3.3 70B(미국산, 균형) / Qwen은 도구호출 중시 시 옵션.
+**Two-tier strategy (our situation):**
+- **Development (RTX 4090 / 24GB):** fast prototyping on Qwen2.5-14B or 32B.
+- **Production (high-end server sold with the product):** **70B class (Llama 3.3 70B or Qwen2.5-72B)** -> **speed and quality at the same time**, and it also eases the 30-user concurrency concern. "Speed vs. quality" is a 4090-only trade-off; on a strong server you get both.
+- **Recommended default (US commercial):** Llama 3.3 70B (US-made, balanced) / Qwen as an option when tool calling matters most.
 
-**공통:**
-- **임베딩(RAG):** bge-m3 또는 nomic-embed-text — 로컬·다국어(한/영).
-- **런타임:** Ollama 시작 → 동시성↑시 vLLM(§6).
-- **✅ D5 전략: 모델을 못 박지 않고 "배포별 선택"을 제품기능으로.** 단일테넌트 어플라이언스라 고객별로 모델 선택 가능(SaaS면 불가능했을 것).
-  - 개발(4090): **Qwen** (최고 에이전트 동작 확보).
-  - 출고: **Llama 3.3 70B(보안민감 안전기본) + Qwen2.5-72B(성능)** 둘 다 탑재, 설치 시 선택(온보딩 마법사).
-  - 타겟 고객 섞임/미정 → 이 "둘 다 탑재 + 선택" 이 최적. 우리 실제 도구셋 벤치마크로 각 검증.
+**Common:**
+- **Embeddings (RAG):** bge-m3 or nomic-embed-text — local, multilingual (Korean/English).
+- **Runtime:** start with Ollama -> move to vLLM as concurrency grows (see section 6).
+- **D5 strategy (decided): don't hard-pin the model — make "per-deployment choice" a product feature.** As a single-tenant appliance, each customer can choose their model (impossible if we were SaaS).
+  - Development (4090): **Qwen** (secures the best agentic behavior).
+  - Shipping: **Llama 3.3 70B (safe default for the security-sensitive) + Qwen2.5-72B (performance)** — both bundled, chosen at install time (onboarding wizard).
+  - Target customers are mixed/undecided -> this "bundle both + choose" approach is optimal. Validate each against benchmarks using our actual toolset.
 
-## 2. 도구 레지스트리 (Tool Registry)
+## 2. Tool Registry
 
-- 각 모듈 `tools.py`가 자기 도구 등록 → `ai` 모듈이 수집 → 단일 레지스트리.
-- **도구 스키마 = service 함수 시그니처 + Pydantic DTO에서 자동 생성**(코드와 항상 동기). 손으로 JSON 안 씀.
-- 각 도구 메타: `name, description, params(JSON schema), required_scope`(§8.5).
-- **권한 필터링:** 런타임에 **현재 사용자가 쓸 수 있는 도구만** LLM에 제시(1차 방어). 실행 시 service에서 **또** 검사(2차, 심층방어).
-
-```
-inventory.tools → [post_inbound, get_stock, ...]
-accounting.tools → [generate_financials, match_ap_bill, ...]   ─┐
-hr.tools, approval.tools, sales.tools, expense.tools, bank.tools ─┼→ Registry
-                                                                  → 사용자 scope로 필터 → LLM에 제공
-```
-
-## 3. 에이전트 루프 (Orchestration)
+- Each module's `tools.py` registers its own tools -> the `ai` module collects them -> a single registry.
+- **Tool schemas = auto-generated from service function signatures + Pydantic DTOs** (always in sync with the code). No hand-written JSON.
+- Per-tool metadata: `name, description, params(JSON schema), required_scope` (section 8.5).
+- **Permission filtering:** at runtime, only the tools **the current user is allowed to use** are presented to the LLM (first line of defense). At execution time, the service checks **again** (second line, defense in depth).
 
 ```
-사용자 메시지 (+ 신원·scopes)
- │
- ▼ ① 컨텍스트 구성
-   - RAG 검색 (권한필터 §8.3·8.5 적용된 document_chunks)
-   - 최근 대화 + 관련 엔티티 데이터(도구로 조회)
- ▼ ② LLM 호출 (권한필터된 도구목록 제공)
-   ├─(a) 불확실 → 명료화 질문 → 사용자에게 되묻기(§8.2)
-   ├─(b) 도구호출 → service 실행(권한 재검사) → 결과 피드백 → ②로 루프
-   └─(c) 최종답변
- ▼ ③ 마감
-   - 모든 도구호출 audit_logs 기록
-   - posting류는 §8.2 자율성 정책(자동 posting / 불확실시 확인)
-   - 루프 상한(max N) → 폭주 방지
+inventory.tools -> [post_inbound, get_stock, ...]
+accounting.tools -> [generate_financials, match_ap_bill, ...]   --+
+hr.tools, approval.tools, sales.tools, expense.tools, bank.tools --+-> Registry
+                                                                   -> filter by user scope -> provided to LLM
 ```
-- **핵심:** 도구 실행은 항상 `service.py` 경유 → 권한게이트가 실행 시점에도 작동(도구목록 필터만 믿지 않음).
-- LLM이 직접 전표를 "글로" 쓰지 않음 → **검증된 posting 도구를 호출**(§4 posting 엔진). 회계 정합성은 코드가 보장.
 
-## 4. RAG 동작
-
-- **색인(§8.4·8.6):** 승급된 문서만 → 청크 분할 → 로컬 임베딩 → `document_chunks`(pgvector) + ACL 태그.
-- **검색:** 쿼리 임베딩 → 벡터검색 **+ 권한필터 SQL**(`user.level[scope] ≥ acl_level AND subject ∈ boundary`) → top-k → 컨텍스트.
-- **하이브리드:** 벡터 + 키워드(정확한 번호·ID·금액 매칭) 병행.
-- **사실은 RAG/도구, 암기 아님**(§8.1): "오늘 재고"류는 RAG가 아니라 **도구로 라이브 DB 조회**.
-
-## 5. 워크플로우 실행 예 — "5/1~15 출장 가" (엔드게임)
+## 3. Agent loop (orchestration)
 
 ```
-사용자: "5월 1~15일 한국 컨퍼런스 출장 가"
- → 에이전트: 빠진 정보 식별 → 되묻기(§8.2): "예상 경비? 항공/숙박 포함?"
- → 사용자 답변
- → expense.submit_expense(...) 도구 호출 → 경비신청 draft 생성
- → approval.submit_request(...) → hr.get_approval_chain(신청자) 로 조직도 결재선 자동
- → 승인자에게 notifications + SSE 푸시
- → 승인 완료 → 신청자에게 전달 + (승인시) 자동 분개(§8.2)
+User message (+ identity and scopes)
+ |
+ v (1) Build context
+   - RAG search (document_chunks with permission filters from sections 8.3 and 8.5 applied)
+   - Recent conversation + related entity data (fetched via tools)
+ v (2) LLM call (permission-filtered tool list provided)
+   +--(a) uncertain -> clarifying question -> ask the user back (section 8.2)
+   +--(b) tool call -> execute service (permissions re-checked) -> feed result back -> loop to (2)
+   +--(c) final answer
+ v (3) Wrap-up
+   - Every tool call recorded in audit_logs
+   - Posting-type actions follow the section 8.2 autonomy policy (auto-post / confirm when uncertain)
+   - Loop cap (max N) -> runaway prevention
 ```
-→ 사람이 폼을 안 채워도, **자연어 → 도구 시퀀스**로 같은 결과. 도구가 곧 손발.
+- **Key point:** tool execution always goes through `service.py` -> the permission gate also fires at execution time (we never trust the tool-list filter alone).
+- The LLM never writes journal entries "in prose" -> it **calls the validated posting tool** (the posting engine of section 4). Accounting integrity is guaranteed by code.
 
-## 6. 동시성 / 용량 (정직한 한계)
+## 4. RAG behavior
 
-- 30명 *동시* AI 생성을 4090 한 대로 받으면 **큐잉**된다. 대부분 동시에 AI를 안 쓰지만 피크는 고려.
-- 완화: **vLLM**(연속배치)로 처리량↑, 또는 추론을 **별도 서버(서버사업 박스)** 로 분리.
-- ERP 트랜잭션(폼·목록)은 LLM과 무관하게 빠름 — 느려지는 건 AI 응답만.
-- 🔲 D: 피크 동시 AI 사용자 수 가정 → Ollama vs vLLM, 추론 분리 여부.
+- **Indexing (sections 8.4 and 8.6):** promoted documents only -> chunking -> local embeddings -> `document_chunks` (pgvector) + ACL tags.
+- **Retrieval:** embed the query -> vector search **+ permission-filter SQL** (`user.level[scope] >= acl_level AND subject IN boundary`) -> top-k -> context.
+- **Hybrid:** vector + keyword in parallel (exact matching of numbers, IDs, amounts).
+- **Facts come from RAG/tools, never from memorization** (section 8.1): questions like "today's inventory" are answered not by RAG but by a **live DB query through a tool**.
 
-## 6.5 모델 업그레이드 / 재튜닝 — "더 좋은 모델 나오면?"
+## 5. Workflow execution example — "I'm traveling May 1–15" (endgame)
 
-**처음부터 다시 ❌.** 진짜 자산은 튜닝된 어댑터가 아니라 **학습 데이터셋**.
+```
+User: "I'm going to a conference in Korea May 1-15"
+ -> Agent: identifies missing information -> asks back (section 8.2): "Estimated expenses? Flights/lodging included?"
+ -> User answers
+ -> expense.submit_expense(...) tool call -> expense request draft created
+ -> approval.submit_request(...) -> hr.get_approval_chain(requester) derives the approval chain from the org chart automatically
+ -> notifications + SSE push to approvers
+ -> approval complete -> requester notified + (on approval) automatic journal entry (section 8.2)
+```
+-> Even without a human filling out a form, **natural language -> tool sequence** produces the same result. The tools are the hands and feet.
 
-- LoRA 어댑터는 base 모델 종속(Qwen 어댑터를 Llama에 못 붙임) → 어댑터는 부산물.
-- **데이터 플라이휠이 영속 자산:** 학습 데이터셋(상호작용 로그+사람 수정) + RAG 코퍼스 + eval 셋. 모델은 그 위에 갈아끼우는 **기판**.
+## 6. Concurrency / capacity (honest limits)
 
-**모델 교체 시 3층:**
-| 층 | 재학습 | 비고 |
+- If 30 people generate AI output *simultaneously* on a single 4090, requests **queue**. Most people don't use AI at the same moment, but plan for peaks.
+- Mitigations: **vLLM** (continuous batching) for throughput, or split inference onto a **separate server (the server-business box)**.
+- ERP transactions (forms, lists) are fast independent of the LLM — only AI responses slow down.
+- Open decision: assume a peak concurrent-AI-user count -> Ollama vs. vLLM, whether to split inference out.
+
+## 6.5 Model upgrades / retuning — "what if a better model comes out?"
+
+**Not starting from scratch.** The real asset is not the tuned adapter but the **training dataset**.
+
+- LoRA adapters are base-model-bound (a Qwen adapter cannot attach to Llama) -> adapters are byproducts.
+- **The data flywheel is the permanent asset:** training dataset (interaction logs + human corrections) + RAG corpus + eval set. The model is the **substrate** you swap out on top of it.
+
+**Three layers when swapping models:**
+| Layer | Retraining | Notes |
 |---|---|---|
-| RAG/도구/DB | **0** | 완전 모델무관. 새 모델이 같은 데이터 조회. 회사지식 대부분 |
-| 행동 LoRA | **재실행(자동)** | 보관 데이터셋으로 새 base에 재학습. 몇 시간, 스크립트 |
-| eval | 재실행 | 새 모델+어댑터 검증, 통과 시 배포/아니면 롤백 |
+| RAG / tools / DB | **Zero** | Fully model-agnostic. The new model queries the same data. Most of the company knowledge |
+| Behavior LoRA | **Re-run (automated)** | Retrain on the archived dataset against the new base. A few hours, scripted |
+| Eval | Re-run | Validate new model + adapter; deploy on pass, roll back otherwise |
 
-- §8.1("사실=RAG, 행동=튜닝")이 빛나는 지점: 큰 덩어리(사실)는 모델 바꿔도 0원, 가벼운 행동 튜닝만 재실행.
-- **설계 원칙:** 학습 데이터셋·eval 셋을 **코드처럼 버전관리**. 업그레이드 = "새 base 지정→재학습→eval 통과→배포" 파이프라인.
-- 보너스: 더 똑똑한 base일수록 **튜닝이 덜 필요**. 좋은 모델 출시 = 반길 일.
+- This is where section 8.1 ("facts = RAG, behavior = tuning") shines: the big chunk (facts) costs zero on a model swap; only the lightweight behavior tuning is re-run.
+- **Design principle:** version-control the training dataset and eval set **like code**. An upgrade = the "point at new base -> retrain -> pass eval -> deploy" pipeline.
+- Bonus: the smarter the base, the **less tuning it needs**. A great new model release is good news.
 
-**모델 교체로 *좋아지는* 것 (= base가 제공) vs *그대로*인 것:**
-| 좋아짐 (엔진/뇌) | 그대로 (지식/자산) |
+**What a model swap *improves* (= what the base provides) vs. what *stays the same*:**
+| Improves (engine/brain) | Stays the same (knowledge/assets) |
 |---|---|
-| 추론력(복잡요청 분해) | 회사 사실·문서·DB (RAG) |
-| **도구호출 정확도**(우리 생명) | 행동 데이터셋 |
-| 지시준수·환각↓ | 도구·프롬프트·스키마 |
-| 언어품질·긴 컨텍스트 활용 | |
-| (신모델) 이미지 이해 → §8.4 분류 정확↑ | |
-> 비유: **더 똑똑한 직원 채용** — 장부·규정·업무매뉴얼(데이터)은 그대로, 그 사람의 *이해·추론·정확도*만 올라감. 같은 매뉴얼로 재온보딩(튜닝 재실행). 모델 업그레이드 = "일하는 머리"↑, "회사지식 재교육" 아님.
+| Reasoning (decomposing complex requests) | Company facts, documents, DB (RAG) |
+| **Tool-calling accuracy** (our lifeline) | Behavior dataset |
+| Instruction following, fewer hallucinations | Tools, prompts, schemas |
+| Language quality, long-context use | |
+| (Newer models) image understanding -> better section 8.4 classification | |
+> Analogy: **hiring a smarter employee** — the books, policies, and operating manuals (data) stay the same; only that person's *understanding, reasoning, and accuracy* go up. Re-onboard with the same manual (re-run tuning). A model upgrade raises the "working brain," not a "re-education of company knowledge."
 
-## 6.6 에이전트 범위(scope) — 업무 전용 + 일반비서 옵션
+## 6.6 Agent scope — work-only by default + general-assistant option
 
-"회사만의 LLM" = 범용 base + 회사 행동튜닝 + 회사 데이터(RAG)의 3겹. **밑바탕은 범용 모델이라 코딩·일반질문도 능력상 가능** — 단, *해야 하는가*는 제품 정책(범위).
+"Our company's own LLM" = three layers: general-purpose base + company behavior tuning + company data (RAG). **Because the foundation is a general-purpose model, coding and general questions are possible in terms of capability** — whether it *should* do them is product policy (scope).
 
-**✅ 결정: 기본=업무 전용, admin이 일반비서 모드 토글(배포별).**
-- **범위는 프롬프트/정책 층에서 통제**(능력 제거 아님 → 재튜닝 불필요, 가역적):
-  - 시스템 프롬프트 페르소나: "OOO사 ERP 비서. 회계·재고·결재 지원. 무관 요청은 정중히 안내."
-  - 경량 의도 가드(선택)로 off-topic 감지.
-- **기본(업무 전용):** off-topic·코딩은 정중히 거절/안내. 컴퓨트 절약·품질·정체성 명확.
-- **일반비서 모드(admin ON):** 코딩·일반질문 허용. 단:
-  - 회사 데이터엔 여전히 권한게이트(§8.5) 적용.
-  - 일반 답변은 **RAG 근거 없음 → "일반지식, 회사검증 아님" 명시**(책임 관리).
-  - ERP 업무 작업이 컴퓨트 우선순위(일반질문이 업무를 막지 않게).
-  - 모든 사용 audit 기록.
+**Decided: default = work-only; admin can toggle general-assistant mode (per deployment).**
+- **Scope is enforced at the prompt/policy layer** (not capability removal -> no retuning needed, reversible):
+  - System-prompt persona: "You are the ERP assistant for Company X. You support accounting, inventory, and approvals. Politely redirect unrelated requests."
+  - Optional lightweight intent guard to detect off-topic requests.
+- **Default (work-only):** politely decline/redirect off-topic and coding requests. Saves compute, protects quality, keeps the identity clear.
+- **General-assistant mode (admin ON):** coding and general questions allowed. However:
+  - Company data still goes through the permission gate (section 8.5).
+  - General answers have **no RAG grounding -> explicitly labeled "general knowledge, not company-verified"** (liability management).
+  - ERP work tasks take compute priority (general questions must not block work).
+  - All usage is audit-logged.
 
-## 7. 가드레일 요약 (전부 기존 §과 연결)
+## 7. Guardrail summary (all tied back to existing sections)
 
-| 위험 | 방어 | 출처 |
+| Risk | Defense | Source |
 |---|---|---|
-| 권한 초과 누출 | 도구목록 필터 + 실행시 재검사 + RAG ACL | §8.3·8.5 |
-| 잘못된 자동처리 | 불확실성 게이팅(되묻기) + 주/월 감사 | §8.2 |
-| 회계 깨짐 | LLM이 직접 분개 ❌, posting 도구만 | §4 |
-| 잡음/오염 | 입력 관문(격리·미색인) | §8.6 |
-| 프롬프트 인젝션 | 문서=데이터(명령 아님)·샌드박스·권한게이트 유지 | §8.6 |
-| 폭주 | 루프 상한 + 감사로그 | 본문 |
+| Leakage beyond permissions | Tool-list filter + re-check at execution + RAG ACL | Sections 8.3, 8.5 |
+| Wrong automatic handling | Uncertainty gating (asking back) + weekly/monthly audits | Section 8.2 |
+| Broken accounting | LLM never writes journal entries directly; posting tools only | Section 4 |
+| Noise / contamination | Input gateway (quarantined, unindexed) | Section 8.6 |
+| Prompt injection | Documents = data (not commands), sandboxing, permission gate stays on | Section 8.6 |
+| Runaway loops | Loop cap + audit logs | This document |
 
-## 8. 출하된 에이전트 아키텍처 확장 (2026-07-24 · 설계 근거 = docs/ADR.md)
+## 8. Shipped agent architecture extensions (2026-07-24 · design rationale = docs/ADR.md)
 
-- **Plan-then-Execute (`ai/planner.py` + `agent.run`):** 알려진 인텐트(월마감)는 **템플릿 플랜**(결정적), 그 외 다중행동 요청만 게이트 통과 시 플래닝 호출 1회. 단계별로 동일한 권한검사 툴 루프 실행, 실패 단계는 나머지 skip + 답변에 실패 명시. **maker-checker 상태가 턴 전체(모든 플랜 단계)를 관통** — 플랜이 드래프트 생성과 제출을 한 턴에 못 함. 채팅에 ✓/✗/– 체크리스트 렌더. (ADR-5)
-- **대화 간 메모리 (`ai/memory.py`, `user_memories`):** 사용자가 명시한 선호만 감사되는 툴(`remember_preference`)로 기록 — 모델의 암묵 추출 금지. 매 턴 시스템 프롬프트 주입, 30개 캡, 키워드 삭제. (ADR-6)
-- **거버넌스 학습 루프 (`learning` 모듈 + `fleet/miner.py`):** 결정적 마이너가 기록된 인간 판단에서 패턴 채굴 → `/fleet`에 룰 **제안 카드** → 승인 시 활성(+부작용: 중복 벤더 비활성) → `procurement.resolve_vendor`가 전 조회 경로에 적용 → `applied_count`로 효용 측정. 거절은 기억되어 재제안 없음. v1 룰: 벤더 별칭(중복 벤더 해소). (ADR-10)
-- **정직성 백스톱 (`agent.py`):** 실패한 툴콜(레지스트리/핸들러 레벨 모두)에 `action_failed` + "실패를 보고하라" 지시를 결과 데이터에 각인 — 실측된 "실패 후 성공 주장" 사례를 결정적으로 차단. 타임라인에 ⚠ 표시. (ADR-3)
-- **실행 타임라인:** 모든 답변 아래 툴별 ✓/⚠ + 소요 ms — 실행 투명성이 UI 기본값.
+- **Plan-then-Execute (`ai/planner.py` + `agent.run`):** known intents (month-end close) use **template plans** (deterministic); only other multi-action requests that pass the gate trigger a single planning call. Each step runs through the same permission-checked tool loop; a failed step skips the remainder and the failure is stated in the answer. **Maker-checker state spans the entire turn (all plan steps)** — a plan cannot create a draft and submit it in one turn. Rendered in chat as a ✓/✗/– checklist. (ADR-5)
+- **Cross-conversation memory (`ai/memory.py`, `user_memories`):** only preferences the user states explicitly are recorded, via an audited tool (`remember_preference`) — no implicit extraction by the model. Injected into the system prompt every turn, capped at 30 entries, deletable by keyword. (ADR-6)
+- **Governance learning loop (`learning` module + `fleet/miner.py`):** a deterministic miner extracts patterns from recorded human decisions -> rule **proposal cards** on `/fleet` -> active on approval (+ side effect: deactivates duplicate vendors) -> `procurement.resolve_vendor` is applied across every lookup path -> utility measured via `applied_count`. Rejections are remembered and never re-proposed. v1 rule: vendor aliases (duplicate-vendor resolution). (ADR-10)
+- **Honesty backstop (`agent.py`):** failed tool calls (at both the registry and handler level) get `action_failed` + a "report the failure" instruction stamped into the result data — deterministically blocks the observed "claim success after failure" cases. Marked with ⚠ in the timeline. (ADR-3)
+- **Execution timeline:** below every answer, per-tool ✓/⚠ + elapsed ms — execution transparency as the UI default.

@@ -1,63 +1,63 @@
-# 001 — Enterprise AI Operating System · 마스터 요약 (한 장)
+# 001 — Enterprise AI Operating System · Master Summary (one page)
 
-> 프로젝트 **001** 설계의 전체 그림. 상세는 6개 문서로. (2026-06-05 갱신 — D6 자율 플릿·O2C·코드리뷰 반영)
-> 📂 [DESIGN.md](DESIGN.md) · [docs/SCHEMA.md](docs/SCHEMA.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/POLICIES.md](docs/POLICIES.md) · [docs/AI-AGENT.md](docs/AI-AGENT.md)
+> The full picture of project **001**'s design. Details live in six documents. (Updated 2026-06-05 — reflects D6 autonomous fleet, O2C, and code review.)
+> [DESIGN.md](DESIGN.md) · [docs/SCHEMA.md](docs/SCHEMA.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/POLICIES.md](docs/POLICIES.md) · [docs/AI-AGENT.md](docs/AI-AGENT.md)
 
 ---
 
-## 한 문장
-**회사 운영을 AI 에이전트가 실행하고, 사람은 승인만 하는 Enterprise AI Operating System.** 완전 로컬(데이터·AI 모두 고객 박스 안), 자사 서버 하드웨어에 번들된 단일테넌트 어플라이언스. 재무·구매·재고·판매가 현재 범위, IT·HR 등 운영 전반으로 확장.
+## One sentence
+**An Enterprise AI Operating System where AI agents run company operations and humans only approve.** Fully local (both data and AI stay inside the customer's box), a single-tenant appliance bundled with our own server hardware. Finance, procurement, inventory, and sales are the current scope, expanding to IT, HR, and the rest of operations.
 
-## 비전 / 사업
-- **엔드게임:** 대화만으로 회사 전체 운영. ("출장 가" → AI가 기안·결재·전표까지)
-- **사업모델:** 상용 제품, 서버에 번들. 고객마다 자기 박스(데이터 비유출 = **셀링포인트**). SaaS 멀티테넌트 ❌.
-- **완전 로컬:** 데이터·AI 모두 고객 박스 안. "로컬"=데이터 비유출이지 기기제한 아님 → 폰/태블릿은 LAN/VPN 브라우저로 접속(PWA, 네이티브앱 불필요).
+## Vision / Business
+- **Endgame:** Run the entire company through conversation alone. ("Go on a business trip" → the AI handles the request, approvals, and journal entries.)
+- **Business model:** Commercial product, bundled with the server. Each customer gets their own box (no data leaves the premises = the **selling point**). SaaS multi-tenancy: No.
+- **Fully local:** Both data and AI stay inside the customer's box. "Local" means no data egress, not device restriction — phones and tablets connect via LAN/VPN browser (PWA, no native app needed).
 
-## 플랫폼 / 스택
-- 동시 30명 · 호스트1대(GPU)+브라우저 · 내부망+VPN(WireGuard) · HTTPS/원격2FA
-- **Python·FastAPI·PostgreSQL·SQLAlchemy·HTMX/Jinja2/Tailwind·세션인증·APScheduler·Ollama·pgvector**
-- ❌ Redis·Celery·Nginx·Docker·기존코드재활용·데이터마이그레이션(본인용)
+## Platform / Stack
+- 30 concurrent users · 1 host machine (GPU) + browser · internal network + VPN (WireGuard) · HTTPS / remote 2FA
+- **Python · FastAPI · PostgreSQL · SQLAlchemy · HTMX/Jinja2/Tailwind · session auth · APScheduler · Ollama · pgvector**
+- No Redis, Celery, Nginx, Docker, reuse of existing code, or data migration (personal use).
 
-## 업무 도메인 (Phase 1 = 전 회계 사이클)
+## Business Domains (Phase 1 = full accounting cycle)
 ```
-기안 → [조직도 기반 결재] → 구매(PO) → 입고(별도문서) → 재고(이동평균) ⇄ 자산(정액감가)
-                                                    └ 모델명·시리얼# 추적
-        + 매출/AR(고객·수주·인보이스·수금)  + 경비정산(Non-PO·직원환급)  + 은행대사(월간 statement 업로드+AI)
-        → 모든 단계 자동 복식부기 분개 → 회계기간(마감) → 재무제표(BS/IS/CF/TB/AP·AR aging)
+Request → [org-chart-based approval] → Purchase (PO) → Receiving (separate document) → Inventory (moving average) ⇄ Assets (straight-line depreciation)
+                                                    └ model name / serial # tracking
+        + Sales/AR (customers, sales orders, invoices, receipts)  + Expense reimbursement (Non-PO, employee refunds)  + Bank reconciliation (monthly statement upload + AI)
+        → automatic double-entry journal at every step → accounting periods (closing) → financial statements (BS/IS/CF/TB/AP·AR aging)
 ```
-- **회계:** US GAAP·USD·sales tax·표준 US COA. AP=**3-way match**(PO↔입고↔인보이스, GR/IR clearing).
-- **HR/조직도:** employees+`reports_to` → 결재선·권한경계의 토대.
-- **재고↔자산 양방향 전환**(reclassification, 장부가 분개).
+- **Accounting:** US GAAP · USD · sales tax · standard US COA. AP = **3-way match** (PO ↔ receiving ↔ invoice, GR/IR clearing).
+- **HR / org chart:** employees + `reports_to` → foundation for approval chains and permission boundaries.
+- **Bidirectional inventory ↔ asset conversion** (reclassification, book-value journal entries).
 
-## 아키텍처
-- **모듈러 모놀리스**(단일프로세스, 엄격분리). 모듈: core·auth·hr·approval·procurement·inventory·assets·sales·expense·bank·accounting·documents·ai.
-- **모듈 유일 진입점 = `service.py`** (사람 UI·AI 도구·타모듈이 같은 함수 호출).
-- **연동:** 필요=동기 호출 / 반응=도메인 이벤트. **회계는 이벤트구독+설정형 posting 규칙테이블로만 연결**(GL 계정지식 회계에만). 이벤트는 같은 트랜잭션 동기 → 정합성+경량.
+## Architecture
+- **Modular monolith** (single process, strict separation). Modules: core · auth · hr · approval · procurement · inventory · assets · sales · expense · bank · accounting · documents · ai.
+- **A module's sole entry point = `service.py`** (human UI, AI tools, and other modules all call the same functions).
+- **Integration:** need something = synchronous call / reacting to something = domain event. **Accounting is connected only via event subscription + a configurable posting rule table** (GL account knowledge lives in accounting alone). Events dispatch synchronously in the same transaction → consistency + lightweight.
 
-## AI (거버넌스 §8 + 메커니즘 AI-AGENT.md)
-- **도구-우선:** AI = "말로 버튼 누르는 사용자". 도구=service 얇은 래퍼(스키마 자동생성).
-- **학습:** 사실=RAG/라이브DB(학습0), 행동=주기적 LoRA+eval. 매일 파인튜닝 ❌. **자산=데이터셋**(모델은 교체가능 기판).
-- **자율성:** 자동 posting + 불확실하면 되묻기 + 주/월 사람 감사 + 전건 감사로그.
-- **보안 사슬:** §8.6 입력관문(격리·Default-Not-Indexed) → §8.4 수신분류(태그) → §8.5 권한 3축(판정) → §8.3 검색게이트(권한없는 데이터는 컨텍스트에 부재). **LLM은 보안경계 아님 — 코드에서 결정론적 통제.**
-- **권한 3축:** scope(hr/finance/inventory/system) × level(1~3) × data_boundary(self/team/dept/all, reports_to 재사용). UI·AI·RAG 동일 적용.
-- **모델:** 개발=Qwen2.5(4090). 출고=Llama 3.3 70B(미국·안전기본)+Qwen2.5-72B(성능) 둘 다 탑재, 고객 설치 시 선택. 범위=업무전용 기본+admin 일반비서 토글.
+## AI (governance §8 + mechanics in AI-AGENT.md)
+- **Tool-first:** the AI = "a user who presses buttons with words". Tools = thin wrappers over service (schemas auto-generated).
+- **Learning:** facts = RAG / live DB (zero training), behavior = periodic LoRA + eval. No daily fine-tuning. **The asset = the dataset** (the model is a replaceable substrate).
+- **Autonomy:** automatic posting + ask back when uncertain + weekly/monthly human audits + full audit log for every action.
+- **Security chain:** §8.6 input gateway (isolation, Default-Not-Indexed) → §8.4 inbound classification (tagging) → §8.5 three-axis permissions (judgment) → §8.3 retrieval gate (data without permission is absent from context). **The LLM is not a security boundary — deterministic controls in code.**
+- **Three permission axes:** scope (hr/finance/inventory/system) × level (1–3) × data_boundary (self/team/dept/all, reusing reports_to). Applied identically to UI, AI, and RAG.
+- **Models:** development = Qwen2.5 (4090). Shipping = both Llama 3.3 70B (US-made, safe default) and Qwen2.5-72B (performance) preinstalled; customer picks at install time. Scope = work-only by default + admin toggle for a general assistant.
 
-## 전역 정책 (POLICIES)
-역분개only(삭제금지)·마감잠금 · gapless 채번(PREFIX-YYYY-NNNN) · 권한 4역할 기본값(정본=§8.5) · in-app+SSE 알림 · 야간백업+원클릭복원.
+## Global Policies (POLICIES)
+Reversing entries only (no deletion) · period-close locking · gapless numbering (PREFIX-YYYY-NNNN) · four-role permission defaults (source of truth = §8.5) · in-app + SSE notifications · nightly backups + one-click restore.
 
-## 로드맵
-Phase1 경량코어(전 사이클) → Phase2 에이전트 연결 → Phase3 문서파싱·분류·RAG질의 → GTM 온보딩/이행 → Phase4 자체 파인튜닝.
+## Roadmap
+Phase 1 lightweight core (full cycle) → Phase 2 agent hookup → Phase 3 document parsing, classification, RAG queries → GTM onboarding/migration → Phase 4 in-house fine-tuning.
 
-## 현재 구현 상태 (Phase1~3 + D6 코어 + 채팅 P2P + 에이전트 아키텍처)
-- **Phase1~3 완료:** 전 회계 사이클(수동/UI) + 로컬 Ollama 에이전트(도구=service, 권한 상속) + RAG(회사규정) + 비전 인보이스 파싱. **294 tests · AI 툴 44개.**
-- **채팅 P2P 완결:** 업체 온보딩(W-9 첨부) → 구매요청(상품 **링크**에서 가격 추출, 승인자 더블체크) → 조직도 결재(대화로 승인/사유거절) → PO 발행+벤더용 xlsx → PO 검증 입고(과입고 거부, PO단가 앵커) → **진짜 3-way match**(예외 미기장) → 지급(직무분리 L2/L3).
-- **에이전트 아키텍처:** **plan-then-execute**(월마감 템플릿 플랜 + 게이트된 LLM 플래닝, ✓체크리스트 렌더) · **대화 간 메모리**(감사되는 툴로만 기록) · **거버넌스 학습 루프**(인간 판단에서 룰 채굴→승인 인박스 제안→활성화→applied_count 측정, ADR-10) · 실행 타임라인(툴·상태·지연) · 정직성 백스톱(실패를 성공으로 보고 불가). 설계 근거 = [docs/ADR.md](docs/ADR.md).
-- **D6 자율 에이전트 군단 (`fleet` 모듈):** 인입(업로드·대화) → 디스패처 → **단일 작업 루프**가 롤별로 처리(드래프트) → **승인 인박스 `/fleet`**에서 사람 승인 → 기표. 롤: 💸지출·AP(PO매칭 3-way 포함) · 📦공급(패킹리스트→입고 드래프트) · 💰매출·수금 · 📒회계(주간결제·월마감) · 📊자금·인사이트(런웨이·이상탐지·**학습 룰 제안**). 전부 **드래프트-우선, 결과 큰 행동은 사람 승인 게이트**.
-- **수주→현금(O2C) `/sales`:** 견적 → 발송 → 고객PO 접수 → 출하(패킹리스트, 재고 차감) → 인보이스(매출 인식). 각 단계 **고객 문서(견적서·패킹리스트·인보이스 xlsx) 다운로드**.
-- **보안 (모델 2개):** ①**인터랙티브**(UI·AI)=호출 사용자로 실행, scope×level×boundary 게이트 상속. ②**자율 플릿**=시스템 액터, 권한게이트 대신 **승인 인박스가 단일 통제점**(finance L3). 둘 다 회사 데이터 외부 유출 0(로컬 LLM), 외부엔 공개·추상 정보만(에스컬레이션: 로컬→웹검색→프론티어 방법자문). 상세 = [docs/AGENT-FLEET.md](docs/AGENT-FLEET.md).
-- 모듈: core·auth·hr·approval·procurement·inventory·assets·sales·expense·bank·accounting·documents·ai·**fleet**.
+## Current Implementation Status (Phase 1–3 + D6 core + chat P2P + agent architecture)
+- **Phase 1–3 done:** full accounting cycle (manual/UI) + local Ollama agent (tools = service, permission inheritance) + RAG (company policies) + vision invoice parsing. **294 tests · 44 AI tools.**
+- **Chat P2P complete:** vendor onboarding (W-9 attachment) → purchase request (price extracted from a product **link**, approver double-check) → org-chart approval (approve / reject-with-reason in conversation) → PO issuance + vendor xlsx → PO-validated receiving (over-receipt rejected, PO unit price as anchor) → **true 3-way match** (exceptions not posted) → payment (segregation of duties, L2/L3).
+- **Agent architecture:** **plan-then-execute** (month-end close template plan + gated LLM planning, rendered as a checklist) · **cross-conversation memory** (written only via audited tools) · **governance learning loop** (mine rules from human judgments → propose in approval inbox → activate → measure applied_count, ADR-10) · execution timeline (tools, status, latency) · honesty backstop (cannot report a failure as a success). Design rationale = [docs/ADR.md](docs/ADR.md).
+- **D6 autonomous agent fleet (`fleet` module):** intake (uploads, conversations) → dispatcher → a **single work loop** processes per role (drafts) → human approval in the **approval inbox `/fleet`** → posting. Roles: Spend/AP (incl. 3-way PO matching) · Supply (packing list → receiving draft) · Revenue/Collections · Accounting (weekly payment run, month-end close) · Treasury/Insights (runway, anomaly detection, **learned rule proposals**). All of it is **draft-first; consequential actions are gated behind human approval**.
+- **Order-to-cash (O2C) `/sales`:** quote → send → customer PO intake → shipment (packing list, inventory deduction) → invoice (revenue recognition). Each step offers **customer document downloads (quote, packing list, invoice xlsx)**.
+- **Security (two models):** (1) **Interactive** (UI, AI) = runs as the calling user, inheriting scope × level × boundary gates. (2) **Autonomous fleet** = system actor; instead of permission gates, the **approval inbox is the single control point** (finance L3). Both: zero company data leaves the box (local LLM); only public, abstracted information goes outside (escalation: local → web search → frontier model for methodology advice). Details = [docs/AGENT-FLEET.md](docs/AGENT-FLEET.md).
+- Modules: core · auth · hr · approval · procurement · inventory · assets · sales · expense · bank · accounting · documents · ai · **fleet**.
 
-## 열린 항목 (소소)
-- 모델 운영 기본값 벤치마크(Llama70B vs Qwen72B), 피크 동시 AI 사용자→Ollama/vLLM
-- B그룹 후속(반품·재고실사·급여·예산) Phase 미정
-- 필드 레벨 마감(상태전이도 일부)
+## Open Items (minor)
+- Benchmark the shipping model default (Llama 70B vs Qwen 72B); peak concurrent AI users → Ollama/vLLM
+- Group B follow-ups (returns, physical inventory counts, payroll, budgeting) — phase not yet decided
+- Field-level close locking (and some state-transition coverage)

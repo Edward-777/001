@@ -1,484 +1,484 @@
-# 001 — 데이터 스키마 (D13)
+# 001 — Data Schema (D13)
 
-> v0.1 초안. [DESIGN.md](../DESIGN.md) §5 도메인 모델의 필드 레벨 상세.
-> 범위: **Phase 1 = 구매→재고→자산→회계 + 매출/AR + 경비정산 + 은행대사** (전 사이클).
-> 표기: `PK`=기본키, `FK`=외래키, `enum(...)`=고정값 집합, money=USD `Numeric(15,2)`.
-> 공통 컬럼(모든 테이블): `id PK`, `created_at`, `updated_at`, `created_by FK→users`.
+> v0.1 draft. Field-level detail for the domain model in [DESIGN.md](../DESIGN.md) §5.
+> Scope: **Phase 1 = Purchase → Inventory → Assets → Accounting + Sales/AR + Expense Reimbursement + Bank Reconciliation** (the full cycle).
+> Notation: `PK`=primary key, `FK`=foreign key, `enum(...)`=fixed value set, money=USD `Numeric(15,2)`.
+> Common columns (all tables): `id PK`, `created_at`, `updated_at`, `created_by FK→users`.
 
 ---
 
-## A0. 시스템 공통 (POLICIES)
+## A0. System-Wide (POLICIES)
 
-### doc_sequences (gapless 채번 — §G10)
-| 컬럼 | 타입 | 비고 |
+### doc_sequences (gapless numbering — §G10)
+| Column | Type | Notes |
 |---|---|---|
 | doc_type | text | PO, JE, EXP, INV... |
-| year | int | 연도별 |
-| last_no | int | 마지막 번호. **트랜잭션 내 row lock으로 할당** |
+| year | int | per year |
+| last_no | int | Last number issued. **Allocated under a row lock within the transaction** |
 
-### notifications (in-app 알림 — §G12)
-| 컬럼 | 타입 | 비고 |
+### notifications (in-app notifications — §G12)
+| Column | Type | Notes |
 |---|---|---|
-| user_id | FK→users | 수신자 |
+| user_id | FK→users | recipient |
 | type | text | approval/rejection/ai_question/bank/due... |
 | title / body | text | |
-| link | text | 클릭 시 이동 |
+| link | text | navigation target on click |
 | is_read | bool | |
-| created_at | timestamp | SSE로 실시간 푸시 |
+| created_at | timestamp | pushed in real time via SSE |
 
-### audit_logs (감사 추적 — AI/사람 공통, §G9·자율성)
-| 컬럼 | 타입 | 비고 |
+### audit_logs (audit trail — shared by AI and humans, §G9 / autonomy)
+| Column | Type | Notes |
 |---|---|---|
-| actor_user_id | FK→users | 행위자(AI 행위도 기록) |
+| actor_user_id | FK→users | actor (AI actions are recorded too) |
 | action | text | create/post/reverse/approve... |
-| entity_type / entity_id | text/int | 대상 |
-| detail_json | jsonb | 변경 내용·근거 문서 |
+| entity_type / entity_id | text/int | target |
+| detail_json | jsonb | what changed, plus supporting documents |
 | at | timestamp | |
 
-## A. 마스터 데이터
+## A. Master Data
 
 ### users
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | name | text | |
-| email | text unique | 로그인 ID |
+| email | text unique | login ID |
 | password_hash | text | bcrypt |
-| role | enum(employee, manager, accountant, admin) | 기본 scope 묶음 부여용 (POLICIES §G11) |
+| role | enum(employee, manager, accountant, admin) | assigns the default scope bundle (POLICIES §G11) |
 | department_id | FK→departments | nullable |
 | is_active | bool | |
-| → 실제 권한은 user_scopes로 세분 (DESIGN §8.5 — 3축) |
+| → Actual permissions are refined via user_scopes (DESIGN §8.5 — three axes) |
 
-### user_scopes (권한 3축 — DESIGN §8.5)
-| 컬럼 | 타입 | 비고 |
+### user_scopes (three permission axes — DESIGN §8.5)
+| Column | Type | Notes |
 |---|---|---|
 | user_id | FK→users | |
-| scope | enum(hr, finance, inventory, procurement, system) | ① 도메인 |
-| level | int (1~3) | ② 등급 (예: hr 3=연봉) |
-| data_boundary | enum(self, team, department, all) | ③ 데이터 경계(reports_to 트리 기준) |
-| → 판정: user.level[scope] ≥ data.level AND 대상이 boundary 안(reports_to subtree) |
+| scope | enum(hr, finance, inventory, procurement, system) | (1) domain |
+| level | int (1~3) | (2) grade (e.g. hr 3 = salary data) |
+| data_boundary | enum(self, team, department, all) | (3) data boundary (based on the reports_to tree) |
+| → Check: user.level[scope] ≥ data.level AND the target falls within the boundary (reports_to subtree) |
 
 ### departments
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | name | text | |
-| parent_id | FK→departments | 계층(nullable) |
-| manager_employee_id | FK→employees | 부서장(기본 승인자 후보) |
+| parent_id | FK→departments | hierarchy (nullable) |
+| manager_employee_id | FK→employees | department head (default approver candidate) |
 
-### employees (HR/조직도 — 결재 라우팅의 토대)
-| 컬럼 | 타입 | 비고 |
+### employees (HR / org chart — the foundation of approval routing)
+| Column | Type | Notes |
 |---|---|---|
 | employee_no | text unique | |
 | name | text | |
-| department_id | FK→departments | 소속 조직 |
-| position_title | text | 직책 |
-| **reports_to_id** | FK→employees | **보고 라인(상급자)** ← 결재선이 이 체인을 타고 올라감 |
+| department_id | FK→departments | home organization |
+| position_title | text | job title |
+| **reports_to_id** | FK→employees | **reporting line (superior)** — approval chains climb this chain |
 | hire_date | date | |
 | status | enum(active, on_leave, terminated) | |
-| user_id | FK→users | 로그인 계정 연결(nullable; 모든 직원이 시스템 사용자는 아님) |
-| → 신입 등록 시 department+reports_to만 정하면 이후 결재선이 자동 형성 |
+| user_id | FK→users | linked login account (nullable; not every employee is a system user) |
+| → When registering a new hire, set only department + reports_to and approval routing forms automatically from then on |
 
-### vendors (매입처)
-| 컬럼 | 타입 | 비고 |
+### vendors (suppliers)
+| Column | Type | Notes |
 |---|---|---|
 | name | text | |
-| tax_id | text | US EIN (1099용) |
-| is_1099 | bool | 연말 1099 대상 |
+| tax_id | text | US EIN (for 1099) |
+| is_1099 | bool | subject to year-end 1099 |
 | email / phone / address | text | |
-| payment_terms | enum(due_on_receipt, net15, net30, net60) | AP 만기 계산 |
+| payment_terms | enum(due_on_receipt, net15, net30, net60) | AP due-date calculation |
 | is_active | bool | |
 
-### products (품목)
-| 컬럼 | 타입 | 비고 |
+### products (items)
+| Column | Type | Notes |
 |---|---|---|
 | sku | text unique | |
 | name | text | |
-| model_name | text | 모델명 |
-| type | enum(inventory, asset, consumable, service) | **자동분개 분기의 핵심** |
-| track_serial | bool | true면 개체별 시리얼 추적 |
+| model_name | text | model name |
+| type | enum(inventory, asset, consumable, service) | **the key branch point for auto journal entries** |
+| track_serial | bool | if true, track individual units by serial |
 | unit | text | ea, box, hr... |
 | category_id | FK→product_categories | nullable |
-| standard_cost | money | 참고용 |
-| default_expense_account_id | FK→accounts | 비용처리 시 기본 계정 |
+| standard_cost | money | for reference |
+| default_expense_account_id | FK→accounts | default account when expensed |
 | is_active | bool | |
 
-### inventory_serials (시리얼 추적 — track_serial=true 품목)
-| 컬럼 | 타입 | 비고 |
+### inventory_serials (serial tracking — items with track_serial=true)
+| Column | Type | Notes |
 |---|---|---|
 | product_id | FK→products | |
-| serial_no | text | 개체 고유번호 |
+| serial_no | text | unique unit identifier |
 | status | enum(in_stock, sold, scrapped) | |
-| unit_cost | money | 개체 취득원가 |
-| inbound_line_id | FK→inbound_lines | 입고 출처 |
-| outbound_ref | text | 출고/판매 시 |
-| → 평가는 품목단위 이동평균 유지, 시리얼은 "어떤 개체가 재고에 있나" 추적용 |
+| unit_cost | money | acquisition cost of the unit |
+| inbound_line_id | FK→inbound_lines | receipt source |
+| outbound_ref | text | on issue/sale |
+| → Valuation stays at item-level moving average; serials only track "which units are in stock" |
 
-### 룩업 테이블 (다른 곳에서 참조되는 분류 설정 — 설정형)
-| 테이블 | 컬럼 | 비고 |
+### Lookup tables (classification settings referenced elsewhere — configuration-type)
+| Table | Columns | Notes |
 |---|---|---|
-| **product_categories** | name, parent_id(nullable) | products.category_id가 참조 |
-| **expense_categories** | name, default_expense_account_id FK→accounts | expense_lines.category_id 참조 → posting 규칙으로 비용계정 매핑 |
-| **tax_codes** | name, rate(%), tax_account_id FK→accounts | ar_invoices.tax_code_id 참조. sales tax(주/지역별) |
+| **product_categories** | name, parent_id(nullable) | referenced by products.category_id |
+| **expense_categories** | name, default_expense_account_id FK→accounts | referenced by expense_lines.category_id → maps to expense accounts via posting rules |
+| **tax_codes** | name, rate(%), tax_account_id FK→accounts | referenced by ar_invoices.tax_code_id. Sales tax (per state/locality) |
 
-### accounts (계정과목, QuickBooks식 COA)
-| 컬럼 | 타입 | 비고 |
+### accounts (chart of accounts, QuickBooks-style COA)
+| Column | Type | Notes |
 |---|---|---|
-| code | text unique | 예: 1200 |
-| name | text | 예: Inventory Asset |
+| code | text unique | e.g. 1200 |
+| name | text | e.g. Inventory Asset |
 | type | enum(asset, liability, equity, revenue, expense) | |
 | subtype | text | current_asset, fixed_asset, AP, COGS, expense... |
-| parent_id | FK→accounts | 계층(nullable) |
+| parent_id | FK→accounts | hierarchy (nullable) |
 | is_active | bool | |
-| → 기본 COA를 시드로 제공 (US 소규모용 표준 세트) |
+| → A default COA is provided as seed data (standard set for US small business) |
 
 ---
 
-## B. 워크플로우 (기안 → 승인)
+## B. Workflow (Request → Approval)
 
-### requests (기안/품의)
-| 컬럼 | 타입 | 비고 |
+### requests (requests / requisitions)
+| Column | Type | Notes |
 |---|---|---|
-| request_no | text unique | 자동생성 REQ-2026-0001 |
+| request_no | text unique | auto-generated, REQ-2026-0001 |
 | type | enum(purchase, expense, trip, general) | |
 | requester_id | FK→users | |
 | department_id | FK→departments | |
 | title | text | |
 | description | text | |
-| total_amount | money | 라인 합계 |
+| total_amount | money | sum of lines |
 | status | enum(draft, submitted, approved, rejected, canceled) | |
 | submitted_at / decided_at | timestamp | nullable |
 
 ### request_lines
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | request_id | FK→requests | |
-| product_id | FK→products | nullable(자유서술 허용) |
+| product_id | FK→products | nullable (free-text allowed) |
 | description | text | |
 | qty | numeric | |
 | estimated_unit_price | money | |
 | amount | money | qty × price |
 
-### approval_lines (결재선)
-| 컬럼 | 타입 | 비고 |
+### approval_lines (approval chain)
+| Column | Type | Notes |
 |---|---|---|
 | request_id | FK→requests | |
 | approver_id | FK→users | |
-| step_no | int | 결재 순서 |
+| step_no | int | approval order |
 | status | enum(pending, approved, rejected, skipped) | |
 | comment | text | |
 | decided_at | timestamp | |
 
-### approval_rules (결재규칙 — 결재선 자동구성)
-| 컬럼 | 타입 | 비고 |
+### approval_rules (approval rules — auto-build the approval chain)
+| Column | Type | Notes |
 |---|---|---|
 | applies_to_type | enum(request type) | |
-| min_amount / max_amount | money | 금액 구간 |
-| routing | enum(org_chart, fixed_role, fixed_employee) | **라우팅 방식** |
-| climb_levels | int | org_chart일 때: reports_to를 몇 단계 올라갈지 (예: 금액 클수록 더 높이) |
-| fixed_role / fixed_employee_id | — | 고정 라우팅일 때 대상 |
-| → 상신 시: 기안자 employee의 reports_to 체인을 따라 + 금액 구간 규칙으로 approval_lines 자동 생성 |
-| → 기본은 **조직도 기반**(보고라인 따라 올라감), 금액 구간이 올라갈수록 더 상위까지 |
+| min_amount / max_amount | money | amount band |
+| routing | enum(org_chart, fixed_role, fixed_employee) | **routing method** |
+| climb_levels | int | for org_chart: how many levels to climb reports_to (e.g. larger amounts climb higher) |
+| fixed_role / fixed_employee_id | — | target when routing is fixed |
+| → On submission: approval_lines are auto-generated by following the requester employee's reports_to chain plus the amount-band rules |
+| → Default is **org-chart based** (climb the reporting line); higher amount bands climb further up |
 
 ---
 
-## C. 구매 (Purchase)
+## C. Purchase
 
 ### purchase_orders
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | po_no | text unique | PO-2026-0001 |
-| request_id | FK→requests | 출처(승인된 기안) |
+| request_id | FK→requests | source (approved request) |
 | vendor_id | FK→vendors | |
 | order_date / expected_date | date | |
 | status | enum(open, partially_received, received, closed, canceled) | |
 | subtotal / tax / total | money | sales/use tax |
 
 ### po_lines
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | po_id | FK→purchase_orders | |
 | product_id | FK→products | |
-| qty_ordered / qty_received | numeric | 부분입고 추적 |
+| qty_ordered / qty_received | numeric | partial-receipt tracking |
 | unit_price | money | |
 | amount | money | |
 
 ---
 
-## D. 재고 (Inventory) — 이동평균법
+## D. Inventory — Moving Average
 
-### inbounds (입고)
-| 컬럼 | 타입 | 비고 |
+### inbounds (receipts)
+| Column | Type | Notes |
 |---|---|---|
 | inbound_no | text unique | |
 | po_id | FK→purchase_orders | |
 | received_date | date | |
-| status | enum(draft, posted) | posted 시 재고·전표 반영 |
+| status | enum(draft, posted) | posting updates stock and journal entries |
 
 ### inbound_lines
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | inbound_id | FK→inbounds | |
 | po_line_id | FK→po_lines | |
 | product_id | FK→products | |
 | qty_received | numeric | |
-| unit_cost | money | 입고 단가 |
-| → **입고 분류는 product.type으로 자동 분기** (라인별): |
-| · type=inventory → 판매재고로 입고 → (차) Inventory (대) GR/IR |
-| · type=asset → 고정자산으로 입고 → FixedAsset 생성 + (차) Fixed Asset (대) GR/IR |
-| · 한 입고서에 자산·재고 라인이 섞여도 각각 처리됨 |
+| unit_cost | money | receipt unit cost |
+| → **Receipt classification branches automatically on product.type** (per line): |
+| · type=inventory → received as sellable stock → (Dr) Inventory (Cr) GR/IR |
+| · type=asset → received as a fixed asset → create FixedAsset + (Dr) Fixed Asset (Cr) GR/IR |
+| · Asset and inventory lines can be mixed on one receipt; each is handled independently |
 
-### outbounds (출고) — 입고와 대칭
-| 컬럼 | 타입 | 비고 |
+### outbounds (issues) — symmetric with receipts
+| Column | Type | Notes |
 |---|---|---|
 | outbound_no | text unique | |
-| type | enum(sale, consumption, disposal, transfer) | **용도 → 자동분개 분기** |
+| type | enum(sale, consumption, disposal, transfer) | **purpose → auto journal entry branch** |
 | issue_date | date | |
-| ref_type / ref_id | text/int | 판매주문 등 출처(nullable) |
-| memo | text | 사유 |
-| status | enum(draft, posted) | posted 시 재고 차감·전표 |
+| ref_type / ref_id | text/int | source such as a sales order (nullable) |
+| memo | text | reason |
+| status | enum(draft, posted) | posting deducts stock and creates the journal entry |
 
 ### outbound_lines
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | outbound_id | FK→outbounds | |
 | product_id | FK→products | |
 | qty | numeric | |
-| unit_cost | money | **출고시점 이동평균 단가**(stock_balances에서) |
-| inventory_serial_id | FK→inventory_serials | 시리얼 품목이면 어떤 개체 |
-| → 출고 유형별 자동분개: |
-| · sale → (차) COGS(매출원가) (대) Inventory  *(매출인식은 §I AR invoice가 담당)* |
-| · consumption → (차) 비용(부서/계정) (대) Inventory |
-| · disposal → (차) 재고감모손실 (대) Inventory |
-| · transfer → 위치 이동(회계 영향 없음, 다창고는 Phase 2+) |
+| unit_cost | money | **moving-average cost at issue time** (from stock_balances) |
+| inventory_serial_id | FK→inventory_serials | which unit, for serial-tracked items |
+| → Auto journal entries by issue type: |
+| · sale → (Dr) COGS (Cr) Inventory  *(revenue recognition is handled by the §I AR invoice)* |
+| · consumption → (Dr) Expense (department/account) (Cr) Inventory |
+| · disposal → (Dr) Inventory Shrinkage Loss (Cr) Inventory |
+| · transfer → location move (no accounting impact; multi-warehouse is Phase 2+) |
 
-### stock_movements (재고 이동 원장)
-| 컬럼 | 타입 | 비고 |
+### stock_movements (stock movement ledger)
+| Column | Type | Notes |
 |---|---|---|
 | product_id | FK→products | |
 | movement_type | enum(inbound, outbound, adjustment) | |
-| qty | numeric | 부호 또는 type로 방향 |
+| qty | numeric | direction via sign or type |
 | unit_cost | money | |
-| ref_type / ref_id | text/int | 출처 문서 추적 |
+| ref_type / ref_id | text/int | source-document tracing |
 | moved_at | timestamp | |
 
-### stock_balances (현재고)
-| 컬럼 | 타입 | 비고 |
+### stock_balances (current stock)
+| Column | Type | Notes |
 |---|---|---|
-| product_id | FK→products PK | 1품목 1행 |
+| product_id | FK→products PK | one row per item |
 | qty_on_hand | numeric | |
-| avg_unit_cost | money | **이동평균** |
+| avg_unit_cost | money | **moving average** |
 | total_value | money | qty × avg |
-| → 입고 시: new_avg = (old_qty·old_avg + in_qty·in_cost)/(old_qty+in_qty) |
+| → On receipt: new_avg = (old_qty·old_avg + in_qty·in_cost)/(old_qty+in_qty) |
 
 ---
 
-## E. 자산 (Fixed Asset) — 정액법
+## E. Fixed Assets — Straight-Line
 
 ### fixed_assets
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | asset_no | text unique | |
 | name | text | |
-| model_name | text | 모델명 |
-| serial_number | text | 시리얼번호 (자산 관리·추적) |
-| source_inbound_line_id | FK→inbound_lines | 출처(nullable) |
-| acquisition_cost | money | 취득원가 |
+| model_name | text | model name |
+| serial_number | text | serial number (asset management and tracking) |
+| source_inbound_line_id | FK→inbound_lines | source (nullable) |
+| acquisition_cost | money | acquisition cost |
 | acquisition_date | date | |
-| useful_life_months | int | 내용연수 |
-| salvage_value | money | 잔존가치 |
-| accumulated_depreciation | money | 감가누계 |
+| useful_life_months | int | useful life |
+| salvage_value | money | salvage value |
+| accumulated_depreciation | money | accumulated depreciation |
 | status | enum(in_use, disposed) | |
-| asset_account_id / accum_account_id / expense_account_id | FK→accounts | 분개용 |
+| asset_account_id / accum_account_id / expense_account_id | FK→accounts | for journal entries |
 
 ### depreciation_entries
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | asset_id | FK→fixed_assets | |
 | period | text (YYYY-MM) | |
-| amount | money | (취득-잔존)/내용연수 |
-| journal_entry_id | FK→journal_entries | 자동분개 연결 |
+| amount | money | (cost − salvage) / useful life |
+| journal_entry_id | FK→journal_entries | link to the auto journal entry |
 
 ---
 
-## E-2. 재고 ↔ 자산 전환 (Reclassification)
+## E-2. Inventory ↔ Asset Conversion (Reclassification)
 
-판매재고와 고정자산을 양방향으로 전환. **장부가 기준으로 정확히 분개**한다.
+Convert between sellable inventory and fixed assets in both directions. **Journal entries are made precisely at book value.**
 
 ### reclassifications
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | reclass_no | text unique | |
-| type | enum(inventory_to_asset, asset_to_inventory) | 방향 |
+| type | enum(inventory_to_asset, asset_to_inventory) | direction |
 | reclass_date | date | |
 | product_id | FK→products | |
-| qty | numeric | 보통 1 (시리얼 개체) |
-| inventory_serial_id | FK→inventory_serials | 시리얼 품목이면 |
-| fixed_asset_id | FK→fixed_assets | 생성되거나 전환되는 자산 |
-| amount | money | 전환 기준액(아래) |
-| journal_entry_id | FK→journal_entries | 자동분개 |
-| memo | text | 사유 |
+| qty | numeric | usually 1 (a serialized unit) |
+| inventory_serial_id | FK→inventory_serials | for serial-tracked items |
+| fixed_asset_id | FK→fixed_assets | the asset created or converted |
+| amount | money | conversion basis amount (below) |
+| journal_entry_id | FK→journal_entries | auto journal entry |
+| memo | text | reason |
 
-**전환 회계처리:**
+**Conversion accounting:**
 
 ```
-① 재고 → 자산 (판매품을 회사가 직접 사용)
-   기준액 = 출고시점 이동평균 단가
-   재고 차감 + FixedAsset 생성(취득원가=기준액, 모델명/시리얼 승계)
-   (차) Fixed Asset        (대) Inventory
+(1) Inventory → Asset (company puts a sellable item into its own use)
+   Basis = moving-average unit cost at issue time
+   Deduct stock + create FixedAsset (acquisition cost = basis; model name/serial carried over)
+   (Dr) Fixed Asset        (Cr) Inventory
 
-② 자산 → 재고 (쓰던 자산을 판매하기로)
-   기준액 = 장부가(NBV) = 취득원가 − 감가상각누계
-   FixedAsset 상태=disposed, 재고에 NBV 단가로 입고(이동평균에 반영)
-   (차) Inventory          (대) Fixed Asset (취득원가)
-   (차) 감가상각누계        ↑ 누계 상계
+(2) Asset → Inventory (decide to sell an asset in use)
+   Basis = book value (NBV) = acquisition cost − accumulated depreciation
+   Set FixedAsset status=disposed, receive into stock at NBV unit cost (feeds the moving average)
+   (Dr) Inventory          (Cr) Fixed Asset (acquisition cost)
+   (Dr) Accumulated Depreciation   ← offsets the accumulated balance
 ```
 
-> 시리얼 품목은 전환 시 동일 개체의 model_name/serial_number가 재고↔자산 사이에서 그대로 따라간다.
+> For serial-tracked items, the same unit's model_name/serial_number follows it across the inventory ↔ asset boundary on conversion.
 
-## F. 회계 (Accounting) — 복식부기
+## F. Accounting — Double-Entry
 
-### journal_entries (전표)
-| 컬럼 | 타입 | 비고 |
+### journal_entries
+| Column | Type | Notes |
 |---|---|---|
 | je_no | text unique | JE-2026-0001 |
 | entry_date | date | |
-| description | text | 적요 |
-| source_type | enum(inbound, outbound, asset, reclass, ap_bill, payment, ar_invoice, receipt, expense, bank, depreciation, manual) | 자동/수동 출처 |
-| source_id | int | 원천 문서 |
+| description | text | memo line |
+| source_type | enum(inbound, outbound, asset, reclass, ap_bill, payment, ar_invoice, receipt, expense, bank, depreciation, manual) | automatic/manual origin |
+| source_id | int | source document |
 | status | enum(draft, posted, reversed) | |
 | posted_at | timestamp | |
-| reverses_id | FK→journal_entries | 이 전표가 역분개하는 원전표(nullable) |
-| reversed_by_id | FK→journal_entries | 이 전표를 역분개한 전표(nullable) |
-| → posted는 삭제·수정 불가, **역분개로만 정정**(POLICIES §G9). closed 기간 잠금 |
+| reverses_id | FK→journal_entries | the original entry this one reverses (nullable) |
+| reversed_by_id | FK→journal_entries | the entry that reversed this one (nullable) |
+| → Posted entries cannot be deleted or edited; **corrections happen only via reversal** (POLICIES §G9). Closed periods are locked |
 
-### journal_lines (분개)
-| 컬럼 | 타입 | 비고 |
+### journal_lines
+| Column | Type | Notes |
 |---|---|---|
 | je_id | FK→journal_entries | |
 | account_id | FK→accounts | |
-| debit / credit | money | **불변식: Σ debit = Σ credit** |
+| debit / credit | money | **invariant: Σ debit = Σ credit** |
 | memo | text | |
 
-### ap_bills (벤더 인보이스 = 미지급금) ← 3-way match의 중심
-| 컬럼 | 타입 | 비고 |
+### ap_bills (vendor invoices = accounts payable) — the center of 3-way match
+| Column | Type | Notes |
 |---|---|---|
-| bill_no | text unique | 내부 채번 |
-| vendor_invoice_no | text | 벤더가 준 인보이스 번호 |
+| bill_no | text unique | internally numbered |
+| vendor_invoice_no | text | the invoice number the vendor provided |
 | vendor_id | FK→vendors | |
 | po_id | FK→purchase_orders | nullable |
-| bill_date / due_date | date | payment_terms로 due 계산 |
+| bill_date / due_date | date | due date computed from payment_terms |
 | amount / balance | money | |
-| match_status | enum(unmatched, matched, exception) | **PO↔입고↔인보이스 대조 결과** |
-| source | enum(manual, ai_parsed) | AI가 PDF에서 생성했는지 |
-| attachment_path | text | 인보이스 원본 PDF |
+| match_status | enum(unmatched, matched, exception) | **result of the PO ↔ receipt ↔ invoice comparison** |
+| source | enum(manual, ai_parsed) | whether AI generated it from a PDF |
+| attachment_path | text | original invoice PDF |
 | status | enum(draft, open, partially_paid, paid) | |
 | journal_entry_id | FK→journal_entries | |
 
-### ap_bill_lines (인보이스 라인 ↔ 입고 라인 매칭)
-| 컬럼 | 타입 | 비고 |
+### ap_bill_lines (invoice lines matched to receipt lines)
+| Column | Type | Notes |
 |---|---|---|
 | ap_bill_id | FK→ap_bills | |
-| inbound_line_id | FK→inbound_lines | 매칭 대상(nullable) |
+| inbound_line_id | FK→inbound_lines | match target (nullable) |
 | description | text | |
 | qty / unit_price / amount | numeric/money | |
 
-### payments (지급) + payment_applications
+### payments (disbursements) + payment_applications
 | payments | vendor_id, payment_date, amount, method enum(check, ach, card, wire), bank_account_id |
-| payment_applications | payment_id FK, ap_bill_id FK, applied_amount — 한 지급이 여러 청구에 배분 |
+| payment_applications | payment_id FK, ap_bill_id FK, applied_amount — one payment can be allocated across multiple bills |
 
 ---
 
-## G. 상태 전이 + 자동분개 (요약)
+## G. State Transitions + Auto Journal Entries (Summary)
 
-3-way match는 **GR/IR(Goods Received/Invoice Received) clearing 계정**으로 정확히 분개한다:
+3-way match is journaled precisely through a **GR/IR (Goods Received/Invoice Received) clearing account**:
 
 ```
-Request(draft)→submitted→[승인규칙으로 approval_lines 생성]
-  → 모든 step approved → Request(approved) → PurchaseOrder(open) 자동생성
+Request(draft)→submitted→[approval_lines generated by approval rules]
+  → all steps approved → Request(approved) → PurchaseOrder(open) auto-created
 
-PO(open) → Inbound(posted)               ← ① 물건 받음 (Goods Received)
-  → stock_movements(+), stock_balances 갱신(이동평균)
-  → JournalEntry:  (차) Inventory       (대) GR/IR clearing
-  → product.type=asset 이면 FixedAsset 생성 + (차) Fixed Asset (대) GR/IR
+PO(open) → Inbound(posted)               ← (1) goods arrive (Goods Received)
+  → stock_movements(+), stock_balances updated (moving average)
+  → JournalEntry:  (Dr) Inventory       (Cr) GR/IR clearing
+  → if product.type=asset, create FixedAsset + (Dr) Fixed Asset (Cr) GR/IR
 
-AP Bill(인보이스 수령, manual/AI) → PO·입고와 3-way match  ← ② 청구서 받음 (Invoice Received)
-  → match_status = matched 시 posting
-  → JournalEntry:  (차) GR/IR clearing  (대) AP   (+ 차액 있으면 차이계정)
+AP Bill (invoice received, manual/AI) → 3-way match against PO and receipt  ← (2) invoice arrives (Invoice Received)
+  → posted when match_status = matched
+  → JournalEntry:  (Dr) GR/IR clearing  (Cr) AP   (+ variance account if there is a difference)
 
-Payment(posted) → payment_applications → AP Bill 잔액 차감   ← ③ 지급
-  → JournalEntry:  (차) AP   (대) Cash
+Payment(posted) → payment_applications → reduces AP Bill balance   ← (3) payment
+  → JournalEntry:  (Dr) AP   (Cr) Cash
 
-Outbound(posted) → stock_movements(−), stock_balances 차감(이동평균 단가로)
-  → JournalEntry(유형별):  (차) COGS/비용/감모손실   (대) Inventory
+Outbound(posted) → stock_movements(−), stock_balances reduced (at moving-average cost)
+  → JournalEntry (by type):  (Dr) COGS/Expense/Shrinkage Loss   (Cr) Inventory
 
-Reclassification(posted) → 재고↔자산 전환
-  → inv→asset: (차) Fixed Asset (대) Inventory
-  → asset→inv: (차) Inventory + (차) 감가누계 (대) Fixed Asset
+Reclassification(posted) → inventory ↔ asset conversion
+  → inv→asset: (Dr) Fixed Asset (Cr) Inventory
+  → asset→inv: (Dr) Inventory + (Dr) Accumulated Depreciation (Cr) Fixed Asset
 
-월말 Depreciation run → depreciation_entries
-  → JournalEntry:  (차) Depreciation Expense   (대) Accumulated Depreciation
+Month-end Depreciation run → depreciation_entries
+  → JournalEntry:  (Dr) Depreciation Expense   (Cr) Accumulated Depreciation
 
-── 매출(AR) 측 ──────────────────────────────
-SO(open) → Outbound(sale, posted)        ← 물건 나감
-  → (차) COGS (대) Inventory  (원가 측)
-AR Invoice(posted) → 고객 청구           ← 매출 인식
-  → (차) AR (대) Revenue (+ 대) Sales Tax Payable
-Receipt(posted) → receipt_applications   ← 수금
-  → (차) Bank/Cash (대) AR
+── Sales (AR) side ──────────────────────────
+SO(open) → Outbound(sale, posted)        ← goods go out
+  → (Dr) COGS (Cr) Inventory  (cost side)
+AR Invoice(posted) → bill the customer   ← revenue recognition
+  → (Dr) AR (Cr) Revenue (+ (Cr) Sales Tax Payable)
+Receipt(posted) → receipt_applications   ← cash collection
+  → (Dr) Bank/Cash (Cr) AR
 
-── 경비/정산 측 ─────────────────────────────
-Expense Request(approved) → 직원 환급채무
-  → (차) 비용(카테고리별 계정) (대) Employee Payable
+── Expense/reimbursement side ───────────────
+Expense Request(approved) → employee reimbursement liability
+  → (Dr) Expense (per-category account) (Cr) Employee Payable
 Reimbursement Payment(posted)
-  → (차) Employee Payable (대) Cash
+  → (Dr) Employee Payable (Cr) Cash
 
-── 은행 대사 ────────────────────────────────
-Bank Statement 업로드 → AI 적요 추출 → statement_lines
-  → 기존 전표와 자동 매칭(지급/수금)
-  → 미매칭분(은행수수료·이자 등)은 새 JE 생성: (차/대) 해당계정 (대/차) Bank
+── Bank reconciliation ──────────────────────
+Bank statement upload → AI extracts line descriptions → statement_lines
+  → auto-match against existing journal entries (payments/receipts)
+  → unmatched items (bank fees, interest, etc.) create a new JE: (Dr/Cr) relevant account (Cr/Dr) Bank
 ```
 
-> GR/IR clearing이 입고 시점과 인보이스 시점의 **시차를 흡수**한다. 둘 다 처리되면 GR/IR 잔액=0. 미결제/미입고가 잔액으로 남아 추적됨.
+> The GR/IR clearing account **absorbs the timing gap** between the receipt and the invoice. Once both are processed, the GR/IR balance is 0. Un-invoiced or un-received amounts remain as a balance and stay traceable.
 
 ---
 
-## H. 회계기간 & 리포트 (QuickBooks 대체용)
+## H. Accounting Periods & Reports (QuickBooks replacement)
 
-### accounting_periods (회계기간 / 마감)
-| 컬럼 | 타입 | 비고 |
+### accounting_periods (accounting periods / close)
+| Column | Type | Notes |
 |---|---|---|
-| period | text (YYYY-MM) | 월 단위 |
-| status | enum(open, closed) | **마감되면 해당 기간 전표 수정 잠금** |
+| period | text (YYYY-MM) | monthly |
+| status | enum(open, closed) | **closing locks journal-entry edits for that period** |
 | closed_at / closed_by | timestamp/FK | |
-| → "1월 마감" = 1월 period를 closed로. 이후 전표는 후속 기간으로만 |
+| → "Close January" = set the January period to closed. Later entries go only into subsequent periods |
 
-### 리포트 (별도 테이블 아님 — 전표에서 산출되는 "도구")
-복식부기 전표(journal_lines)에서 동적 생성. **사람=메뉴, AI=대화**로 같은 함수 호출:
-- **Balance Sheet (BS)** — 재무상태표
-- **Income Statement (IS / P&L)** — 손익계산서
-- **Cash Flow (CF)** — 현금흐름표
-- **Trial Balance (TB)** — 시산표
-- **General Ledger detail** — 계정별 원장
-- **AP Aging** — 미지급금 연령표
-- **Inventory valuation** — 재고 평가
-- 예) AI: *"1월 마감자료 줘"* → `generate_financials(period='2026-01')` 호출 → BS+IS 반환
+### Reports (not separate tables — "tools" derived from journal entries)
+Generated dynamically from double-entry journal lines (journal_lines). **Humans use menus, AI uses conversation** — both call the same functions:
+- **Balance Sheet (BS)**
+- **Income Statement (IS / P&L)**
+- **Cash Flow (CF)**
+- **Trial Balance (TB)**
+- **General Ledger detail** — per-account ledger
+- **AP Aging**
+- **Inventory valuation**
+- e.g. AI: *"Give me the January close package"* → calls `generate_financials(period='2026-01')` → returns BS+IS
 
-## I. 매출 / AR (Sales) — 매입측의 거울구조
+## I. Sales / AR — Mirror of the Purchasing Side
 
-### customers (고객) — vendors의 대칭
-| 컬럼 | 타입 | 비고 |
+### customers — symmetric with vendors
+| Column | Type | Notes |
 |---|---|---|
 | name / customer_no | text | |
 | billing_address / contact | text | |
-| payment_terms | text | net30 등 |
-| ar_account_id | FK→accounts | 기본 AR 계정 |
+| payment_terms | text | net30, etc. |
+| ar_account_id | FK→accounts | default AR account |
 
-### sales_orders (수주, SO) + so_lines — purchase_orders의 대칭
+### sales_orders (SO) + so_lines — symmetric with purchase_orders
 | sales_orders | so_no, customer_id, order_date, status enum(draft, approved, open, shipped, invoiced, closed) |
 | so_lines | so_id, product_id, qty_ordered/qty_shipped, unit_price, amount |
-> 출고(Outbound type=sale)가 SO를 ref로 연결 → 원가(COGS) 측 분개.
+> The issue (Outbound type=sale) links to the SO as its ref → drives the cost (COGS) side journal entry.
 
-### ar_invoices (고객 인보이스 = 미수금) + ar_invoice_lines — ap_bills의 대칭
-| 컬럼 | 타입 | 비고 |
+### ar_invoices (customer invoices = accounts receivable) + ar_invoice_lines — symmetric with ap_bills
+| Column | Type | Notes |
 |---|---|---|
 | invoice_no | text unique | |
 | customer_id | FK→customers | |
@@ -487,197 +487,197 @@ Bank Statement 업로드 → AI 적요 추출 → statement_lines
 | subtotal / tax_amount / total / balance | money | |
 | tax_code_id | FK→tax_codes | **sales tax** |
 | status | enum(draft, open, partially_paid, paid) | |
-| journal_entry_id | FK→journal_entries | (차)AR (대)Revenue+(대)Sales Tax Payable |
+| journal_entry_id | FK→journal_entries | (Dr) AR (Cr) Revenue + (Cr) Sales Tax Payable |
 | ar_invoice_lines | ar_invoice_id, product_id, description, qty, unit_price, amount |
 
-### receipts (수금) + receipt_applications — payments의 대칭
+### receipts (cash collection) + receipt_applications — symmetric with payments
 | receipts | customer_id, receipt_date, amount, method, bank_account_id |
-| receipt_applications | receipt_id FK, ar_invoice_id FK, applied_amount — 한 수금이 여러 인보이스에 배분 |
-> (차) Bank/Cash (대) AR. **AR Aging** 리포트는 ar_invoices.balance + due_date에서 산출.
+| receipt_applications | receipt_id FK, ar_invoice_id FK, applied_amount — one receipt can be allocated across multiple invoices |
+> (Dr) Bank/Cash (Cr) AR. The **AR Aging** report is derived from ar_invoices.balance + due_date.
 
 ---
 
-## J. 은행 / 현금 (Bank) — 월간 Statement 업로드 대사
+## J. Bank / Cash — Monthly Statement Upload Reconciliation
 
-> 라이브 뱅크피드 ❌(완전 로컬). **월간 statement 업로드 → AI가 적요 추출 → 기존 전표와 대사.**
+> No live bank feeds (fully local). **Monthly statement upload → AI extracts line descriptions → reconcile against existing journal entries.**
 >
-> **왜 업로드 방식인가:** QB식 실시간 연동은 은행 직접 API가 아니라 **애그리게이터(Plaid/Yodlee/MX) = 클라우드 중개**를 거친다 → 은행 자격증명을 제3자에 넘겨야 함 → "데이터 비유출" 셀링포인트와 충돌. 업로드 방식은 **은행 무관 + 완전 로컬**이라 이 제품엔 오히려 정답. (OFX/QFX/CSV 파일도 지원. Plaid는 옵션형 클라우드 애드온으로만.)
+> **Why the upload approach:** QuickBooks-style live feeds go through an **aggregator (Plaid/Yodlee/MX) = a cloud intermediary**, not direct bank APIs → bank credentials must be handed to a third party → conflicts with the "your data never leaves" selling point. The upload approach is **bank-agnostic and fully local**, which makes it the right answer for this product. (OFX/QFX/CSV files are also supported. Plaid only as an optional cloud add-on.)
 
 ### bank_accounts
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
-| name | text | "Chase 운영계좌" |
+| name | text | "Chase operating account" |
 | account_no_masked | text | |
-| gl_account_id | FK→accounts | 연결된 현금 GL 계정 |
+| gl_account_id | FK→accounts | linked cash GL account |
 | currency | text | USD |
 
-### bank_statements (업로드 단위)
-| 컬럼 | 타입 | 비고 |
+### bank_statements (one row per upload)
+| Column | Type | Notes |
 |---|---|---|
 | bank_account_id | FK→bank_accounts | |
 | period | text (YYYY-MM) | |
-| opening_balance / closing_balance | money | 대사 검증용 |
-| source_file_path | text | 업로드 원본(PDF/CSV) |
+| opening_balance / closing_balance | money | for reconciliation verification |
+| source_file_path | text | uploaded original (PDF/CSV) |
 | status | enum(uploaded, parsed, reconciled) | |
 
-### bank_statement_lines (AI가 적요 추출)
-| 컬럼 | 타입 | 비고 |
+### bank_statement_lines (descriptions extracted by AI)
+| Column | Type | Notes |
 |---|---|---|
 | statement_id | FK→bank_statements | |
 | txn_date | date | |
-| description | text | **적요(AI 파싱)** |
-| amount | money | +입금/−출금 |
-| matched_journal_line_id | FK→journal_lines | 매칭된 전표(nullable) |
+| description | text | **line description (AI-parsed)** |
+| amount | money | + deposit / − withdrawal |
+| matched_journal_line_id | FK→journal_lines | matched journal line (nullable) |
 | match_status | enum(unmatched, matched, new_je) | |
-| → unmatched: AI가 후보 제시 또는 신규 JE(수수료·이자 등) 생성 제안 |
+| → unmatched: AI proposes candidates or suggests creating a new JE (fees, interest, etc.) |
 
 ---
 
-## K. 경비 / 정산 (Expense) — Non-PO 지출·직원 환급
+## K. Expense / Reimbursement — Non-PO Spend and Employee Reimbursement
 
-> ★ 출장 신청 등 **PO 없는 지출**의 종착점. 결재 승인 → 직원 환급채무 → 지급.
+> The endpoint for **spend without a PO**, such as business-trip requests. Approval → employee reimbursement liability → payment.
 >
-> ⚠️ **정합성 결정(정합성점검):** 경비도 **§B `requests` 워크플로우를 재사용**한다(`requests.type=expense/trip` + `approval_lines`로 결재). 따로 `approvals` 테이블·별도 결재엔진 만들지 않음. 아래 `expense_requests`는 **`requests`의 *경비 특화 확장*** (1:1 연결)으로, 환급대상·정산상태·전표 등 경비 고유 속성만 담는다.
+> Note: **Consistency decision (consistency review):** expenses also **reuse the §B `requests` workflow** (`requests.type=expense/trip` + approval via `approval_lines`). No separate `approvals` table or second approval engine. `expense_requests` below is an **expense-specific extension of `requests`** (1:1 link) holding only expense-specific attributes: reimbursee, settlement status, journal entry, etc.
 
-### expense_requests (requests의 경비 확장 — 1:1)
-| 컬럼 | 타입 | 비고 |
+### expense_requests (expense extension of requests — 1:1)
+| Column | Type | Notes |
 |---|---|---|
-| request_id | FK→requests (unique) | **§B 기안/결재 워크플로우 재사용** (별도 approvals 테이블 ❌) |
-| employee_id | FK→employees | 신청자(=환급 대상) |
+| request_id | FK→requests (unique) | **reuses the §B request/approval workflow** (no separate approvals table) |
+| employee_id | FK→employees | requester (= reimbursee) |
 | expense_type | enum(travel, reimbursement, advance) | |
-| status | enum(draft, submitted, approved, rejected, reimbursed) | requests.status와 동기 + reimbursed 단계 |
-| journal_entry_id | FK→journal_entries | 승인 시 (차)비용 (대)Employee Payable |
-| → 결재선·금액·제목은 requests/request_lines/approval_lines에서, 경비 고유속성만 여기 |
+| status | enum(draft, submitted, approved, rejected, reimbursed) | kept in sync with requests.status, plus the reimbursed stage |
+| journal_entry_id | FK→journal_entries | on approval: (Dr) Expense (Cr) Employee Payable |
+| → Approval chain, amounts, and title live in requests/request_lines/approval_lines; only expense-specific attributes live here |
 
 ### expense_lines
-| 컬럼 | 타입 | 비고 |
+| Column | Type | Notes |
 |---|---|---|
 | expense_request_id | FK→expense_requests | |
 | expense_date | date | |
-| category_id | FK→expense_categories | → posting 규칙으로 비용계정 매핑 |
+| category_id | FK→expense_categories | → maps to expense accounts via posting rules |
 | description | text | |
 | amount | money | |
-| attachment_path | text | 영수증(AI 파싱 가능) |
+| attachment_path | text | receipt (AI-parseable) |
 
-> 환급 지급은 §F payments 재사용(payee=employee). (차) Employee Payable (대) Cash.
-> 사전신청(출장 전 예상액)과 정산(실제 영수증)은 같은 테이블에서 status로 구분.
+> Reimbursement payments reuse §F payments (payee=employee). (Dr) Employee Payable (Cr) Cash.
+> Pre-approval (estimated amount before a trip) and settlement (actual receipts) live in the same table, distinguished by status.
 
 ---
 
-## K2. 문서 수신·분류 (RAG·보안의 핵심축 — DESIGN §8.4)
+## K2. Document Intake & Classification (the backbone of RAG and security — DESIGN §8.4)
 
-### documents (모든 수신 파일의 단일 레지스트리)
-| 컬럼 | 타입 | 비고 |
+### documents (single registry for every incoming file)
+| Column | Type | Notes |
 |---|---|---|
-| file_path | text | 원본 저장 경로 |
+| file_path | text | original storage path |
 | filename / mime | text | |
-| category_id | FK→document_categories | **AI 분류** (인보이스/명세서/영수증/계약/급여…) |
-| acl_scope | enum(hr, finance, inventory, …, general) | **ACL 도메인** (DESIGN §8.5 ①) |
-| acl_level | int (1~3) | **ACL 등급** (②). 예 급여=(hr,3) → 검색게이트 필터 |
-| subject_employee_id | FK→employees | 대상 직원(③ 경계 판정용, nullable) |
-| extracted_text | text | OCR/추출 (RAG 색인 원천) |
-| linked_type / linked_id | text/int | 연결 엔티티(벤더·고객·직원·기간 등) |
+| category_id | FK→document_categories | **AI classification** (invoice/statement/receipt/contract/payroll...) |
+| acl_scope | enum(hr, finance, inventory, …, general) | **ACL domain** (DESIGN §8.5 (1)) |
+| acl_level | int (1~3) | **ACL grade** ((2)). e.g. payroll=(hr,3) → search-gate filter |
+| subject_employee_id | FK→employees | subject employee ((3) boundary check, nullable) |
+| extracted_text | text | OCR/extraction (source for RAG indexing) |
+| linked_type / linked_id | text/int | linked entity (vendor, customer, employee, period, ...) |
 | classified_by | enum(ai, human) | |
-| confidence | numeric | 낮으면 ④게이팅(되묻기) |
-| status | enum(quarantined, classified, needs_review, routed, rejected) | **격리→승급 흐름** |
-| is_indexed | bool | **기본 false. 승급된 정식 레코드만 RAG 색인**(Default-Not-Indexed, §8.6) |
-| relevance | enum(business, uncategorized) | 업무 카테고리 매핑 실패=uncategorized→색인·라우팅 ❌ |
-| → **Default-Deny: 민감도 불확실 시 가장 제한적 등급으로 시작**, 사람 확인 후 완화 |
-| → §8.6 입력 관문: 분류·검증 통과 전엔 라이브/RAG 진입 불가. 무관/무응답 → purge |
+| confidence | numeric | if low → (4) gating (ask back) |
+| status | enum(quarantined, classified, needs_review, routed, rejected) | **quarantine → promotion flow** |
+| is_indexed | bool | **defaults to false. Only promoted, official records get RAG-indexed** (Default-Not-Indexed, §8.6) |
+| relevance | enum(business, uncategorized) | failed business-category mapping = uncategorized → no indexing or routing |
+| → **Default-Deny: when sensitivity is uncertain, start at the most restrictive grade** and relax only after human confirmation |
+| → §8.6 input gate: nothing enters live data/RAG before passing classification and validation. Irrelevant/unanswered → purge |
 
-### document_categories (설정형 — admin이 카테고리·규칙 관리)
-| 컬럼 | 타입 | 비고 |
+### document_categories (configuration-type — admin manages categories and rules)
+| Column | Type | Notes |
 |---|---|---|
-| name | text | invoice/bank_statement/receipt/contract/payroll… |
-| default_sensitivity | enum | 이 카테고리의 기본 ACL |
-| route_to | text | 트리거할 워크플로우(ap_draft/reconcile/expense…) |
-| requires_human_review | bool | 급여·계약 등 true |
+| name | text | invoice/bank_statement/receipt/contract/payroll... |
+| default_sensitivity | enum | default ACL for this category |
+| route_to | text | workflow to trigger (ap_draft/reconcile/expense...) |
+| requires_human_review | bool | true for payroll, contracts, etc. |
 
-### document_chunks (RAG 벡터 색인 — pgvector)
-| 컬럼 | 타입 | 비고 |
+### document_chunks (RAG vector index — pgvector)
+| Column | Type | Notes |
 |---|---|---|
 | document_id | FK→documents | |
 | chunk_text | text | |
 | embedding | vector | pgvector |
-| acl_scope / acl_level / subject_employee_id | — | **문서 ACL 복제 → 검색 쿼리서 강제 필터(검색 전 거르기)** |
-| → RAG 검색: `WHERE user.level[acl_scope] ≥ acl_level AND subject ∈ user.boundary` 강제 |
+| acl_scope / acl_level / subject_employee_id | — | **document ACL replicated → enforced filter in search queries (filter before search)** |
+| → RAG search enforces: `WHERE user.level[acl_scope] ≥ acl_level AND subject ∈ user.boundary` |
 
-## L. 온보딩 / 마이그레이션 (상용 판매용 — go-to-market 마일스톤)
+## L. Onboarding / Migration (for commercial sale — go-to-market milestone)
 
-> 본인 용도는 0에서 시작이라 불필요. **기존 시스템(QB 등)을 쓰던 고객에 판매할 때** 필요한 이행 기능.
+> Not needed for personal use, which starts from zero. This is the migration capability required **when selling to customers coming off an existing system (QB, etc.)**.
 
-**구성:**
-1. **마스터 데이터 임포트** — customers/vendors/products/COA를 CSV·Excel·QB 익스포트에서. **AI가 컬럼·계정 매핑 보조**.
-2. **기초잔액(cutover)** — 전환일 기준 시산표를 **Opening Balance Equity** 계정 상대로 한 전표로 입력. (회계 정석: 이후 잔액 0 검증)
-3. **미결 거래 시드** — 미지급 ap_bills / 미수 ar_invoices / stock_balances 현재고 / fixed_assets(+감가누계)를 as-of 잔액으로. → aging·재무제표 즉시 정합.
-4. **검증 리포트** — 이행 후 시산표가 원본과 일치하는지 자동 대조.
+**Components:**
+1. **Master data import** — customers/vendors/products/COA from CSV, Excel, or QB exports. **AI assists with column and account mapping.**
+2. **Opening balances (cutover)** — enter the trial balance as of the cutover date as a single journal entry against an **Opening Balance Equity** account. (Accounting best practice: verify the account nets to 0 afterwards)
+3. **Open transaction seeding** — outstanding ap_bills / outstanding ar_invoices / stock_balances on-hand / fixed_assets (+ accumulated depreciation) at their as-of balances. → aging and financial statements are consistent immediately.
+4. **Verification report** — automatically compare the post-migration trial balance against the source.
 
-> 별도 신규 테이블 최소화 — 기존 service API/posting을 재사용해 "import = 평소 거래를 일괄 생성"으로 구현. **Opening Balance Equity** 계정만 COA 시드에 추가.
+> Minimize new tables — reuse the existing service APIs/posting so that "import = bulk-creating ordinary transactions". Only the **Opening Balance Equity** account is added to the COA seed.
 
-## Z. D6 — 자율 군단 + O2C 풀필먼트 (구현됨)
+## Z. D6 — Autonomous Fleet + O2C Fulfillment (implemented)
 
-> `fleet` + `sales` 모듈. 상세 = [AGENT-FLEET.md](AGENT-FLEET.md).
+> `fleet` + `sales` modules. Details in [AGENT-FLEET.md](AGENT-FLEET.md).
 
-### fleet_tasks (자율 작업큐)
-| 컬럼 | 타입 | 비고 |
+### fleet_tasks (autonomous work queue)
+| Column | Type | Notes |
 |---|---|---|
 | source | enum | upload·email·bank_feed·ceo_chat·agent |
 | source_ref | text? | document_id / email_id / conversation_id |
-| category | text | 디스패처 분류 결과 |
+| category | text | dispatcher classification result |
 | from_role / to_role | enum | dispatcher·revenue·spend·accounting·insight·people·supply·docs·support·ceo·system |
-| title | text | 사람이 읽을 한 줄 |
-| payload | json | 작업 데이터(파싱 인보이스·지시문 등) |
+| title | text | one human-readable line |
+| payload | json | task data (parsed invoice, instructions, etc.) |
 | status | enum | queued·in_progress·needs_approval·bounced·done·failed |
-| bounce_count / bounce_reason | int/text | 반송 (≥3 → 사람 에스컬레이션) |
-| result | json? | 산출물(드래프트 청구서 id 등) |
-| approval_id | int? | 승인 연결(느슨) |
-| idempotency_key | text unique? | 루프 재실행 중복 생성 차단 |
+| bounce_count / bounce_reason | int/text | bounces (≥3 → escalate to a human) |
+| result | json? | output (draft invoice id, etc.) |
+| approval_id | int? | approval link (loose) |
+| idempotency_key | text unique? | prevents duplicate creation on loop re-runs |
 
-### quotes / quote_lines (O2C 견적)
-| quotes | 타입 | 비고 |
+### quotes / quote_lines (O2C quotes)
+| quotes | Type | Notes |
 |---|---|---|
 | quote_no | text unique | QUO-YYYY-NNNN |
 | customer_id | FK→customers | |
 | quote_date / valid_until | date | |
 | status | enum | draft·sent·accepted·rejected·expired |
-| customer_po | text? | 수락 시 입력 |
-| so_id | FK→sales_orders? | 수락 시 생성된 주문 |
+| customer_po | text? | entered on acceptance |
+| so_id | FK→sales_orders? | order created on acceptance |
 | subtotal / tax_amount / total | money | |
 | **quote_lines** | | quote_id, product_id?, description, qty, unit_price, amount |
 
-### shipments / shipment_lines (출하·패킹리스트)
-| shipments | 타입 | 비고 |
+### shipments / shipment_lines (shipping / packing list)
+| shipments | Type | Notes |
 |---|---|---|
 | shipment_no | text unique | SHP-YYYY-NNNN |
 | so_id | FK→sales_orders | |
 | customer_id | FK→customers | |
 | ship_date / carrier / tracking_no | date/text | |
-| **shipment_lines** | | shipment_id, product_id?, description, qty (제품 라인은 재고 차감) |
+| **shipment_lines** | | shipment_id, product_id?, description, qty (product lines deduct stock) |
 
-> O2C 흐름: 견적 → 발송 → 수락(PO) → 주문 → 출하(패킹리스트, 재고 issue) → 인보이스(매출 인식). 각 단계 xlsx 문서 다운로드.
+> O2C flow: quote → send → acceptance (PO) → order → shipment (packing list, stock issue) → invoice (revenue recognition). Each step offers an xlsx document download.
 
-## 확정된 모델링 (Q1·Q3·Q5)
-- **✅ Q1: 입고를 별도 문서(Inbound)로.** 부분입고·검수·정식회계 지원.
-- **✅ Q3: 3-way match (PO↔입고↔벤더인보이스).** AP는 인보이스 수령 시 생성(manual/AI). GR/IR clearing 사용.
-- **✅ Q5: QuickBooks 미국 소기업 기본 COA를 시드.** **🎯 전략 목표: 이 시스템이 궁극적으로 QuickBooks를 대체** → 회계 모듈은 완전한 장부(GL/AP/AR/재무제표/뱅크릴레/1099)로 키운다.
+## Settled Modeling Decisions (Q1·Q3·Q5)
+- **Decided — Q1: Receiving is a separate document (Inbound).** Supports partial receipts, inspection, and proper accounting.
+- **Decided — Q3: 3-way match (PO ↔ receipt ↔ vendor invoice).** AP is created when the invoice arrives (manual/AI). Uses GR/IR clearing.
+- **Decided — Q5: Seed the QuickBooks US small-business default COA.** **Strategic goal: this system ultimately replaces QuickBooks** → grow the accounting module into a complete set of books (GL/AP/AR/financial statements/bank reconciliation/1099).
 
-## 확정 (Q2·Q4·Q6)
-- **✅ Q2: 조직도 기반 라우팅이 기본**, 예외는 **admin 권한자가 그때그때 셋팅**(approval_rules에 fixed_role/fixed_employee 라우팅).
-- **✅ Q4: USD 단일 통화.** 다중통화 안 함.
-- **✅ Q6: 재무제표/리포트 필요** (BS/IS/CF/TB/GL detail/AP aging/재고평가). 전표에서 동적 산출, **AI가 대화로 호출 가능**(예: "1월 마감자료"). 회계기간(마감) 개념 포함.
+## Settled Decisions (Q2·Q4·Q6)
+- **Decided — Q2: Org-chart-based routing is the default**; exceptions are **configured ad hoc by an admin** (fixed_role/fixed_employee routing in approval_rules).
+- **Decided — Q4: Single currency, USD.** No multi-currency.
+- **Decided — Q6: Financial statements/reports are required** (BS/IS/CF/TB/GL detail/AP aging/inventory valuation). Derived dynamically from journal entries, **callable by AI in conversation** (e.g. "the January close package"). Includes the accounting-period (close) concept.
 
-## 2026-07 스키마 추가 (채팅 P2P 완결 + 에이전트 아키텍처)
+## 2026-07 Schema Additions (chat P2P completion + agent architecture)
 
-**새 테이블**
-- `user_memories` — 대화 간 사용자 선호 (user_id FK, fact ≤400, source, created_at). 감사되는 툴로만 기록. (ADR-6)
-- `learned_rules` — 거버넌스 학습 룰 (kind, params JSON, evidence ≤400, status active|revoked, **applied_count**, approved_at). v1 kind=`vendor_alias`. (ADR-10)
+**New tables**
+- `user_memories` — cross-conversation user preferences (user_id FK, fact ≤400, source, created_at). Written only through an audited tool. (ADR-6)
+- `learned_rules` — governance-learned rules (kind, params JSON, evidence ≤400, status active|revoked, **applied_count**, approved_at). v1 kind=`vendor_alias`. (ADR-10)
 
-**기존 테이블 컬럼 추가**
-- `request_lines.product_url` (≤1000) · `request_lines.price_source` ("user"|"url") — 링크 기반 구매요청, 승인자 더블체크.
-- `ap_bills.match_note` (≤400) — 3-way match 통과/예외 사유.
-- `documents.uploaded_by` (FK users) — "방금 올린 파일 첨부" 해소용.
+**Columns added to existing tables**
+- `request_lines.product_url` (≤1000) · `request_lines.price_source` ("user"|"url") — link-based purchase requests; approver double-check.
+- `ap_bills.match_note` (≤400) — reason the 3-way match passed or excepted.
+- `documents.uploaded_by` (FK users) — resolves "attach the file I just uploaded".
 
-**동작 변화 (스키마 연관)**
-- `inbounds.po_id`/`inbound_lines.po_line_id`가 실제로 채워짐(PO 기준 입고) → `InboundPosted` 이벤트가 po 정보 운반 → `po_lines.qty_received` 롤업 + PO 상태 전이.
-- `purchase_orders` 전체 수명주기 가동: draft→open(issue)→partially_received→received(→closed/canceled).
-- Alembic: `8b3f2a91c4d7`(컬럼 4종) · `c41d7e55a9b2`(user_memories·learned_rules).
+**Behavior changes (schema-related)**
+- `inbounds.po_id`/`inbound_lines.po_line_id` are now actually populated (PO-based receiving) → the `InboundPosted` event carries PO info → rolls up `po_lines.qty_received` + transitions PO status.
+- The full `purchase_orders` lifecycle is live: draft→open(issue)→partially_received→received(→closed/canceled).
+- Alembic: `8b3f2a91c4d7` (the 4 new columns) · `c41d7e55a9b2` (user_memories·learned_rules).

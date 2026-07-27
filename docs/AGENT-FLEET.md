@@ -1,273 +1,270 @@
-# 001 — 자율 운영 에이전트 군단 설계 (D6, v2)
+# 001 — Autonomous Operations Agent Fleet Design (D6, v2)
 
-> 엔드게임: **"대화로 회사를 운영"을 넘어 "대화 없이도 알아서 굴러가는 회사".**
-> 롤별 AI가 일상 업무를 돌리고, 사람(창업자)은 방향 결정·예외 처리·승인만.
-> 살아있는 문서 — 단계별 구현하며 계속 다듬는다.
+> Endgame: **beyond "run the company through conversation" — "a company that runs itself even without conversation."**
+> Role-based AIs handle the day-to-day work; the human (founder) only sets direction, handles exceptions, and approves.
+> Living document — refined continuously as we implement stage by stage.
 
-## 타겟 = 제네릭 소규모 스타트업 (판매용 제품)
+## Target = generic small startup (product for sale)
 
-- **001은 팔려고 만드는 제품.** 특정 회사가 아니라 **전형적 소규모 스타트업(1~30명)** 을 모델로 설계.
-  *(임포트된 QBO 데이터는 개발·테스트용일 뿐, 타겟 고객 프로필이 아님.)*
-- 창업자 혼자/소수가 모든 모자를 씀 — 구매부서·재무부서 같은 건 없음.
-- **회계 지식 없이** 회사를 돌리고 싶음 ← QuickBooks 대비 핵심 차별점.
-- 업종이 다양함(SaaS·에이전시·이커머스·소형 하드웨어) → **업종 가정 X, 모듈식.**
-- **가벼움이 제품의 본질** — 무거운 9부서 강요 금지.
+- **001 is a product we're building to sell.** It is modeled not on any specific company but on a **typical small startup (1–30 people)**.
+  *(The imported QBO data is for development/testing only — it is not the target customer profile.)*
+- The founder alone, or a handful of people, wears every hat — there is no purchasing department or finance department.
+- They want to run the company **without accounting knowledge** — the key differentiator vs. QuickBooks.
+- Industries vary (SaaS, agency, e-commerce, small hardware) → **no industry assumptions; modular.**
+- **Lightweight is the essence of the product** — never force a heavyweight nine-department structure.
 
-### 차별점: "회계가 안 보인다"
-> QuickBooks는 창업자가 *회계를 한다.* 001은 **돈 들어오고/나가는 것만 처리하면 장부가 저절로
-> 생기고**, 창업자는 대화하고 승인만. 회계는 부산물이지 할 일이 아니다.
-
----
-
-## 0. 핵심 철학
-
-- **로직 = 손/계산기 (정확성)** · **AI = 머리/통역 (이해·판단)**.
-- **AI는 절대 숫자를 만들지 않는다.** 모든 수치는 도구가 장부에서 꺼낸 값만 (환각 가드레일).
-- **결과가 큰 행동(돈·외부발송·채용)은 AI가 준비만, 마지막 클릭은 사람.**
-- **권한이 곧 롤의 경계.** 각 롤 = 권한 묶음으로 실행 → 도구가 자동으로 권한 준수.
+### Differentiator: "the accounting is invisible"
+> With QuickBooks, the founder *does the accounting.* With 001, **you only deal with money coming in and going out, and the books write themselves**; the founder just converses and approves. Accounting is a byproduct, not a chore.
 
 ---
 
-## 1. 회사 운영 전체 지도 (가치 흐름)
+## 0. Core philosophy
 
-소규모 스타트업은 부서가 아니라 **3개 흐름 + 자동 장부 + 인사이트**로 돈다:
+- **Logic = hands/calculator (accuracy)** · **AI = brain/interpreter (understanding and judgment)**.
+- **The AI never invents numbers.** Every figure comes only from values the tools pull out of the ledger (hallucination guardrail).
+- **For high-consequence actions (money, outbound sends, hiring), the AI only prepares; the final click is human.**
+- **Permissions define the boundary of a role.** Each role executes as a bundle of permissions → the tools enforce permissions automatically.
+
+---
+
+## 1. The full map of running the company (value flows)
+
+A small startup runs not on departments but on **3 flows + automatic books + insights**:
 ```
-💰 돈 들어옴 (매출→수금)  ──┐
-💸 돈 나감 (지출→지급)    ──┤→ 📒 장부가 "자동으로" 됨 → 📊 현금·런웨이·인사이트 → 창업자
-🧑 사람 (급여, 선택)      ──┘        (회계는 부산물)         "돈 얼마 남았어?" "이거 살 여유 돼?"
+Money in (sales -> collections)   --+
+Money out (spend -> payments)     --+-> Books happen "automatically" -> Cash, runway, insights -> Founder
+People (payroll, optional)        --+       (accounting is a byproduct)    "How much money is left?" "Can we afford this?"
 ```
-회계(기록)는 회사의 엔진이 아니라 **모든 흐름이 모이는 하류**. 엔진은 돈 벌고(💰)·쓰고(💸)·사람(🧑).
+Accounting (record-keeping) is not the engine of the company but the **downstream where all flows converge**. The engine is earning money, spending money, and people.
 
 ---
 
-## 2. 롤 구성 — 코어 5 + 선택 4 (전부 제품에 내장)
+## 2. Role lineup — 5 core + 4 optional (all built into the product)
 
-| 롤 | 흐름 | 매핑 모듈 | 핵심 책임 | 기본 |
+| Role | Flow | Mapped modules | Core responsibilities | Default |
 |----|------|---------|---------|------|
-| 🧭 비서실장(디스패처) | 전체 | ai/classify | 인입 분류·라우팅·반송·에스컬레이션 + 창업자 대화 인터페이스 | ✅ 코어 |
-| 💰 매출·수금 | 돈 In | sales | 고객 청구서, 수금 독촉, 매출 인식 | ✅ 코어 |
-| 💸 지출·AP | 돈 Out | procurement/expense, accounting(ap) | 청구서·영수증·구독료·벤더 지급 | ✅ 코어 |
-| 📒 회계·세무 | 기록 | accounting | 위에서 **자동 기표** + 마감·세무·리포트 | ✅ 코어 |
-| 📊 자금·인사이트 | 창업자층 | accounting/bank | 현금·번레이트·런웨이·"살 여유?"·이상알림 | ✅ 코어 |
-| 👤 사람·급여 | 사람 | hr, expense | 급여·계약직·온보딩·경비 정책 | 🔘 선택 |
-| 📦 재고·구매 | 공급 | inventory, procurement | 재고·PO·입고·3-way | ✅ 코어 (패킹리스트→입고 드래프트) |
-| 📚 문서·법무 | 가로 | documents, ai/rag | 계약·정책 보관/검색 | 🔘 선택 |
-| 🎧 고객 | 가로 | sales | 문의·갱신·고객 응대 드래프트 | 🔘 선택 |
-| 👔 창업자(CEO) | — | 사람 | 방향·승인/거절·질문 | 사람 |
+| Chief of Staff (Dispatcher) | All | ai/classify | Classify and route inbound items, handle bounces and escalations + conversation interface with the founder | Core |
+| Revenue / AR | Money in | sales | Customer invoices, collection reminders, revenue recognition | Core |
+| Spend / AP | Money out | procurement/expense, accounting(ap) | Bills, receipts, subscriptions, vendor payments | Core |
+| Accounting / Tax | Records | accounting | **Auto-posting** from the flows above + close, tax, reporting | Core |
+| Treasury / Insights | Founder layer | accounting/bank | Cash, burn rate, runway, "can we afford it?", anomaly alerts | Core |
+| People / Payroll | People | hr, expense | Payroll, contractors, onboarding, expense policy | Optional |
+| Inventory / Purchasing | Supply | inventory, procurement | Inventory, POs, receiving, 3-way match | Core (packing list -> receiving draft) |
+| Documents / Legal | Horizontal | documents, ai/rag | Store/search contracts and policies | Optional |
+| Customer | Horizontal | sales | Inquiries, renewals, customer-reply drafts | Optional |
+| Founder (CEO) | — | Human | Direction, approve/reject, questions | Human |
 
-**📊 자금·인사이트가 숨은 스타** — 스타트업이 가장 알고 싶은 "런웨이 얼마? 돈 언제 떨어져?"를
-QuickBooks는 잘 못 보여준다. 우리의 차별 무기.
+**Treasury / Insights is the hidden star** — the thing a startup most wants to know, "How much runway? When do we run out of money?", is something QuickBooks shows poorly. It is our differentiating weapon.
 
-### 💰 매출·수금 입력원 (단계화)
-| 입력 | 방식 | 시점 |
+### Revenue / AR input sources (staged)
+| Input | Method | Stage |
 |------|------|------|
-| 💬 대화 — 청구 | "ACME한테 컨설팅 $5k 청구해줘" → 드래프트 청구서 | 2단계 |
-| 💬 대화 — 입금 | **"ACME에서 $5k 들어왔어"** → 입금 기록 → 미수 청구서에 상계 | 2단계 |
-| 📎 고객 문서 | 고객 PO·견적·SOW 업로드 → 청구서 초안 | 2단계 |
-| 🔁 반복 청구 | 구독 1회 설정 → 매달 자동 청구서 생성 (SaaS) | 2단계 스케줄 |
-| 🏦 **월말 은행 매칭** | 스테이트먼트의 입금을 미수 청구서에 자동 대사 → 수금 확정 | 기존 대사 기능 활용 |
-| 🔌 연동(Stripe·Shopify) | 매출 자동 수집 (데이터소스 API=IN, 안전) | 후일 선택 |
+| Chat — invoicing | "Bill ACME $5k for consulting" -> draft invoice | Stage 2 |
+| Chat — deposits | **"$5k came in from ACME"** -> record deposit -> offset against open invoices | Stage 2 |
+| Customer documents | Upload customer PO / quote / SOW -> draft invoice | Stage 2 |
+| Recurring billing | Set up a subscription once -> auto-generate a monthly invoice (SaaS) | Stage 2 scheduled |
+| **Month-end bank matching** | Auto-reconcile statement deposits against open invoices -> confirm collections | Reuses existing reconciliation |
+| Integrations (Stripe, Shopify) | Auto-collect revenue (data-source API = IN, safe) | Optional, later |
 
-- **수금(AR):** 미수 청구서 자동 추적 → 독촉 메일 **드래프트**(발송은 게이트).
+- **Collections (AR):** automatically track open invoices -> **draft** reminder emails (sending is gated).
 
-### 📊 자금·인사이트 지표 (확정)
-**상시 대시보드:** 💵 현금 잔액 · 🔥 번레이트(월 순유출) · ⏳ **런웨이**(현금÷번레이트, 히어로) ·
-📈 매출 추이(MRR은 구독 태깅 후) · 📥 미수금 / 📤 미지급.
-**능동 푸시:** ⚠️ 이상 알림(지출 급증·중복결제·잊은 구독) · 🤔 "살 여유 돼?"(런웨이 영향 즉답).
-> 대부분 현 데이터로 즉시 계산 가능; MRR·이상탐지 기준선만 약간의 추가 작업.
+### Treasury / Insights metrics (finalized)
+**Always-on dashboard:** cash balance · burn rate (net monthly outflow) · **runway** (cash / burn rate — the hero metric) ·
+revenue trend (MRR after subscription tagging) · receivables / payables.
+**Proactive push:** anomaly alerts (spend spikes, duplicate payments, forgotten subscriptions) · "can we afford it?" (instant answer with runway impact).
+> Most of this is computable immediately from current data; only MRR and the anomaly-detection baseline need a little extra work.
 
-### 가용 모델 — 전부 항상 가용 (활성화 개념 없음)
-- **모든 롤은 항상 듣고 있다.** 켜고 끄는 이벤트가 없다 — 노는 비용이 ~0이기 때문:
+### Availability model — everything always available (no activation concept)
+- **Every role is always listening.** There is no on/off event — because idle cost is ~0:
   ```
-  단일 루프가 깸 → 큐에 일 있나? (DB 조회, GPU 0) → 없으면 즉시 잠
-  일 있을 때만 → 그 일의 to_role을 입고 LLM 호출 (GPU 사용)
+  Single loop wakes -> anything in the queue? (DB query, zero GPU) -> nothing? go right back to sleep
+  Only when there is work -> put on that task's to_role and call the LLM (GPU used)
   ```
-  즉 **"루프가 돈다 ≠ GPU를 쓴다."** GPU는 실제 처리할 일이 있을 때만.
-- **"선택(🔘)" 롤 = 꺼진 게 아니라, 그 종류 일이 와야 비로소 일하는 롤.** SaaS 스타트업엔
-  재고 일이 영영 안 와서 재고 롤은 그냥 영원히 조용 — 별도 활성화·통보 절차 없이 자기조절.
-- **유일한 사용자 설정 = "영구 끔"(일부러 제외).** 예: 급여를 Gusto로 외부 처리 → 사람·급여 롤 끔.
-- **진짜 안전장치는 하류:** 어떤 롤이 처리하든 드래프트·기표·지급은 전부 창업자 승인 게이트.
+  In other words, **"the loop is running" != "the GPU is being used."** GPU only when there is actual work to process.
+- **An "optional" role isn't switched off — it's a role that only works when its kind of work arrives.** A SaaS startup never gets inventory work, so the inventory role simply stays quiet forever — self-regulating with no separate activation or notification procedure.
+- **The only user setting = "permanently off" (deliberate exclusion).** Example: payroll handled externally via Gusto -> turn off the People / Payroll role.
+- **The real safety net is downstream:** whichever role does the processing, drafts, postings, and payments all go through the founder approval gate.
 
 ---
 
-## 3. 오케스트레이션 — 단일 작업 루프 + 작업큐
+## 3. Orchestration — single work loop + task queue
 
-**부서마다 루프 9개가 아니라, 일감 큐를 처리하는 루프 1개**가 롤을 갈아입으며 처리:
+**Not nine loops, one per department — one loop that works the task queue**, swapping roles as it goes:
 ```
-인입(메일/업로드/명세서/대화지시) → [디스패처] 분류 → tasks 큐에 (to_role + 내용 + 대기) 적재
-[작업 루프] 큐에서 다음 일 꺼냄 → to_role의 "프롬프트+도구+권한"을 입고 처리
-   → 처리  /  "내 거 아님 + 이유"로 반송  /  결과 큰 건 '승인대기'로 창업자
-   → 반송 3회↑ → 창업자 에스컬레이션
+Inbound (email / upload / statement / chat instruction) -> [Dispatcher] classify -> enqueue into tasks (to_role + content + pending)
+[Work loop] pull next task from queue -> put on the to_role's "prompt + tools + permissions" and process
+   -> handle it  /  bounce back with "not mine + reason"  /  high-consequence items -> 'needs approval' -> founder
+   -> bounced 3+ times -> escalate to founder
 ```
-- **진짜 한계 = GPU 1장 = 동시 LLM 1건.** 일이 몰리면 순차 처리 — 스타트업 규모엔 무관.
-  (나중 확장은 루프를 끄는 게 아니라 더 빠른 GPU/병렬화로 해결.)
-- **스케줄러 = APScheduler (인-프로세스).** FastAPI 앱 안에서 같이 돎. 외부 의존성 없음.
-- **모든 행동 = audit 로그** (이미 구현됨).
+- **The real limit = 1 GPU = 1 concurrent LLM call.** When work piles up it is processed sequentially — irrelevant at startup scale.
+  (Later scaling is solved not by turning off the loop but with a faster GPU / parallelization.)
+- **Scheduler = APScheduler (in-process).** Runs inside the FastAPI app. No external dependencies.
+- **Every action = audit log** (already implemented).
 
-### 작업큐 테이블 `tasks`
-| 필드 | 타입 | 설명 |
+### Task queue table `tasks`
+| Field | Type | Description |
 |------|------|------|
 | id | PK | |
 | created_at / updated_at | datetime | |
 | source | enum | upload·email·bank_feed·ceo_chat·agent |
 | source_ref | str? | document_id / email_id / conversation_id |
-| category | str | 디스패처 분류 결과 |
+| category | str | Dispatcher classification result |
 | from_role | enum | dispatcher·revenue·spend·accounting·insight·people·supply·docs·support·ceo·system |
-| to_role | enum | 배정된 담당 롤 (위와 동일 enum) |
-| title | str | 사람이 읽을 한 줄 요약 |
-| payload | JSON | 작업 데이터(파싱 인보이스·지시문 등) |
+| to_role | enum | Assigned owner role (same enum as above) |
+| title | str | Human-readable one-line summary |
+| payload | JSON | Task data (parsed invoice, instruction text, etc.) |
 | status | enum | queued·in_progress·needs_approval·bounced·done·failed |
-| bounce_count | int | 반송 횟수(기본 0) |
-| bounce_reason | str? | 마지막 반송 사유 |
-| result | JSON? | 산출물(드래프트 청구서 id·드래프트 메일 id …) |
-| approval_id | FK? | needs_approval일 때 기존 승인모듈 연결 |
-| idempotency_key | str? unique | hash(source_ref+category) — 루프 재실행 시 중복 생성 차단 |
+| bounce_count | int | Bounce count (default 0) |
+| bounce_reason | str? | Reason for the last bounce |
+| result | JSON? | Output (draft invoice id, draft email id, ...) |
+| approval_id | FK? | Link to the existing approval module when needs_approval |
+| idempotency_key | str? unique | hash(source_ref+category) — prevents duplicate creation on loop reruns |
 
-**상태 전이:**
+**State transitions:**
 ```
-queued ─(작업 루프가 집음)→ in_progress
-in_progress → done
-            → needs_approval ─(창업자 OK)→ done   ─(거절)→ failed
-            → bounced ─(디스패처 재배정)→ queued  (bounce_count++)
-            → failed
-bounce_count ≥ 3 → needs_approval  (창업자 에스컬레이션)
+queued -(work loop picks it up)-> in_progress
+in_progress -> done
+            -> needs_approval -(founder OK)-> done   -(rejected)-> failed
+            -> bounced -(dispatcher reassigns)-> queued  (bounce_count++)
+            -> failed
+bounce_count >= 3 -> needs_approval  (escalate to founder)
 ```
-- **중복방지:** `idempotency_key` unique + status 필터 → 주기 루프가 또 돌아도 처리된 건 안 집음.
-- **반송:** 잘못 배정 시 사유와 함께 디스패처로 → 재분류. 사유는 로그로 남겨 분류 개선.
+- **Dedup:** `idempotency_key` unique + status filter -> even if the periodic loop runs again, already-handled items are not picked up.
+- **Bounce:** misassigned items go back to the dispatcher with a reason -> reclassify. Reasons are logged to improve classification.
 
-### 디스패처 분류 → 롤 매핑
-| category | → 담당 롤 | 1차 액션 | 상태 |
+### Dispatcher classification -> role mapping
+| category | -> Owner role | First action | Status |
 |----------|----------|---------|------|
-| invoice (벤더 청구서) | 💸 지출·AP | 파싱 → 드래프트 청구서(입고 전이면 보류) | ✅ 현재 분류기 |
-| bank_statement | 📒 회계 | 자동 대사 제안 | ✅ |
-| receipt (영수증·경비) | 💸 지출·AP | 경비 기표 초안 | ✅ |
-| policy (규정 질문) | 📚 문서·법무 | RAG 답변 | ✅ |
-| contract | 📚 문서·법무 | 요약·분류·보관 | ✅ |
-| customer_invoice/주문 | 💰 매출·수금 | 고객 청구서 초안 | ⚠️ 분류기 확장 |
-| po_request | 📦 재고·구매 | PO 초안 | ⚠️ 확장 (승인된 요청→PO는 이벤트로 자동; 채팅 issue_po로 발주) |
-| goods_receipt / packing_list | 📦 재고·구매 | 입고 드래프트 → 승인 시 포스팅 + PO 롤업 → 3-way | ✅ 출하 |
-| hr_doc | 👤 사람·급여 | 직원 기록 정리 | ⚠️ 확장 |
-| customer_email | 🎧 고객 | 답장 드래프트 | ⚠️ 확장 |
-| other/모호 | 🧭 디스패처 보류 | 모호하면 창업자 에스컬레이션 | ✅ |
+| invoice (vendor bill) | Spend / AP | Parse -> draft bill (hold if goods not yet received) | Done — current classifier |
+| bank_statement | Accounting | Auto-reconciliation proposal | Done |
+| receipt (receipt / expense) | Spend / AP | Draft expense entry | Done |
+| policy (policy question) | Documents / Legal | RAG answer | Done |
+| contract | Documents / Legal | Summarize, classify, archive | Done |
+| customer_invoice / order | Revenue / AR | Draft customer invoice | Planned — classifier extension |
+| po_request | Inventory / Purchasing | Draft PO | Planned — extension (approved request -> PO is automatic via event; issue via chat issue_po) |
+| goods_receipt / packing_list | Inventory / Purchasing | Receiving draft -> on approval, post + PO rollup -> 3-way match | Done — shipped |
+| hr_doc | People / Payroll | Organize employee records | Planned — extension |
+| customer_email | Customer | Draft reply | Planned — extension |
+| other / ambiguous | Dispatcher holds | Escalate to founder when ambiguous | Done |
 
-> 현 분류기(`classify.py`)는 문서 6종만 인식. **1단계는 ✅ 5종으로 충분**,
-> `⚠️ 확장`은 단계별로 분류기를 키우며 추가.
+> The current classifier (`classify.py`) recognizes only 6 document types. **The 5 "Done" types are enough for Stage 1**;
+> the "Planned" extensions are added stage by stage as the classifier grows.
 
-### 인입 채널
-출처 무관 — 디스패처엔 전부 "처리할 일 하나": 📧 이메일 · 📎 업로드 · 🏦 명세서 · 💬 대화 지시.
+### Inbound channels
+Source-agnostic — to the dispatcher everything is just "one item to process": email · upload · bank statement · chat instruction.
 
 ---
 
-## 4. 루프 주기 — 생산자(스케줄) + 소비자(단일 루프)
+## 4. Loop cadence — producers (schedules) + consumer (single loop)
 
-작업 루프(소비자)는 상시. 아래는 **일감을 큐에 넣는 스케줄 생산자**:
-| 주기 | 트리거 |
+The work loop (consumer) is always on. Below are the **scheduled producers that enqueue work**:
+| Cadence | Trigger |
 |------|--------|
-| 10분 | 반응형: 새 메일·문서·대화 처리 |
-| 일간 | 잔무 정리, 자산 점검(선택 롤) |
-| 주간 | 💸 결제목록 작성 → 창업자, 주간 요약 |
-| 월간 | 마감(클로징 패키지), 전월 대사 검증 |
+| 10 min | Reactive: process new email, documents, conversations |
+| Daily | Clear leftovers, asset checks (optional roles) |
+| Weekly | Spend / AP builds the payment list -> founder, weekly summary |
+| Monthly | Close (closing package), verify prior-month reconciliation |
 
-### 주간 결제 흐름 (payment run)
+### Weekly payment flow (payment run)
 ```
-[주간] 미지급 청구서 모아 "이번 주 결제목록" → 창업자
-[창업자] 실제 은행에서 송금 → "완료"(항목별 확정)
-[회계] 최종 분개 (Dr 외상매입금 / Cr 현금)
-[은행 명세서 입수] 자동 대사로 검증 ← 장부가 스스로 감사됨
+[Weekly] Collect unpaid bills into "this week's payment list" -> founder
+[Founder] Wires the money at the actual bank -> "done" (confirm per item)
+[Accounting] Final journal entry (Dr Accounts Payable / Cr Cash)
+[Bank statement arrives] Verified via auto-reconciliation <- the books audit themselves
 ```
 
 ---
 
-## 5. 자동 vs 사람 승인 경계
+## 5. Automation vs. human approval boundary
 
-| AI가 끝까지 (자동) | 사람 승인 필요 |
-|------------------|--------------|
-| 분류·라우팅·정리·드래프트 | 💸 **모든 실제 지급 (금액 무관)** |
-| 청구서·경비 **초안** | 📤 외부 메일·계약 발송 |
-| 은행 대사 **제안** / 장부 기표 **초안** | 🧾 장부 기표(posting) 실행 |
-| 리포트·질문 답변·인사이트 | 👤 채용/해고 · ⚠️ 비가역·고액 결정 |
+| AI end-to-end (automatic) | Human approval required |
+|------------------------|--------------|
+| Classify, route, organize, draft | **Every actual payment (regardless of amount)** |
+| Invoice and expense **drafts** | Outbound email / contract sends |
+| Bank reconciliation **proposals** / ledger posting **drafts** | Executing ledger postings |
+| Reports, Q&A, insights | Hiring/firing · irreversible or high-value decisions |
 
-> **드래프트만, 실행은 사람.** 돈은 안 나가도 장부 기표는 결과가 큰 행동 → 초기엔 보수적.
-> 신뢰 쌓이면 저위험 자동기표로 완화 가능.
+> **Drafts only; execution is human.** Even when no money moves, a ledger posting is a high-consequence action -> conservative at first.
+> As trust builds, low-risk auto-posting can be relaxed in.
 
 ---
 
-## 6. 보안 모델 — "우리 데이터는 절대 밖으로"
+## 6. Security model — "our data never leaves"
 
-### 2대 원칙
-1. **🔒 회사 데이터는 절대 외부로 안 나간다** (숫자·이름·계약 — 한 바이트도).
-2. **🌐 모르는 건 바깥에서 "지식"만 가져온다** — 보내는 건 "방법·사실 질문"이지 회사 데이터가 아님.
+### Two principles
+1. **Company data never goes outside** (numbers, names, contracts — not a single byte).
+2. **When we don't know something, we only bring "knowledge" in from outside** — what goes out is a "how-to / factual question," never company data.
 
-### API 두 종류 — 방향이 전부
-| 종류 | 방향 | 위험 |
+### Two kinds of API — direction is everything
+| Kind | Direction | Risk |
 |------|------|------|
-| 클라우드 AI API (OpenAI/Gemini/Claude) | 📤 내 데이터가 나감 | 🔴 진짜 위험 — 001은 **안 씀**(로컬 LLM) |
-| 데이터소스 API (Gmail/은행/QBO) | 📥 내 데이터를 가져옴 | 🟢 안전 — 로컬로 내려받아 로컬 분석 |
+| Cloud AI APIs (OpenAI/Gemini/Claude) | My data goes OUT | Red — the real risk. 001 **does not use them** (local LLM) |
+| Data-source APIs (Gmail/bank/QBO) | My data comes IN | Green — safe. Downloaded locally, analyzed locally |
 
-- **"로컬 LLM"은 이메일·은행 연결해도 안 깨짐** (분석은 로컬, LLM은 인터넷 안 함).
-- **"API냐 브라우저냐"는 무의미** — 가르는 건 "무슨 데이터가 나가느냐". 브라우저로 ChatGPT에
-  회사자료 넣기 = API와 똑같은 유출. 브라우저의 안전한 용도 = 공개정보 IN(웹검색·세율).
+- **"Local LLM" is not broken by connecting email or banking** (analysis is local; the LLM never touches the internet).
+- **"API vs. browser" is a meaningless distinction** — what matters is "what data goes out." Pasting company material into ChatGPT via a browser = the same leak as an API. The browser's safe use = public information IN (web search, tax rates).
 
-### 모르는 걸 만났을 때 에스컬레이션
+### Escalation when we hit something we don't know
 ```
-1. 로컬 먼저   → 도구·회사규정(RAG)
-2. 웹 검색     → 공개 사실 (검색어만 나감)
-3. 프론티어 자문 → "방법"만 (데이터 0, 사람 검토 후)
-예) ⭕ "AP 보조원장 0, GL 통제 잔액 큰 차이면 원인·대사법?"  ❌ "우리 회사 AP가 왜 안 맞아?"
+1. Local first    -> tools, company policy (RAG)
+2. Web search     -> public facts (only the search query goes out)
+3. Frontier consult -> "methods" only (zero data, human-reviewed before sending)
+e.g. OK: "AP subledger is 0 but the GL control account shows a large balance — likely causes and reconciliation approach?"
+     NOT OK: "Why doesn't our company's AP balance?"
 ```
 
-### 강제 — 프롬프트 규칙 + 기술적 울타리
-1. **구조적 격리** — 회사 데이터 만지는 부분은 인터넷 0. 외부로 나가는 건 좁은 "외부질의" 1개.
-2. **송신 검문(egress guard)** — 나가는 텍스트에 회사 데이터 섞이면 차단/마스킹.
-   탐지 = **DB 실명목록(벤더·고객·직원·계정명) + 패턴(금액·계좌·EIN·이메일).**
-3. **사람 승인** — 외부 질문은 초안만 → 사람이 보고 전송.
+### Enforcement — prompt rules + technical fences
+1. **Structural isolation** — the parts that touch company data have zero internet. The only outbound path is a single narrow "external query" channel.
+2. **Egress guard** — if outbound text contains company data, block/mask it.
+   Detection = **DB name lists (vendors, customers, employees, account names) + patterns (amounts, account numbers, EIN, email addresses).**
+3. **Human approval** — external questions are drafts only -> a human reviews and sends.
 
-### 이메일 커넥터 (외부로 나가는 유일한 문)
+### Email connector (the only door to the outside)
 ```
-[인터넷] ──TLS──> [이메일 커넥터] ← 유일한 외부 통로(읽기전용·감사로그)
-                       ↓
-[LLM/엔진/DB] ← 전부 오프라인
+[Internet] --TLS--> [Email connector] <- the only external path (read-only, audit-logged)
+                        v
+[LLM / engine / DB] <- fully offline
 ```
-- 표준 셋업 = **Google Workspace** → **Gmail API + OAuth 읽기전용** (드래프트도 API 저장).
-- 클라우드 메일이라도 분석은 로컬 — 내 메일을 로컬로 내려받는 것이라 보안상 유리.
-- 토큰은 암호화 보관. **발송 자동 금지 — 드래프트만.** 메일 본문 = 신뢰 안 함(인젝션 방어).
+- Standard setup = **Google Workspace** -> **Gmail API + OAuth read-only** (drafts are saved via the API too).
+- Even with cloud email, analysis is local — we are pulling our own mail down locally, which is a security win.
+- Tokens stored encrypted. **Sending is never automatic — drafts only.** Email bodies = untrusted (injection defense).
 
 ---
 
-## 7. 하이브리드 지능 — 로컬 최신 유지 압박 해소
+## 7. Hybrid intelligence — relieving the pressure to keep local models current
 
-- **로컬:** 일상 실행(데이터 처리). **프론티어 on-demand:** 어려운 문제의 방법론 자문(데이터 0).
-- **로컬 모델 업데이트는 공짜·쉬움** — 최신 추격 "압박"에서 해방되는 것이지 영원히 고정은 아님.
-- 프론티어 = 장부 못 보는 **컨설턴트**(방법). 로컬+엔진 = **실무자**(실데이터 실행).
-
----
-
-## 8. 진행 방식 (단계적 — 코어부터, 한 번에 다 X)
-
-- **1단계:** 디스패처 + 💸지출·AP **2롤.** 단일 작업 루프 + tasks 큐 + 드래프트/승인 흐름 검증.
-  입력 = ⓐ 업로드 문서함 + ⓑ 대화 지시 (이메일·반송 없이).
-- **2단계:** 반송·에스컬레이션 + 💰매출·수금 + 📊자금·인사이트 합류 (코어 완성).
-- **3단계:** 이메일 커넥터 + 주간 결제 루프 (외부 I/O 등장).
-- **4단계:** 선택 롤(사람·재고·문서·고객) 자동 활성화 + 분류기 확장 + 월마감 자동화.
+- **Local:** everyday execution (data processing). **Frontier on-demand:** methodology consulting for hard problems (zero data).
+- **Local model updates are free and easy** — we are freed from the "pressure" of chasing the frontier, not frozen forever.
+- The frontier model = a **consultant** who never sees the books (methods). Local + engine = the **practitioner** (executes on real data).
 
 ---
 
-## 9. 1단계 구현 사양 (💸지출·AP 루프)
+## 8. Rollout approach (staged — core first, not everything at once)
 
-**원칙: 드래프트만. 장부 기표(posting)는 창업자 승인 후에만.**
-```
-[작업 루프] 지출·AP 큐 queued 집음 → in_progress
-  1. 인보이스 파싱(벤더·금액·품목)            ← 자동
-  2. 벤더 조회. 없으면 "신규 벤더 제안" 첨부     ← 자동
-  3. 입고 여부: 물품인데 입고 전 → 보류+안내 / 서비스 → 계정 추천 ← 자동
-  4. 드래프트 청구서 생성(모든 칸 채움)         ← 자동
-  5. status=needs_approval → 창업자             ← 멈춤
-[창업자] 승인 → 6. 실제 기표 + (신규면)벤더 자동 생성
-```
-- **벤더 마스터 자동 채움:** 미등록 벤더는 드래프트에 "신규 벤더 등록"을 붙여, 승인 시 함께 생성.
-- **자동 OK:** 파싱·분류·벤더조회·계정추천·드래프트·대사 제안. **게이트:** 기표·지급·외부발송.
+- **Stage 1:** Dispatcher + Spend / AP — **2 roles.** Validate the single work loop + tasks queue + draft/approval flow.
+  Inputs = (a) uploaded documents inbox + (b) chat instructions (no email, no bounces).
+- **Stage 2:** Bounces and escalation + Revenue / AR + Treasury / Insights join (core complete).
+- **Stage 3:** Email connector + weekly payment loop (external I/O appears).
+- **Stage 4:** Optional roles (people, supply, docs, support) auto-activate + classifier extensions + automated month-end close.
 
-### payload JSON (카테고리별)
+---
+
+## 9. Stage 1 implementation spec (Spend / AP loop)
+
+**Principle: drafts only. Ledger posting happens only after founder approval.**
+```
+[Work loop] picks up a queued Spend/AP task -> in_progress
+  1. Parse the invoice (vendor, amount, line items)                 <- automatic
+  2. Look up the vendor. If missing, attach a "new vendor proposal" <- automatic
+  3. Goods received? Goods before receiving -> hold + notify / services -> recommend account <- automatic
+  4. Create the draft bill (all fields filled)                      <- automatic
+  5. status=needs_approval -> founder                               <- stop
+[Founder] approves -> 6. Actual posting + (if new) auto-create the vendor
+```
+- **Vendor master auto-fill:** for unregistered vendors, the draft carries a "register new vendor" attachment that is created together on approval.
+- **Automatic OK:** parsing, classification, vendor lookup, account recommendation, drafts, reconciliation proposals. **Gated:** postings, payments, outbound sends.
+
+### payload JSON (per category)
 ```jsonc
 // invoice
 { "document_id": 42, "goods_received": false,
@@ -278,60 +275,60 @@ bounce_count ≥ 3 → needs_approval  (창업자 에스컬레이션)
 { "document_id": 51, "bank": "...", "period": "2026-05",
   "lines": [{"date":"...","description":"...","amount":-1234.56}] }
 // ceo_chat
-{ "conversation_id": 19, "instruction": "이 인보이스 처리해줘", "refers_to_task_id": 7 }
+{ "conversation_id": 19, "instruction": "Process this invoice", "refers_to_task_id": 7 }
 ```
 
-### 분류기 확장 시점
-- **1단계:** 현 6종(invoice·bank_statement·receipt·policy·contract·other).
-- **2단계:** +`customer_invoice` (매출 롤).
-- **3단계:** +`customer_email`. **4단계:** +`po_request`·`goods_receipt`·`hr_doc` (선택 롤).
+### Classifier extension timeline
+- **Stage 1:** current 6 types (invoice, bank_statement, receipt, policy, contract, other).
+- **Stage 2:** +`customer_invoice` (revenue role).
+- **Stage 3:** +`customer_email`. **Stage 4:** +`po_request`, `goods_receipt`, `hr_doc` (optional roles).
 
 ---
 
-## 10. 결정 로그 / 남은 질문
+## 10. Decision log / open questions
 
-**결정 완료 (D6):**
-- [x] 타겟 = 제네릭 소규모 스타트업 (판매 제품), 임포트 데이터는 테스트용
-- [x] 롤 = 코어 5 + 선택 4, **전부 항상 가용** (활성화 개념 없음; "선택"=관련 일 와야 작동), 영구끔 옵션
-- [x] 구현 = **단일 작업 루프**가 롤 갈아입으며 처리 (9개 프로세스 아님)
-- [x] 회사 메일 = Google Workspace → Gmail API 읽기전용
-- [x] 지급/기표 = **드래프트만, 실행은 창업자 승인** (금액 무관)
-- [x] 스케줄러 = APScheduler · egress guard = DB실명+패턴
-- [x] tasks 스키마 + 상태전이 + 반송 3회 에스컬레이션 + idempotency
-- [x] 디스패처 매핑 · payload 형식 · 분류기 확장 타임라인
+**Decided (D6):**
+- [x] Target = generic small startup (product for sale); imported data is test-only
+- [x] Roles = 5 core + 4 optional, **all always available** (no activation concept; "optional" = works only when relevant work arrives), permanent-off option
+- [x] Implementation = **a single work loop** that swaps roles as it processes (not 9 processes)
+- [x] Company email = Google Workspace -> Gmail API read-only
+- [x] Payments / postings = **drafts only, execution requires founder approval** (regardless of amount)
+- [x] Scheduler = APScheduler · egress guard = DB name lists + patterns
+- [x] tasks schema + state transitions + 3-bounce escalation + idempotency
+- [x] Dispatcher mapping · payload formats · classifier extension timeline
 
-- [x] 💰매출·수금 입력 = 대화(청구/입금)·고객문서·반복청구·**월말 은행 매칭**·연동(후일) (§2)
-- [x] 📊자금·인사이트 지표 = 현금·번레이트·**런웨이**·매출추이·미수/미지급 + 이상알림·"살 여유?" (§2)
-- [x] ~~선택 롤 자동 활성화 통보 UI~~ → **폐기.** 전 롤 항상 가용이라 활성화 이벤트 없음.
+- [x] Revenue / AR inputs = chat (invoicing/deposits), customer documents, recurring billing, **month-end bank matching**, integrations (later) (see section 2)
+- [x] Treasury / Insights metrics = cash, burn rate, **runway**, revenue trend, receivables/payables + anomaly alerts and "can we afford it?" (see section 2)
+- [x] ~~UI notification for optional-role auto-activation~~ -> **dropped.** All roles are always available, so there is no activation event.
 
-> **설계 디테일 100% 완료.** 모든 결정이 박혔다. 남은 건 구현뿐.
+> **Design detail 100% complete.** Every decision is locked in. All that remains is implementation.
 
 ---
 
-## 11. 구현 현황 (Implementation status)
+## 11. Implementation status
 
-모듈: `app/modules/fleet/` (models·service·dispatcher·roles·loop·payment_run) +
-`app/web/fleet_routes.py` (승인 인박스). 전부 테스트 포함.
+Module: `app/modules/fleet/` (models·service·dispatcher·roles·loop·payment_run) +
+`app/web/fleet_routes.py` (approval inbox). Everything ships with tests.
 
-| 마일스톤 | 내용 | 상태 |
+| Milestone | Content | Status |
 |---------|------|------|
-| 1 | `tasks` 큐 모델 + 상태머신 서비스 (idempotency·bounce·escalation) | ✅ |
-| 2 | 디스패처 (category→role 라우팅) | ✅ |
-| 3 | 💸 지출·AP 롤 핸들러 + 단일 작업 루프 (드래프트→승인→기표) | ✅ |
-| 4 | 승인 인박스 UI + 업로드→디스패처 연결 + APScheduler 틱 | ✅ |
-| 5 | 📊 자금·인사이트 (런웨이·번레이트·살여유) + AI 도구 | ✅ |
-| 6 | 💰 매출·수금 롤 (고객 청구서 드래프트→승인→매출인식) | ✅ |
-| 7 | 주간 결제목록(payment run) → 승인 시 지급 분개 | ✅ |
-| 8 | ⚠️ 이상탐지 (지출 급증·중복 청구) + 일일 인박스 알림 | ✅ |
-| 9 | 📅 월마감 제안 → 승인 시 기간 잠금 | ✅ |
-| 10 | 📊 인사이트 대시보드 카드 (런웨이·번레이트·현금) + 인박스 카운트 | ✅ |
+| 1 | `tasks` queue model + state-machine service (idempotency, bounce, escalation) | Done |
+| 2 | Dispatcher (category -> role routing) | Done |
+| 3 | Spend / AP role handler + single work loop (draft -> approval -> posting) | Done |
+| 4 | Approval inbox UI + upload -> dispatcher wiring + APScheduler tick | Done |
+| 5 | Treasury / Insights (runway, burn rate, affordability) + AI tools | Done |
+| 6 | Revenue / AR role (customer invoice draft -> approval -> revenue recognition) | Done |
+| 7 | Weekly payment list (payment run) -> payment journal entry on approval | Done |
+| 8 | Anomaly detection (spend spikes, duplicate bills) + daily inbox alerts | Done |
+| 9 | Month-end close proposal -> period lock on approval | Done |
+| 10 | Insights dashboard cards (runway, burn rate, cash) + inbox counts | Done |
 
-스케줄러 잡: 작업루프(10분) · 주간 결제(월 08:00) · 이상탐지(일 07:00) ·
-월마감(1일 06:00) · 야간 백업.
+Scheduler jobs: work loop (10 min) · weekly payment run (Mon 08:00) · anomaly detection (daily 07:00) ·
+month-end close (1st, 06:00) · nightly backup.
 
-**남은 작업 (후속):**
-- 📧 이메일 커넥터 (Gmail API OAuth) — **사용자 Google Workspace 자격증명 필요** (외부 의존)
-- 🔘 선택 롤 핸들러 (people·supply·docs·support) — 분류기 6종→확장 후 (LLM 분류 학습 필요)
+**Remaining work (follow-ups):**
+- Email connector (Gmail API OAuth) — **requires the user's Google Workspace credentials** (external dependency)
+- Optional role handlers (people, supply, docs, support) — after extending the classifier beyond the current 6 types (requires LLM classification training)
 
-> **설계 v2 완료.** 제네릭 소규모 스타트업 기준으로 재정렬. 다음은 1단계 구현
-> (tasks 테이블 + APScheduler + 단일 작업 루프 + 지출·AP 드래프트 흐름).
+> **Design v2 complete.** Realigned around the generic small startup. Next up is Stage 1 implementation
+> (tasks table + APScheduler + single work loop + Spend / AP draft flow).
