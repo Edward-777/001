@@ -120,7 +120,8 @@ so the AI never has a privileged path (see ADR-1).
 
 ## Author
 
-Built by Jongwoo (Edward) Kim, Bellevue, WA — I run U.S. operations (finance,
-tax, HR, procurement) at a startup and built this solo as a personal project.
+Built by Edward Kim, Bellevue, WA. I've spent my career running the business
+side of companies — accounting, treasury, procurement, HR, IT — and built this
+solo to see how much of that work AI can run.
 
 Contact: edwardjk919@gmail.com
