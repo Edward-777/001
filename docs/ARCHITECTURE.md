@@ -26,6 +26,10 @@
 | **documents** | Attachments, OCR/parsing | `store_document`, `parse_document` |
 | **ai** | Agent orchestrator, **tool registry**, LLM (Ollama), RAG, conversations | (calls other modules' tools) |
 | **fleet** | Autonomous operations orchestration: work queue (`fleet_tasks`), dispatcher, **single work loop**, role handlers, approval inbox (D6) | `service.*` (queue), `dispatcher.dispatch`, `loop.run_once`, `roles.resolve` |
+| **learning** | Governed learning loop: rules mined from human resolutions, human-approved, applied deterministically (ADR-10) | `resolve via procurement.resolve_vendor`, `miner.*` |
+| **leave** | PTO balances (granted only; used derived from requests), manager-approved leave via reports_to, onboarding checklist | `request_leave`, `approve_leave`, `balance`, `start_onboarding` |
+| **contracts** | Commitments register: subscriptions/leases/insurance, renewal notice windows → INSIGHT inbox card | `add_contract`, `upcoming_renewals`, `end_contract` |
+| **budget** | Monthly budget per expense account; actuals derived from posted journals; overruns → INSIGHT inbox card | `set_budget`, `budget_vs_actual`, `consumption_note` |
 
 > **Dependency direction rule:** dependencies flow top → bottom only. Accounting knows nothing about inventory (reverse direction forbidden). Inventory doesn't call accounting directly either → **connected via events** (§3 below).
 > **fleet is the top-level orchestrator** — it calls other modules' services to draft role-specific work, and posts after human approval. Details = [AGENT-FLEET.md](AGENT-FLEET.md).

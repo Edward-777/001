@@ -681,3 +681,18 @@ Generated dynamically from double-entry journal lines (journal_lines). **Humans 
 - `inbounds.po_id`/`inbound_lines.po_line_id` are now actually populated (PO-based receiving) → the `InboundPosted` event carries PO info → rolls up `po_lines.qty_received` + transitions PO status.
 - The full `purchase_orders` lifecycle is live: draft→open(issue)→partially_received→received(→closed/canceled).
 - Alembic: `8b3f2a91c4d7` (the 4 new columns) · `c41d7e55a9b2` (user_memories·learned_rules).
+
+## 2026-07-28 Schema Additions (operations wave: leave · contracts · budget)
+
+**leave module**
+- `pto_balances` — days GRANTED per (employee_id FK, year): allowance_days, carried_over_days (Numeric 5,1). Used/pending are always **derived from leave_requests**, never stored (no drift).
+- `leave_requests` — employee_id FK, kind (vacation|sick|unpaid), start/end_date, days (business days, weekends excluded), reason ≤400, status (pending|approved|denied|canceled), approver_employee_id FK (immediate manager at request time; NULL = top of org chart → auto-approved with that stated in decision_comment), decided_by_user_id FK, decided_at, decision_comment ≤400. Only `vacation` is balance-gated.
+- `onboarding_tasks` — new-hire checklist: employee_id FK, title, doc_category (offer_letter|i9|w4|direct_deposit|handbook_ack), done, done_at, document_id FK (the collected document).
+
+**contracts module**
+- `contracts` — the commitments register: title, counterparty, kind (subscription|lease|insurance|service|other), start/end_date, **auto_renew**, **notice_days** (alert window before end_date, default 30), amount + billing (monthly|quarterly|annual|one_time), vendor_id FK?, document_id FK? (the signed PDF), status (active|ended), notes ≤1000. Inside-window contracts surface via `upcoming_renewals` and a weekly INSIGHT inbox card (idempotency key = week + due-set, so a newly due contract re-alerts the same week).
+
+**budget module**
+- `budgets` — one row per (account_id FK→accounts, year): monthly_amount. Expense accounts only. Actuals are always **derived from posted journal_lines** (debits − credits in period), never stored. Overruns raise a monthly INSIGHT inbox card (key = month + over-set); `budget_vs_actual` also lists **unbudgeted** expense activity so spend can't hide by omission.
+
+- Alembic: `d92c4f7b1e03` (leave) · `f3a8d21c6b57` (contracts) · `b7e2c94a1f60` (budgets).
