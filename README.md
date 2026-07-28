@@ -78,7 +78,15 @@ draws the whole pipeline — inputs → local models → guardrails → human de
 **Order-to-cash.** Quote, customer PO, shipment with packing list, invoice —
 each stage producing a downloadable customer document.
 
-44 audited AI tools. 304 tests.
+**Operations & planning.** PTO with manager approval routed through the same
+org chart as spend approvals (balances derived from approved requests, never
+stored), a new-hire onboarding checklist (I-9, W-4, direct deposit), a
+contracts register that flags renewals inside their notice window (an
+auto-renewing subscription never lapses by surprise), and budget vs actual
+per expense account with actuals from the posted ledger — overruns and due
+renewals land as cards in the same approval inbox.
+
+58 audited AI tools. 332 tests.
 
 ## Setup (requires Python 3.12+)
 
@@ -90,7 +98,7 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 304 tests
+pytest                          # 332 tests
 ```
 
 Dev uses SQLite for instant run. Production targets PostgreSQL (set
@@ -108,7 +116,8 @@ Local models (via [Ollama](https://ollama.com)): `qwen2.5:14b` (chat),
 app/
   core/        # config, db, events (the spine), sequences, audit, base, scheduler
   modules/     # auth, hr, approval, procurement, inventory, assets, sales,
-               # expense, bank, accounting, documents, ai, fleet, learning
+               # expense, bank, accounting, documents, ai, fleet, learning,
+               # leave, contracts, budget
   web/         # routes + templates (dashboard, /fleet inbox, /sales O2C, ...)
   main.py      # FastAPI app factory (single process, modular monolith)
 tests/
