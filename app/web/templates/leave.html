@@ -1,0 +1,151 @@
+{% extends "layout.html" %}
+{% block title %}Leave — 001{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Leave &amp; PTO</h1>
+
+{% if error %}
+<div class="max-w-3xl mb-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-2 text-sm">{{ error }}</div>
+{% endif %}
+
+{% if not employee %}
+<div class="max-w-3xl bg-white rounded-xl shadow p-4 text-slate-600">
+  No employee record is linked to your account — ask HR to add one.
+</div>
+{% else %}
+
+<div class="max-w-3xl grid grid-cols-4 gap-3 mb-6">
+  {% for label, value in [("Granted", balance.granted), ("Used", balance.used),
+                          ("Pending", balance.pending), ("Available", balance.available)] %}
+  <div class="bg-white rounded-xl shadow p-4">
+    <div class="text-xs text-slate-400 uppercase tracking-wide">{{ label }} {{ year }}</div>
+    <div class="text-2xl font-bold {% if label == 'Available' %}{{ 'text-emerald-600' if value > 0 else 'text-rose-600' }}{% endif %}">
+      {{ "%g" | format(value) }}<span class="text-sm font-normal text-slate-400"> d</span></div>
+  </div>
+  {% endfor %}
+</div>
+{% if not balance.allowance_set %}
+<p class="max-w-3xl -mt-4 mb-6 text-xs text-amber-600">No PTO allowance set for {{ year }} — vacation requests will be rejected until HR sets one.</p>
+{% endif %}
+
+<div class="max-w-3xl bg-white rounded-xl shadow p-4 mb-6">
+  <h2 class="font-semibold mb-3">Request leave</h2>
+  <form method="post" action="/leave/request" class="flex flex-wrap items-end gap-3 text-sm">
+    <label class="block">Kind
+      <select name="kind" class="block border rounded px-2 py-1.5 mt-1">
+        <option value="vacation">Vacation</option>
+        <option value="sick">Sick</option>
+        <option value="unpaid">Unpaid</option>
+      </select></label>
+    <label class="block">From
+      <input type="date" name="start_date" required class="block border rounded px-2 py-1.5 mt-1"></label>
+    <label class="block">To
+      <input type="date" name="end_date" required class="block border rounded px-2 py-1.5 mt-1"></label>
+    <label class="block flex-1 min-w-40">Reason (optional)
+      <input name="reason" class="block w-full border rounded px-2 py-1.5 mt-1"></label>
+    <button class="bg-slate-900 text-white rounded px-4 py-2 hover:bg-slate-700">Submit</button>
+  </form>
+  <p class="text-xs text-slate-400 mt-2">Business days only (weekends excluded). Vacation draws down your balance; sick/unpaid are tracked but not deducted.</p>
+</div>
+
+{% if awaiting %}
+<div class="max-w-3xl bg-white rounded-xl shadow p-4 mb-6 border-l-4 border-sky-400">
+  <h2 class="font-semibold mb-3">Awaiting my approval</h2>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400">
+      <th class="py-1">Employee</th><th>Kind</th><th>Dates</th><th>Days</th><th>Reason</th><th></th></tr></thead>
+    <tbody>
+    {% for r in awaiting %}
+      <tr class="border-t">
+        <td class="py-2">{{ names.get(r.employee_id, '#' ~ r.employee_id) }}</td>
+        <td>{{ r.kind }}</td>
+        <td>{{ r.start_date }} – {{ r.end_date }}</td>
+        <td>{{ "%g" | format(r.days) }}</td>
+        <td class="text-slate-500">{{ r.reason or '' }}</td>
+        <td class="text-right whitespace-nowrap">
+          <form method="post" action="/leave/{{ r.id }}/approve" class="inline">
+            <button class="bg-emerald-600 text-white rounded px-3 py-1 hover:bg-emerald-700">Approve</button></form>
+          <form method="post" action="/leave/{{ r.id }}/deny" class="inline">
+            <button class="bg-rose-600 text-white rounded px-3 py-1 hover:bg-rose-700">Deny</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="max-w-3xl bg-white rounded-xl shadow p-4 mb-6">
+  <h2 class="font-semibold mb-3">My requests</h2>
+  {% if not mine %}<p class="text-sm text-slate-400">No leave requests yet.</p>{% else %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400">
+      <th class="py-1">Kind</th><th>Dates</th><th>Days</th><th>Status</th><th>Comment</th><th></th></tr></thead>
+    <tbody>
+    {% for r in mine %}
+      <tr class="border-t">
+        <td class="py-2">{{ r.kind }}</td>
+        <td>{{ r.start_date }} – {{ r.end_date }}</td>
+        <td>{{ "%g" | format(r.days) }}</td>
+        <td>
+          {% if r.status == 'approved' %}<span class="text-emerald-600 font-medium">approved</span>
+          {% elif r.status == 'denied' %}<span class="text-rose-600 font-medium">denied</span>
+          {% elif r.status == 'canceled' %}<span class="text-slate-400">canceled</span>
+          {% else %}<span class="text-amber-600">pending</span>{% endif %}
+        </td>
+        <td class="text-slate-500">{{ r.decision_comment or '' }}</td>
+        <td class="text-right">
+          {% if r.status == 'pending' %}
+          <form method="post" action="/leave/{{ r.id }}/cancel" class="inline">
+            <button class="text-slate-400 hover:text-slate-600 underline">Cancel</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+{% if is_hr %}
+<div class="max-w-3xl bg-white rounded-xl shadow p-4 mb-6 border-l-4 border-violet-400">
+  <h2 class="font-semibold mb-3">HR — PTO allowance ({{ year }})</h2>
+  <form method="post" action="/leave/allowance" class="flex flex-wrap items-end gap-3 text-sm">
+    <label class="block">Employee #
+      <input name="employee_no" required class="block border rounded px-2 py-1.5 mt-1 w-28"></label>
+    <label class="block">Allowance (days)
+      <input type="number" step="0.5" min="0" name="allowance_days" required class="block border rounded px-2 py-1.5 mt-1 w-28"></label>
+    <label class="block">Carryover
+      <input type="number" step="0.5" min="0" name="carried_over_days" value="0" class="block border rounded px-2 py-1.5 mt-1 w-24"></label>
+    <button class="bg-slate-900 text-white rounded px-4 py-2 hover:bg-slate-700">Set</button>
+  </form>
+</div>
+
+<div class="max-w-3xl bg-white rounded-xl shadow p-4 mb-6 border-l-4 border-violet-400">
+  <h2 class="font-semibold mb-3">HR — Onboarding</h2>
+  <form method="post" action="/leave/onboarding/start" class="flex items-end gap-3 text-sm mb-4">
+    <label class="block">Employee #
+      <input name="employee_no" required class="block border rounded px-2 py-1.5 mt-1 w-28"></label>
+    <button class="bg-slate-600 text-white rounded px-4 py-2 hover:bg-slate-500">Start checklist</button>
+  </form>
+  {% if not onboarding %}<p class="text-sm text-slate-400">No open onboarding checklists.</p>{% endif %}
+  {% for emp, done, total in onboarding %}
+  <div class="border-t pt-3 mt-3">
+    <div class="font-medium text-sm mb-1">{{ emp.name }} <span class="text-slate-400">({{ emp.employee_no }})</span>
+      <span class="text-xs text-slate-400 ml-2">{{ done }}/{{ total }} done</span></div>
+    {% for t in onboarding_tasks[emp.id] %}
+    <div class="flex items-center gap-2 text-sm py-0.5">
+      {% if t.done %}<span class="text-emerald-600">✓</span><span class="text-slate-400 line-through">{{ t.title }}</span>
+      {% else %}<span class="text-slate-300">○</span><span>{{ t.title }}</span>
+      <form method="post" action="/leave/onboarding/{{ t.id }}/complete" class="inline ml-1">
+        <button class="text-xs text-sky-600 underline hover:text-sky-800">mark done</button></form>
+      {% endif %}
+      {% if t.document_id %}<span class="text-xs text-slate-400">(doc #{{ t.document_id }})</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

@@ -798,6 +798,149 @@ def _check_affordability(session: Session, user: User, args: dict) -> dict:
     }
 
 
+# ---- leave / PTO / onboarding ---------------------------------------------
+
+def _my_employee(session: Session, user: User):
+    from ..hr import service as hr_svc
+    return hr_svc.get_employee_by_user(session, user.id)
+
+
+def _leave_row(r) -> dict:
+    return {"leave_id": r.id, "kind": r.kind, "start": str(r.start_date),
+            "end": str(r.end_date), "business_days": float(r.days),
+            "status": r.status, "reason": r.reason}
+
+
+def _request_time_off(session: Session, user: User, args: dict) -> dict:
+    from ..leave import service as leave
+    emp = _my_employee(session, user)
+    if emp is None:
+        return {"error": "no employee record is linked to your account — ask HR"}
+    try:
+        start = date.fromisoformat(str(args.get("start_date", "")))
+        end = date.fromisoformat(str(args.get("end_date", "")))
+    except ValueError:
+        return {"error": "need start_date and end_date as YYYY-MM-DD — ask the "
+                         "user for the exact dates; never guess them"}
+    try:
+        req = leave.request_leave(session, employee=emp,
+                                  kind=str(args.get("kind") or "vacation"),
+                                  start_date=start, end_date=end,
+                                  reason=args.get("reason"))
+    except ValueError as exc:
+        return {"error": str(exc)}
+    out = _leave_row(req)
+    out["routed_to_manager"] = req.approver_employee_id is not None
+    return out
+
+
+def _get_pto_balance(session: Session, user: User, args: dict) -> dict:
+    from ..leave import service as leave
+    emp = _my_employee(session, user)
+    if emp is None:
+        return {"error": "no employee record is linked to your account — ask HR"}
+    year = int(args.get("year") or date.today().year)
+    return leave.balance(session, emp.id, year)
+
+
+def _list_leave_requests(session: Session, user: User, args: dict) -> dict:
+    from ..leave import service as leave
+    emp = _my_employee(session, user)
+    if emp is None:
+        return {"error": "no employee record is linked to your account — ask HR"}
+    return {
+        "mine": [_leave_row(r) for r in leave.list_for_employee(session, emp.id)],
+        "awaiting_my_approval": [
+            {**_leave_row(r), "employee_id": r.employee_id}
+            for r in leave.pending_for_approver(session, emp.id)],
+    }
+
+
+def _decide_leave(session: Session, user: User, args: dict, *, approve: bool) -> dict:
+    from ..leave import service as leave
+    try:
+        leave_id = int(args.get("leave_id") or 0)
+    except (TypeError, ValueError):
+        return {"error": "need leave_id (integer) — call list_leave_requests first"}
+    try:
+        fn = leave.approve_leave if approve else leave.deny_leave
+        req = fn(session, leave_id, user=user, comment=args.get("comment"))
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return _leave_row(req)
+
+
+def _approve_leave(session: Session, user: User, args: dict) -> dict:
+    return _decide_leave(session, user, args, approve=True)
+
+
+def _deny_leave(session: Session, user: User, args: dict) -> dict:
+    return _decide_leave(session, user, args, approve=False)
+
+
+def _set_pto_allowance(session: Session, user: User, args: dict) -> dict:
+    from ..hr import service as hr_svc
+    from ..leave import service as leave
+    emp = None
+    if args.get("employee_no"):
+        from sqlalchemy import select
+
+        from ..hr.models import Employee
+        emp = session.scalar(select(Employee).where(
+            Employee.employee_no == str(args["employee_no"]).strip()))
+    if emp is None:
+        return {"error": "unknown employee_no — needed to set an allowance"}
+    days = args.get("allowance_days")
+    if days in (None, ""):
+        return {"error": "state allowance_days explicitly — never guess it"}
+    try:
+        row = leave.set_allowance(
+            session, employee_id=emp.id,
+            year=int(args.get("year") or date.today().year),
+            allowance_days=float(days),
+            carried_over_days=float(args.get("carried_over_days") or 0))
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return {"employee": emp.name, "year": row.year,
+            "allowance_days": float(row.allowance_days),
+            "carried_over_days": float(row.carried_over_days)}
+
+
+def _start_onboarding(session: Session, user: User, args: dict) -> dict:
+    from sqlalchemy import select
+
+    from ..hr.models import Employee
+    from ..leave import service as leave
+    emp = session.scalar(select(Employee).where(
+        Employee.employee_no == str(args.get("employee_no", "")).strip()))
+    if emp is None:
+        return {"error": "unknown employee_no"}
+    tasks = leave.start_onboarding(session, employee=emp)
+    return {"employee": emp.name,
+            "checklist": [{"task_id": t.id, "title": t.title, "done": t.done}
+                          for t in tasks]}
+
+
+def _get_onboarding_status(session: Session, user: User, args: dict) -> dict:
+    from sqlalchemy import select
+
+    from ..hr.models import Employee
+    from ..leave import service as leave
+    emp = session.scalar(select(Employee).where(
+        Employee.employee_no == str(args.get("employee_no", "")).strip()))
+    if emp is None:
+        return {"error": "unknown employee_no"}
+    tasks = leave.onboarding_for(session, emp.id)
+    if not tasks:
+        return {"employee": emp.name,
+                "note": "no onboarding checklist — call start_onboarding to create one"}
+    return {"employee": emp.name,
+            "done": sum(1 for t in tasks if t.done), "total": len(tasks),
+            "checklist": [{"task_id": t.id, "title": t.title, "done": t.done,
+                           "document_attached": t.document_id is not None}
+                          for t in tasks]}
+
+
 _BUILTIN = [
     Tool(
         name="get_runway",
@@ -1230,6 +1373,80 @@ _BUILTIN = [
         # Segregation of Duties: entering a bill is finance L2, but PAYING it
         # requires L3 — so the maker (bill) cannot also be the payer at L2.
         handler=_pay_vendor, scope="finance", level=3,
+    ),
+    Tool(
+        name="request_time_off",
+        description=("File a leave (PTO) request for the CURRENT user — vacation, sick, or "
+                     "unpaid. Routes to their manager for approval. USE THIS for '휴가 쓸래 / "
+                     "연차 신청 / 다음주 월화 쉬어야 해 / request time off / take PTO'. Pass the "
+                     "dates the user stated (YYYY-MM-DD) — never guess dates; ask if unclear."),
+        parameters={"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["vacation", "sick", "unpaid"]},
+            "start_date": {"type": "string"}, "end_date": {"type": "string"},
+            "reason": {"type": "string"}},
+            "required": ["start_date", "end_date"]},
+        handler=_request_time_off,
+    ),
+    Tool(
+        name="get_pto_balance",
+        description=("The CURRENT user's PTO balance for a year: granted, used, pending, "
+                     "available. USE THIS for '연차 며칠 남았어 / 휴가 잔여 / how much PTO do "
+                     "I have left'."),
+        parameters={"type": "object", "properties": {"year": {"type": "integer"}}},
+        handler=_get_pto_balance,
+    ),
+    Tool(
+        name="list_leave_requests",
+        description=("The current user's leave requests AND leave requests awaiting their "
+                     "approval (as a manager). Call this before approve_leave/deny_leave to "
+                     "get the leave_id."),
+        parameters={"type": "object", "properties": {}},
+        handler=_list_leave_requests,
+    ),
+    Tool(
+        name="approve_leave",
+        description=("Approve a pending leave request by leave_id. Only the assigned manager "
+                     "(or an admin) can approve. Approve ONLY requests the user explicitly "
+                     "named — never on your own initiative."),
+        parameters={"type": "object", "properties": {
+            "leave_id": {"type": "integer"}, "comment": {"type": "string"}},
+            "required": ["leave_id"]},
+        handler=_approve_leave,
+    ),
+    Tool(
+        name="deny_leave",
+        description=("Deny a pending leave request by leave_id, with the user's stated reason "
+                     "as comment. Only the assigned manager (or an admin) can deny."),
+        parameters={"type": "object", "properties": {
+            "leave_id": {"type": "integer"}, "comment": {"type": "string"}},
+            "required": ["leave_id"]},
+        handler=_deny_leave,
+    ),
+    Tool(
+        name="set_pto_allowance",
+        description=("HR: set an employee's PTO allowance (and optional carryover) for a year, "
+                     "by employee_no. Pass allowance_days exactly as the user stated it."),
+        parameters={"type": "object", "properties": {
+            "employee_no": {"type": "string"}, "year": {"type": "integer"},
+            "allowance_days": {"type": "number"}, "carried_over_days": {"type": "number"}},
+            "required": ["employee_no", "allowance_days"]},
+        handler=_set_pto_allowance, scope="hr", level=2,
+    ),
+    Tool(
+        name="start_onboarding",
+        description=("HR: create the new-hire onboarding checklist (offer letter, I-9, W-4, "
+                     "direct deposit, handbook) for an employee by employee_no. Idempotent."),
+        parameters={"type": "object", "properties": {"employee_no": {"type": "string"}},
+                    "required": ["employee_no"]},
+        handler=_start_onboarding, scope="hr", level=2,
+    ),
+    Tool(
+        name="get_onboarding_status",
+        description=("HR: an employee's onboarding checklist progress by employee_no — which "
+                     "documents (I-9, W-4, …) are still missing."),
+        parameters={"type": "object", "properties": {"employee_no": {"type": "string"}},
+                    "required": ["employee_no"]},
+        handler=_get_onboarding_status, scope="hr", level=2,
     ),
 ]
 
