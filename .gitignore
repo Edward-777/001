@@ -26,3 +26,7 @@ Thumbs.db
 
 # Claude local settings (machine-specific)
 .claude/settings.local.json
+
+# Local DB backups and machine-local Claude config
+dev.db.*
+.claude/

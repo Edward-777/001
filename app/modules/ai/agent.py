@@ -114,6 +114,17 @@ _SUBMIT_BLOCKED = {
 }
 
 
+def _emit(on_event, **payload) -> None:
+    """Report progress to an optional observer (live UI streaming). Observers are
+    best-effort: a broken callback must never break the agent turn."""
+    if on_event is None:
+        return
+    try:
+        on_event(payload)
+    except Exception:
+        pass
+
+
 def _arguments(call: dict) -> dict:
     args = call.get("function", {}).get("arguments", {})
     if isinstance(args, str):
@@ -195,11 +206,14 @@ def _text_toolcalls(content: str) -> list[dict]:
 
 
 def run(session: Session, user: User, message: str, *, history: list[dict] | None = None,
-        max_iters: int | None = None, chat=None) -> dict:
+        max_iters: int | None = None, chat=None, on_event=None) -> dict:
     """Run one user turn. Returns {reply, tool_calls:[...]}.
 
     `history` = prior [{role, content}] turns of this conversation (memory).
-    `chat` lets tests inject a fake LLM; production uses llm.chat (Ollama)."""
+    `chat` lets tests inject a fake LLM; production uses llm.chat (Ollama).
+    `on_event` (optional) receives progress dicts as the turn executes —
+    {"type": "plan"|"step"|"tool_start"|"tool"|"composing", ...} — so the web
+    layer can stream live progress; it never affects execution."""
     chat = chat or llm.chat
     max_iters = max_iters or settings.ai_max_tool_iters
     from datetime import date
@@ -234,12 +248,13 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
     if not plan_titles:
         messages = [*base_messages, user_turn]
         reply = _tool_loop(session, user, message, messages, tools, chat, max_iters,
-                           used, state)
+                           used, state, on_event=on_event)
         return {"reply": reply if reply is not None
                 else "(stopped: tool-iteration limit reached)",
                 "tool_calls": used}
 
     # ---- plan-then-execute -------------------------------------------------
+    _emit(on_event, type="plan", steps=list(plan_titles))
     numbered = "\n".join(f"{i}. {t}" for i, t in enumerate(plan_titles, 1))
     plan = [{"title": t, "status": "pending"} for t in plan_titles]
     summaries: list[str] = []
@@ -254,20 +269,24 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
         }
         messages = [*base_messages, step_directive, user_turn]
         marker = len(used)
+        _emit(on_event, type="step", index=i - 1, status="running")
         result_text = _tool_loop(session, user, message, messages, tools, chat,
-                                 max_iters, used, state)
+                                 max_iters, used, state, on_event=on_event)
         step_calls = used[marker:]
         step_failed = result_text is None or (
             step_calls and all(not c["ok"] for c in step_calls))
         plan[i - 1]["status"] = "failed" if step_failed else "done"
+        _emit(on_event, type="step", index=i - 1, status=plan[i - 1]["status"])
         if step_failed:
             summaries.append(f"{i}. {title}: FAILED"
                              + (f" — {result_text}" if result_text else ""))
-            for remaining in plan[i:]:
+            for j, remaining in enumerate(plan[i:], start=i):
                 remaining["status"] = "skipped"
+                _emit(on_event, type="step", index=j, status="skipped")
             break
         summaries.append(f"{i}. {title}: {result_text}")
 
+    _emit(on_event, type="composing")
     compose = {
         "role": "system",
         "content": ("The plan has finished executing. Step results:\n"
@@ -283,7 +302,7 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
 
 def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
                tools: list[dict], chat, max_iters: int, used: list[dict],
-               state: dict) -> str | None:
+               state: dict, on_event=None) -> str | None:
     """The permission-checked tool loop for one (sub-)task. Appends every call to
     `used`, shares maker-checker state across the turn via `state`, and returns
     the model's final text — or None when the iteration limit is exhausted."""
@@ -303,6 +322,7 @@ def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
         for call in calls:
             name = call.get("function", {}).get("name", "")
             args = _arguments(call)
+            _emit(on_event, type="tool_start", tool=name)
             started = time.perf_counter()
             if name in _SUBMIT_TOOLS and state["drafted"]:
                 result = dict(_SUBMIT_BLOCKED)
@@ -325,6 +345,7 @@ def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
                 state["drafted"] = True
             used.append({"tool": name, "args": args, "result": result,
                          "ok": not failed, "ms": elapsed_ms})
+            _emit(on_event, type="tool", tool=name, ok=not failed, ms=elapsed_ms)
             audit.record(session, actor_user_id=user.id, action="ai_tool",
                          entity_type=name, detail={"args": args, "ok": not failed})
             messages.append({"role": "tool", "name": name, "content": json.dumps(result, default=str)})

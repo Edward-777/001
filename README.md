@@ -69,8 +69,9 @@ otherwise), cross-conversation memory written only by audited tool calls, a
 governed learning loop (patterns mined from human decisions become rule
 proposals in the approval inbox; approved rules change behavior and count
 their own applications), a per-reply execution timeline (tool, status,
-latency), and an honesty backstop so a failed action can never be reported as
-a success.
+latency) that streams live over SSE while the agent works (plan steps and
+tool calls appear the moment they run), and an honesty backstop so a failed
+action can never be reported as a success.
 
 **Order-to-cash.** Quote, customer PO, shipment with packing list, invoice —
 each stage producing a downloadable customer document.

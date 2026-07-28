@@ -38,13 +38,10 @@
   </div>
 </div>
 
-<form class="max-w-3xl flex gap-2" hx-post="/assistant/message"
-      hx-target="#messages" hx-swap="beforeend"
-      hx-indicator="#thinking" hx-disabled-elt="find button"
-      hx-on::after-request="this.reset(); document.getElementById('msg').focus()">
+<form id="chat-form" class="max-w-3xl flex gap-2">
   <input id="msg" name="message" required autocomplete="off"
          placeholder="Ask the assistant…" class="flex-1 border rounded px-3 py-2">
-  <button class="bg-slate-900 text-white rounded px-5 py-2 hover:bg-slate-700 disabled:opacity-50">
+  <button id="send-btn" class="bg-slate-900 text-white rounded px-5 py-2 hover:bg-slate-700 disabled:opacity-50">
     Send</button>
 </form>
 <form class="max-w-3xl mt-2 flex items-center gap-2 text-sm text-slate-500"
@@ -66,6 +63,137 @@
   window.addEventListener('load', () => {
     const m = document.getElementById('messages');
     m.lastElementChild?.scrollIntoView({block: 'end'});
+  });
+
+  // ---- live chat: POST the message, stream SSE progress events, then swap in
+  // the server-rendered final bubble. The bubble fills in as the agent works:
+  // plan steps flip ○ → ● → ✓/✗, each tool call appears the moment it starts.
+  const el = (cls, text) => {
+    const s = document.createElement('span');
+    s.className = cls;
+    if (text !== undefined) s.textContent = text;
+    return s;
+  };
+
+  function liveBubble() {
+    const wrap = document.createElement('div');
+    wrap.className = 'flex justify-start';
+    const box = document.createElement('div');
+    box.className = 'bg-white rounded-xl shadow px-4 py-3 max-w-2xl';
+    box.innerHTML =
+      '<div data-plan class="hidden mb-3 border-l-2 border-sky-300 pl-3 space-y-0.5">' +
+      '<div class="text-xs font-semibold text-sky-600 uppercase tracking-wide">Plan</div></div>' +
+      '<div data-status class="text-slate-500"><span class="animate-pulse">● Assistant is thinking…</span></div>' +
+      '<div data-tools class="hidden mt-3 border-t border-slate-100 pt-2 space-y-1"></div>';
+    wrap.appendChild(box);
+    return wrap;
+  }
+
+  document.getElementById('chat-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('msg');
+    const btn = document.getElementById('send-btn');
+    const text = input.value.trim();
+    if (!text || btn.disabled) return;
+    btn.disabled = true;
+    input.value = '';
+
+    const messages = document.getElementById('messages');
+    const ub = document.createElement('div');
+    ub.className = 'flex justify-end';
+    const ubi = document.createElement('div');
+    ubi.className = 'bg-slate-900 text-white rounded-xl px-4 py-2 max-w-2xl whitespace-pre-wrap';
+    ubi.textContent = text;
+    ub.appendChild(ubi);
+    messages.appendChild(ub);
+
+    const live = liveBubble();
+    messages.appendChild(live);
+    live.scrollIntoView({behavior: 'smooth', block: 'end'});
+
+    const planBox = live.querySelector('[data-plan]');
+    const toolsBox = live.querySelector('[data-tools]');
+    const steps = [];
+    let runningTool = null;
+    const clearThinking = () => live.querySelector('[data-status]')?.remove();
+
+    const handle = (ev) => {
+      if (ev.type === 'plan') {
+        planBox.classList.remove('hidden');
+        for (const title of ev.steps) {
+          const row = document.createElement('div');
+          row.className = 'flex items-center gap-2 text-xs text-slate-600';
+          const icon = el('text-slate-300', '○');
+          const label = el('', title);
+          row.append(icon, label);
+          planBox.appendChild(row);
+          steps.push({icon, label});
+        }
+      } else if (ev.type === 'step' && steps[ev.index]) {
+        const s = steps[ev.index];
+        if (ev.status === 'running') { s.icon.textContent = '●'; s.icon.className = 'text-sky-500 animate-pulse'; }
+        else if (ev.status === 'done') { s.icon.textContent = '✓'; s.icon.className = 'text-emerald-600'; }
+        else if (ev.status === 'failed') { s.icon.textContent = '✗'; s.icon.className = 'text-rose-500'; }
+        else { s.icon.textContent = '–'; s.icon.className = 'text-slate-300'; s.label.className = 'text-slate-400 line-through'; }
+      } else if (ev.type === 'tool_start') {
+        toolsBox.classList.remove('hidden');
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2 text-xs text-slate-500 font-mono';
+        row.append(el('text-sky-500 animate-pulse', '●'), el('', ev.tool));
+        toolsBox.appendChild(row);
+        runningTool = row;
+        live.scrollIntoView({block: 'end'});
+      } else if (ev.type === 'tool') {
+        let row = runningTool;
+        runningTool = null;
+        if (!row) {
+          toolsBox.classList.remove('hidden');
+          row = document.createElement('div');
+          row.className = 'flex items-center gap-2 text-xs text-slate-500 font-mono';
+          row.append(el('', '●'), el('', ev.tool));
+          toolsBox.appendChild(row);
+        }
+        const icon = row.firstElementChild;
+        icon.className = ev.ok ? 'text-emerald-600' : 'text-amber-500';
+        icon.textContent = ev.ok ? '✓' : '⚠';
+        row.append(el('text-slate-300', '·'),
+                   el('text-slate-400', ev.ms >= 1000 ? (ev.ms / 1000).toFixed(1) + ' s' : ev.ms + ' ms'));
+      } else if (ev.type === 'final') {
+        live.innerHTML = ev.html;
+        live.scrollIntoView({behavior: 'smooth', block: 'end'});
+      }
+      if (ev.type === 'plan' || ev.type === 'tool_start') clearThinking();
+    };
+
+    try {
+      const res = await fetch('/assistant/message/stream', {
+        method: 'POST',
+        body: new URLSearchParams({message: text}),
+      });
+      if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, {stream: true});
+        let i;
+        while ((i = buf.indexOf('\n\n')) !== -1) {
+          const chunk = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          if (chunk.startsWith('data: ')) handle(JSON.parse(chunk.slice(6)));
+        }
+      }
+    } catch (err) {
+      clearThinking();
+      live.firstElementChild.appendChild(
+        Object.assign(document.createElement('div'),
+                      {className: 'text-rose-600', textContent: 'Assistant unavailable: connection lost'}));
+    } finally {
+      btn.disabled = false;
+      input.focus();
+    }
   });
 </script>
 {% endblock %}

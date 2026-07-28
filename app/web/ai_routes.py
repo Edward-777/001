@@ -4,18 +4,22 @@ agent has memory and chats are reviewable (own; admins audit all)."""
 from __future__ import annotations
 
 import json
+import queue
+import threading
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
+from ..core import db as core_db
 from ..core.db import get_session
 from ..modules.ai import agent, classify, statement
 from ..modules.ai import conversations as convo
 from ..modules.ai import invoice as invoice_parser
 from ..modules.ai import rag
+from ..modules.auth.models import User
 from ..modules.bank import service as bank
 from ..modules.documents import service as docs
 from .deps import require_login, templates
@@ -93,6 +97,24 @@ def assistant_new(user=Depends(require_login), session: Session = Depends(get_se
     return RedirectResponse("/assistant", status_code=303)
 
 
+def _turn_view(out: dict) -> dict:
+    """Template context for one finished agent turn (shared by the plain and
+    streaming message routes)."""
+    tools = [t["tool"] for t in out["tool_calls"]]
+    # execution timeline: what ran, in order, how long, and whether it succeeded
+    timeline = [{"tool": t["tool"], "ms": t.get("ms"), "ok": t.get("ok", True)}
+                for t in out["tool_calls"]]
+    # surface a report download link (if a tool produced one) as a button
+    download = None
+    for t in out["tool_calls"]:
+        res = (t.get("result") or {}).get("result")
+        if isinstance(res, dict) and res.get("download_url"):
+            download = res["download_url"]
+            break
+    return {"reply": out["reply"], "tools": tools, "timeline": timeline,
+            "plan": out.get("plan"), "download": download, "error": None}
+
+
 @router.post("/assistant/message", response_class=HTMLResponse)
 def assistant_message(
     request: Request,
@@ -100,34 +122,74 @@ def assistant_message(
     user=Depends(require_login),
     session: Session = Depends(get_session),
 ):
-    conv = convo.get_or_create_active(session, user.id)
-    history = convo.history_for_llm(session, conv.id)
-    download = None
     try:
+        conv = convo.get_or_create_active(session, user.id)
+        history = convo.history_for_llm(session, conv.id)
         out = agent.run(session, user, message, history=history)
-        reply, tools = out["reply"], [t["tool"] for t in out["tool_calls"]]
-        # execution timeline: what ran, in order, how long, and whether it succeeded
-        timeline = [{"tool": t["tool"], "ms": t.get("ms"), "ok": t.get("ok", True)}
-                    for t in out["tool_calls"]]
-        plan = out.get("plan")
-        error = None
-        # surface a report download link (if a tool produced one) as a button
-        for t in out["tool_calls"]:
-            res = (t.get("result") or {}).get("result")
-            if isinstance(res, dict) and res.get("download_url"):
-                download = res["download_url"]
-                break
+        view = _turn_view(out)
     except Exception as exc:  # Ollama down, etc.
-        reply, tools, timeline, plan, error = "", [], [], None, \
-            f"Assistant unavailable: {type(exc).__name__}"
+        view = {"reply": "", "tools": [], "timeline": [], "plan": None,
+                "download": None, "error": f"Assistant unavailable: {type(exc).__name__}"}
 
-    if error is None:
+    if view["error"] is None:
         convo.add_message(session, conv, "user", message)
-        convo.add_message(session, conv, "assistant", reply, tools=tools)
+        convo.add_message(session, conv, "assistant", view["reply"], tools=view["tools"])
     return templates.TemplateResponse(
-        request, "_chat_turn.html",
-        {"message": message, "reply": reply, "tools": tools, "timeline": timeline,
-         "plan": plan, "error": error, "download": download},
+        request, "_chat_turn.html", {"message": message, **view},
+    )
+
+
+def _worker_session() -> Session:
+    """DB session for the stream worker thread. The request-scoped dependency
+    can't cross threads (and may close while the response is still streaming),
+    so the worker opens its own. Module-level so tests can point it at their
+    test engine."""
+    return core_db.SessionLocal()
+
+
+@router.post("/assistant/message/stream")
+def assistant_message_stream(message: str = Form(...), user=Depends(require_login)):
+    """Live version of /assistant/message: an SSE stream of the agent's progress
+    (plan steps, each tool call as it runs) followed by one 'final' event whose
+    `html` is the finished assistant bubble (_chat_reply.html). The agent runs in
+    a worker thread; events flow through a queue to this response."""
+    uid = user.id
+    q: queue.Queue = queue.Queue()
+
+    def work() -> None:
+        session = _worker_session()
+        try:
+            wuser = session.get(User, uid)
+            conv = convo.get_or_create_active(session, wuser.id)
+            history = convo.history_for_llm(session, conv.id)
+            out = agent.run(session, wuser, message, history=history, on_event=q.put)
+            view = _turn_view(out)
+            convo.add_message(session, conv, "user", message)
+            convo.add_message(session, conv, "assistant", view["reply"],
+                              tools=view["tools"])
+            session.commit()
+        except Exception as exc:  # Ollama down, etc. — nothing is persisted
+            session.rollback()
+            view = {"reply": "", "tools": [], "timeline": [], "plan": None,
+                    "download": None,
+                    "error": f"Assistant unavailable: {type(exc).__name__}"}
+        finally:
+            try:
+                html = templates.env.get_template("_chat_reply.html").render(view)
+                q.put({"type": "final", "html": html})
+            finally:
+                session.close()
+                q.put(None)  # sentinel: stream is done
+
+    threading.Thread(target=work, daemon=True).start()
+
+    def events():
+        while (item := q.get()) is not None:
+            yield f"data: {json.dumps(item, default=str)}\n\n"
+
+    return StreamingResponse(
+        events(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
