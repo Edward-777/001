@@ -1,0 +1,83 @@
+{% extends "layout.html" %}
+{% block title %}Contracts — 001{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-1">Contracts</h1>
+<p class="text-slate-500 mb-4 text-sm">Standing commitments — subscriptions, leases, insurance, service
+agreements. Rows inside their notice window are flagged; a weekly card also lands in the
+<a href="/fleet" class="underline">Approval Inbox</a>.</p>
+
+{% if error %}
+<div class="max-w-5xl mb-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-2 text-sm">{{ error }}</div>
+{% endif %}
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4 mb-6">
+  <h2 class="font-semibold mb-3">Add a contract</h2>
+  <form method="post" action="/contracts/add" class="grid grid-cols-6 gap-3 text-sm items-end">
+    <label class="block col-span-2">Title
+      <input name="title" required class="block w-full border rounded px-2 py-1.5 mt-1" placeholder="Office lease — 5th Ave"></label>
+    <label class="block col-span-2">Counterparty
+      <input name="counterparty" required class="block w-full border rounded px-2 py-1.5 mt-1" placeholder="Acme Properties LLC"></label>
+    <label class="block">Kind
+      <select name="kind" class="block w-full border rounded px-2 py-1.5 mt-1">
+        {% for k in ["subscription", "lease", "insurance", "service", "other"] %}
+        <option value="{{ k }}">{{ k }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="block">Amount ($)
+      <input type="number" step="0.01" min="0" name="amount" class="block w-full border rounded px-2 py-1.5 mt-1"></label>
+    <label class="block">Start
+      <input type="date" name="start_date" class="block w-full border rounded px-2 py-1.5 mt-1"></label>
+    <label class="block">End / renewal
+      <input type="date" name="end_date" class="block w-full border rounded px-2 py-1.5 mt-1"></label>
+    <label class="block">Billing
+      <select name="billing" class="block w-full border rounded px-2 py-1.5 mt-1">
+        <option value="">—</option>
+        {% for b in ["monthly", "quarterly", "annual", "one_time"] %}
+        <option value="{{ b }}">{{ b }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="block">Notice (days)
+      <input type="number" min="0" name="notice_days" value="30" class="block w-full border rounded px-2 py-1.5 mt-1"></label>
+    <label class="flex items-center gap-2 pb-2">
+      <input type="checkbox" name="auto_renew" value="true"> Auto-renews</label>
+    <button class="bg-slate-900 text-white rounded px-4 py-2 hover:bg-slate-700">Add</button>
+  </form>
+</div>
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4">
+  {% if not contracts %}<p class="text-sm text-slate-400">No contracts registered yet.</p>{% else %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400">
+      <th class="py-1">Title</th><th>Counterparty</th><th>Kind</th><th>End / renewal</th>
+      <th>Days left</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for c in contracts %}
+      <tr class="border-t {% if c.id in due_ids %}bg-amber-50{% endif %}">
+        <td class="py-2 font-medium">{{ c.title }}
+          {% if c.auto_renew %}<span class="ml-1 text-xs bg-sky-100 text-sky-700 rounded px-1.5 py-0.5">auto-renew</span>{% endif %}</td>
+        <td>{{ c.counterparty }}</td>
+        <td class="text-slate-500">{{ c.kind }}</td>
+        <td>{{ c.end_date or '—' }}</td>
+        <td>
+          {% set left = days_left[c.id] %}
+          {% if left is none %}<span class="text-slate-300">—</span>
+          {% elif left < 0 %}<span class="text-rose-600 font-medium">{{ -left }}d overdue</span>
+          {% elif c.id in due_ids %}<span class="text-amber-600 font-medium">{{ left }}d ⚠</span>
+          {% else %}{{ left }}d{% endif %}
+        </td>
+        <td>{% if c.amount is not none %}${{ c.amount | money }}{% if c.billing %}<span class="text-slate-400 text-xs">/{{ c.billing }}</span>{% endif %}{% else %}—{% endif %}</td>
+        <td>{% if c.status == 'active' %}<span class="text-emerald-600">active</span>
+            {% else %}<span class="text-slate-400">{{ c.status }}</span>{% endif %}</td>
+        <td class="text-right">
+          {% if c.status == 'active' %}
+          <form method="post" action="/contracts/{{ c.id }}/end" class="inline">
+            <button class="text-slate-400 hover:text-rose-600 underline">End</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

@@ -34,3 +34,31 @@ def enqueue_anomaly_alerts(session: Session, *, as_of: date | None = None):
             "note": "Heads-up for review. Approve to acknowledge (close) it.",
         })
     return task
+
+
+def enqueue_renewal_alerts(session: Session, *, as_of: date | None = None):
+    """Contracts inside their notice window -> one informational card for the
+    founder. Idempotent per week (renewals move slowly; a daily card is nagging),
+    keyed on the set of due contracts so a NEW due contract re-alerts at once."""
+    from ..contracts import service as contracts
+
+    as_of = as_of or date.today()
+    due = contracts.upcoming_renewals(session, as_of=as_of)
+    if not due:
+        return None
+    ids = ",".join(str(r["contract_id"]) for r in due)
+    plural = "contracts" if len(due) != 1 else "contract"
+    task = q.enqueue(
+        session, to_role=Role.INSIGHT, category="renewal_alert",
+        title=f"{len(due)} {plural} up for renewal", source=TaskSource.AGENT,
+        from_role=Role.SYSTEM,
+        idempotency_key=f"renewal:{as_of.isocalendar().year}"
+                        f"-w{as_of.isocalendar().week}:{ids}",
+    )
+    if task.status == TaskStatus.QUEUED:
+        q.request_approval(session, task, result={
+            "renewals": due, "count": len(due),
+            "note": "Renewal window reached. Approve to acknowledge; manage the "
+                    "contracts at /contracts.",
+        })
+    return task

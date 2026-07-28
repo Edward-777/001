@@ -27,6 +27,7 @@ from .modules import notifications as _notifications  # noqa: F401
 from .modules import ai as _ai  # noqa: F401  (registers tools + conversation tables)
 from .modules import fleet as _fleet  # noqa: F401  (registers fleet_tasks queue)
 from .modules import leave as _leave  # noqa: F401  (PTO + onboarding)
+from .modules import contracts as _contracts  # noqa: F401  (commitments register)
 
 
 _DEFAULT_SECRET = "dev-secret-change-me"
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     # Web UI (M15) + AI assistant (Phase 2)
     from .web.ai_routes import router as ai_router
     from .web.auth_routes import router as auth_router
+    from .web.contracts_routes import router as contracts_router
     from .web.fleet_routes import router as fleet_router
     from .web.leave_routes import router as leave_router
     from .web.main_routes import router as main_router
@@ -89,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(procurement_router)
     app.include_router(map_router)
     app.include_router(leave_router)
+    app.include_router(contracts_router)
 
     # Nightly backup scheduler (production only; off in dev/tests).
     if settings.enable_scheduler:

@@ -798,6 +798,71 @@ def _check_affordability(session: Session, user: User, args: dict) -> dict:
     }
 
 
+# ---- contracts (commitments register) --------------------------------------
+
+def _iso_date(value) -> date | None:
+    if value in (None, ""):
+        return None
+    return date.fromisoformat(str(value))  # ValueError surfaces as tool error
+
+
+def _contract_row(session: Session, c) -> dict:
+    from ..contracts import service as contracts
+    return {"contract_id": c.id, "title": c.title, "counterparty": c.counterparty,
+            "kind": c.kind, "start_date": str(c.start_date) if c.start_date else None,
+            "end_date": str(c.end_date) if c.end_date else None,
+            "days_left": contracts.days_left(c),
+            "auto_renew": c.auto_renew, "notice_days": c.notice_days,
+            "amount": str(c.amount) if c.amount is not None else None,
+            "billing": c.billing, "status": c.status}
+
+
+def _add_contract(session: Session, user: User, args: dict) -> dict:
+    from ..contracts import service as contracts
+    if not args.get("title") or not args.get("counterparty"):
+        return {"error": "need title and counterparty — ask the user"}
+    try:
+        c = contracts.add_contract(
+            session, title=str(args["title"]), counterparty=str(args["counterparty"]),
+            kind=str(args.get("kind") or "other"),
+            start_date=_iso_date(args.get("start_date")),
+            end_date=_iso_date(args.get("end_date")),
+            auto_renew=bool(args.get("auto_renew", False)),
+            notice_days=int(args.get("notice_days") or 30),
+            amount=(float(args["amount"]) if args.get("amount") not in (None, "") else None),
+            billing=args.get("billing") or None,
+            notes=args.get("notes") or None, created_by=user.id)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return _contract_row(session, c)
+
+
+def _list_contracts(session: Session, user: User, args: dict) -> dict:
+    from ..contracts import service as contracts
+    rows = contracts.list_contracts(session,
+                                    include_ended=bool(args.get("include_ended", False)))
+    return {"count": len(rows), "contracts": [_contract_row(session, c) for c in rows]}
+
+
+def _upcoming_renewals(session: Session, user: User, args: dict) -> dict:
+    from ..contracts import service as contracts
+    within = args.get("within_days")
+    due = contracts.upcoming_renewals(
+        session, within_days=int(within) if within not in (None, "") else None)
+    return {"count": len(due), "renewals": due,
+            "note": "Empty list means nothing is inside its notice window."}
+
+
+def _end_contract(session: Session, user: User, args: dict) -> dict:
+    from ..contracts import service as contracts
+    try:
+        c = contracts.end_contract(session, int(args.get("contract_id") or 0),
+                                   ended_by=user.id)
+    except (ValueError, TypeError) as exc:
+        return {"error": str(exc)}
+    return _contract_row(session, c)
+
+
 # ---- leave / PTO / onboarding ---------------------------------------------
 
 def _my_employee(session: Session, user: User):
@@ -1447,6 +1512,51 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {"employee_no": {"type": "string"}},
                     "required": ["employee_no"]},
         handler=_get_onboarding_status, scope="hr", level=2,
+    ),
+    Tool(
+        name="add_contract",
+        description=("Register a standing commitment (subscription, lease, insurance, service "
+                     "agreement) in the contracts register so its renewal is tracked. Pass "
+                     "ONLY values the user stated (dates YYYY-MM-DD; amount in USD; "
+                     "auto_renew; notice_days = alert window before end_date, default 30). "
+                     "USE THIS for '계약 등록 / 구독 추가 / track this contract / we signed a "
+                     "lease'."),
+        parameters={"type": "object", "properties": {
+            "title": {"type": "string"}, "counterparty": {"type": "string"},
+            "kind": {"type": "string",
+                     "enum": ["subscription", "lease", "insurance", "service", "other"]},
+            "start_date": {"type": "string"}, "end_date": {"type": "string"},
+            "auto_renew": {"type": "boolean"}, "notice_days": {"type": "integer"},
+            "amount": {"type": "number"}, "billing": {
+                "type": "string", "enum": ["monthly", "quarterly", "annual", "one_time"]},
+            "notes": {"type": "string"}},
+            "required": ["title", "counterparty"]},
+        handler=_add_contract, scope="finance", level=2,
+    ),
+    Tool(
+        name="list_contracts",
+        description=("List contracts in the commitments register with end dates and days "
+                     "left. USE THIS for '계약 뭐뭐 있어 / 구독 목록 / what contracts do we "
+                     "have'."),
+        parameters={"type": "object", "properties": {"include_ended": {"type": "boolean"}}},
+        handler=_list_contracts, scope="finance", level=2,
+    ),
+    Tool(
+        name="upcoming_renewals",
+        description=("Contracts inside their notice window (renewal/cancel deadline near or "
+                     "passed), with a recommended action each. USE THIS for '갱신 임박한 계약 / "
+                     "곧 만료되는 거 / what's up for renewal / expiring soon'."),
+        parameters={"type": "object", "properties": {"within_days": {"type": "integer"}}},
+        handler=_upcoming_renewals, scope="finance", level=2,
+    ),
+    Tool(
+        name="end_contract",
+        description=("Mark a contract as ended in the register (stops renewal alerts). This "
+                     "does NOT cancel anything with the counterparty — remind the user to do "
+                     "that themselves. Only end contracts the user explicitly named."),
+        parameters={"type": "object", "properties": {"contract_id": {"type": "integer"}},
+                    "required": ["contract_id"]},
+        handler=_end_contract, scope="finance", level=2,
     ),
 ]
 
