@@ -616,8 +616,14 @@ def _record_direct_bill(session: Session, user: User, args: dict) -> dict:
                 "unit_price": amount}],
     )
     acct.post_direct_bill(session, bill.id, account.id)
-    return {"bill_no": bill.bill_no, "vendor": v.name, "amount": str(bill.amount),
-            "booked_to": f"{account.code} {account.name}", "status": bill.status}
+    out = {"bill_no": bill.bill_no, "vendor": v.name, "amount": str(bill.amount),
+           "booked_to": f"{account.code} {account.name}", "status": bill.status}
+    # If the account carries a budget, say where this posting leaves the month.
+    from ..budget import service as budget
+    note = budget.consumption_note(session, account_id=account.id, add_amount=0)
+    if note:
+        out["budget"] = note
+    return out
 
 
 def _pay_vendor(session: Session, user: User, args: dict) -> dict:
@@ -796,6 +802,36 @@ def _check_affordability(session: Session, user: User, args: dict) -> dict:
                                 else "open-ended"),
         "affordable": a["affordable"],
     }
+
+
+# ---- budget vs actual -------------------------------------------------------
+
+def _set_budget(session: Session, user: User, args: dict) -> dict:
+    from ..budget import service as budget
+    amount = args.get("monthly_amount")
+    if amount in (None, ""):
+        return {"error": "state monthly_amount explicitly — never guess a budget"}
+    try:
+        row = budget.set_budget(
+            session, account_code=str(args.get("account_code", "")),
+            year=int(args.get("year") or date.today().year),
+            monthly_amount=float(amount), created_by=user.id)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    account = acct.get_account_by_code(session, str(args.get("account_code", "")))
+    return {"account": f"{account.code} {account.name}", "year": row.year,
+            "monthly_amount": str(row.monthly_amount)}
+
+
+def _budget_vs_actual(session: Session, user: User, args: dict) -> dict:
+    from ..budget import service as budget
+    today = date.today()
+    try:
+        return budget.budget_vs_actual(
+            session, year=int(args.get("year") or today.year),
+            month=int(args.get("month") or today.month))
+    except ValueError as exc:
+        return {"error": str(exc)}
 
 
 # ---- contracts (commitments register) --------------------------------------
@@ -1557,6 +1593,27 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {"contract_id": {"type": "integer"}},
                     "required": ["contract_id"]},
         handler=_end_contract, scope="finance", level=2,
+    ),
+    Tool(
+        name="set_budget",
+        description=("Set the MONTHLY budget for an expense account (by account_code) for a "
+                     "year. Pass monthly_amount exactly as the user stated it — never invent "
+                     "a budget figure. Call list_accounts to find the code if needed."),
+        parameters={"type": "object", "properties": {
+            "account_code": {"type": "string"}, "year": {"type": "integer"},
+            "monthly_amount": {"type": "number"}},
+            "required": ["account_code", "monthly_amount"]},
+        handler=_set_budget, scope="finance", level=3,
+    ),
+    Tool(
+        name="budget_vs_actual",
+        description=("Budget vs actual per expense account for a month: monthly budget, "
+                     "actual spend, % used, YTD, plus UNBUDGETED expense spend. USE THIS for "
+                     "'예산 대비 얼마 썼어 / 이번 달 예산 현황 / are we over budget / budget "
+                     "report'. Defaults to the current month."),
+        parameters={"type": "object", "properties": {
+            "year": {"type": "integer"}, "month": {"type": "integer"}}},
+        handler=_budget_vs_actual, scope="finance", level=3,
     ),
 ]
 

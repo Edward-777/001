@@ -62,6 +62,13 @@ def _renewal_tick() -> None:
     _in_session(alerts.enqueue_renewal_alerts)
 
 
+def _budget_tick() -> None:
+    """Daily: expense accounts over their monthly budget -> founder inbox card."""
+    from ..modules.fleet import alerts
+
+    _in_session(alerts.enqueue_budget_alerts)
+
+
 def start_scheduler():
     global _scheduler
     if _scheduler is not None:
@@ -87,6 +94,8 @@ def start_scheduler():
     sch.add_job(_anomaly_tick, trigger="cron", hour=7, minute=0, id="anomaly_scan")
     # Daily contract-renewal check — 07:10 (idempotent per week per due-set).
     sch.add_job(_renewal_tick, trigger="cron", hour=7, minute=10, id="renewal_scan")
+    # Daily budget-overrun check — 07:20 (idempotent per month per over-set).
+    sch.add_job(_budget_tick, trigger="cron", hour=7, minute=20, id="budget_scan")
     # Monthly close proposal — 1st of the month, 06:00 (closes the prior month).
     sch.add_job(_month_close_tick, trigger="cron", day=1, hour=6, minute=0, id="month_close")
     sch.start()

@@ -36,6 +36,32 @@ def enqueue_anomaly_alerts(session: Session, *, as_of: date | None = None):
     return task
 
 
+def enqueue_budget_alerts(session: Session, *, as_of: date | None = None):
+    """Budgeted accounts already over their monthly amount -> one informational
+    card. Idempotent per month per over-set (a NEW overrun re-alerts at once)."""
+    from ..budget import service as budget
+
+    as_of = as_of or date.today()
+    over = budget.overruns(session, as_of=as_of)
+    if not over:
+        return None
+    codes = ",".join(r["account_code"] for r in over)
+    plural = "accounts are" if len(over) != 1 else "account is"
+    task = q.enqueue(
+        session, to_role=Role.INSIGHT, category="budget_alert",
+        title=f"{len(over)} {plural} over budget", source=TaskSource.AGENT,
+        from_role=Role.SYSTEM,
+        idempotency_key=f"budget:{as_of.strftime('%Y-%m')}:{codes}",
+    )
+    if task.status == TaskStatus.QUEUED:
+        q.request_approval(session, task, result={
+            "overruns": over, "count": len(over),
+            "note": "Monthly budget exceeded. Approve to acknowledge; the full "
+                    "report is at /budget.",
+        })
+    return task
+
+
 def enqueue_renewal_alerts(session: Session, *, as_of: date | None = None):
     """Contracts inside their notice window -> one informational card for the
     founder. Idempotent per week (renewals move slowly; a daily card is nagging),
