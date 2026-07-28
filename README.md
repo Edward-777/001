@@ -70,13 +70,15 @@ governed learning loop (patterns mined from human decisions become rule
 proposals in the approval inbox; approved rules change behavior and count
 their own applications), a per-reply execution timeline (tool, status,
 latency) that streams live over SSE while the agent works (plan steps and
-tool calls appear the moment they run), and an honesty backstop so a failed
-action can never be reported as a success.
+tool calls appear the moment they run), an honesty backstop so a failed
+action can never be reported as a success, and a live runtime map (/map) that
+draws the whole pipeline — inputs → local models → guardrails → human decision
+→ system of record — with every count queried from the database.
 
 **Order-to-cash.** Quote, customer PO, shipment with packing list, invoice —
 each stage producing a downloadable customer document.
 
-44 audited AI tools. 295 tests.
+44 audited AI tools. 304 tests.
 
 ## Setup (requires Python 3.12+)
 
@@ -88,7 +90,7 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 295 tests
+pytest                          # 304 tests
 ```
 
 Dev uses SQLite for instant run. Production targets PostgreSQL (set

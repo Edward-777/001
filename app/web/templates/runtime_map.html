@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+{% block title %}Runtime Map — 001{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-1">AI Runtime Map</h1>
+<p class="text-slate-500 mb-4 text-sm">How a request becomes a booked fact. Every box is real code in this
+repository; every number is live from the database right now. Nothing reaches the books without passing
+the guardrails and a human decision.</p>
+
+<div class="bg-white rounded-xl shadow p-4 overflow-x-auto">
+<svg viewBox="0 0 1160 600" width="1160" height="600" font-family="ui-sans-serif, system-ui, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  {% macro node(x, y, w, h, title, sub1='', sub2='') %}
+  <rect x="{{x}}" y="{{y}}" width="{{w}}" height="{{h}}" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="{{x+12}}" y="{{y+21}}" font-size="12.5" font-weight="600" fill="#0f172a">{{title}}</text>
+  {% if sub1 %}<text x="{{x+12}}" y="{{y+38}}" font-size="10.5" fill="#64748b">{{sub1}}</text>{% endif %}
+  {% if sub2 %}<text x="{{x+12}}" y="{{y+53}}" font-size="10.5" fill="#64748b">{{sub2}}</text>{% endif %}
+  {% endmacro %}
+
+  <!-- ── column: inputs ─────────────────────────────────────────────── -->
+  <text x="16" y="38" font-size="10" font-weight="700" letter-spacing="1.5" fill="#94a3b8">INPUTS</text>
+  {{ node(10, 48, 175, 56, '💬 Founder chat', s.conversations ~ ' conversations') }}
+  {{ node(10, 122, 175, 56, '📄 Document upload', s.documents ~ ' documents') }}
+  {{ node(10, 196, 175, 56, '🏦 Bank statements', 'auto-reconciled') }}
+
+  <!-- ── column: the AI runtime (all local) ─────────────────────────── -->
+  <rect x="225" y="20" width="310" height="428" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="240" y="42" font-size="10" font-weight="700" letter-spacing="1.5" fill="#64748b">AI RUNTIME — LOCAL MODELS ONLY</text>
+  {{ node(243, 58, 274, 52, '🧭 Planner', 'template + gated LLM plans') }}
+  {{ node(243, 122, 274, 64, '⚙ Agent tool loop',
+          s.tools ~ ' permission-checked tools',
+          s.tool_calls ~ ' calls · ' ~ s.tool_fails ~ ' failed (reported honestly)') }}
+  {{ node(243, 198, 274, 52, '👁 Vision classifier', 'invoices · packing lists · statements') }}
+  {{ node(243, 262, 274, 84, '🤖 Fleet roles',
+          '💸 spend ' ~ s.role_tasks.get('spend', 0) ~ ' · 📦 supply ' ~ s.role_tasks.get('supply', 0)
+          ~ ' · 📊 insight ' ~ s.role_tasks.get('insight', 0),
+          'drafts work, never posts it') }}
+  {{ node(243, 358, 274, 52, '⛏ Rule miner', 'patterns from human resolutions') }}
+
+  <!-- ── membrane: guardrails (everything passes through) ───────────── -->
+  <rect x="565" y="20" width="180" height="428" rx="10" fill="#fffbeb" stroke="#f59e0b"/>
+  <text x="580" y="42" font-size="10" font-weight="700" letter-spacing="1.5" fill="#b45309">GUARDRAILS</text>
+  <text x="580" y="56" font-size="9.5" fill="#b45309">code, not prompts</text>
+  <text x="580" y="88"  font-size="11" fill="#78350f">🔐 3-axis permissions</text>
+  <text x="580" y="122" font-size="11" fill="#78350f">✋ Maker-checker gate</text>
+  <text x="580" y="156" font-size="11" fill="#78350f">🧾 Honesty backstop</text>
+  <text x="580" y="190" font-size="11" fill="#78350f">🛡 Injection defense</text>
+  <text x="580" y="224" font-size="11" fill="#78350f">📦 PO-validated receiving</text>
+  <text x="580" y="258" font-size="11" fill="#78350f">💸 Never pays unasked</text>
+  <text x="580" y="292" font-size="11" fill="#78350f">🧭 Sequential approvals</text>
+  <text x="580" y="326" font-size="11" fill="#78350f">🗂 ACL-filtered retrieval</text>
+
+  <!-- ── column: the human decides ──────────────────────────────────── -->
+  <text x="781" y="38" font-size="10" font-weight="700" letter-spacing="1.5" fill="#94a3b8">HUMAN DECIDES</text>
+  {{ node(775, 96, 175, 64, '📥 Approval Inbox',
+          s.fleet_waiting ~ ' drafts waiting', s.fleet_done ~ ' completed') }}
+  {{ node(775, 190, 175, 64, '🧑‍💼 Approvals', s.pending_approvals ~ ' requests pending') }}
+
+  <!-- ── column: system of record ───────────────────────────────────── -->
+  <text x="986" y="38" font-size="10" font-weight="700" letter-spacing="1.5" fill="#94a3b8">SYSTEM OF RECORD</text>
+  {{ node(980, 48, 170, 56, '📒 General Ledger', s.journal_entries ~ ' journal entries') }}
+  {{ node(980, 122, 170, 56, '📦 Inventory · POs', 'receipts · 3-way match') }}
+  {{ node(980, 196, 170, 56, '🗂 Documents', s.documents ~ ' stored · ' ~ s.documents_indexed ~ ' indexed') }}
+  {{ node(980, 270, 170, 56, '🧠 Knowledge (RAG)', s.rag_chunks ~ ' chunks') }}
+
+  <!-- ── feedback loops ─────────────────────────────────────────────── -->
+  {{ node(225, 478, 310, 64, '🧠 Agent memory', s.memories ~ ' user facts · injected every turn') }}
+  {{ node(565, 478, 380, 64, '📚 Learned rules',
+          s.rules_active ~ ' active · ' ~ s.rules_applied ~ ' applications · human-approved only') }}
+
+  <!-- ── flow arrows (drawn last so they cross the guardrail membrane) ─ -->
+  <g stroke="#94a3b8" stroke-width="1.5" fill="none">
+    <line x1="185" y1="76"  x2="225" y2="76"  marker-end="url(#arrow)"/>
+    <line x1="185" y1="150" x2="225" y2="150" marker-end="url(#arrow)"/>
+    <line x1="185" y1="224" x2="225" y2="224" marker-end="url(#arrow)"/>
+    <!-- runtime → human, through the guardrails -->
+    <line x1="535" y1="154" x2="775" y2="128" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
+    <polyline points="535,304 760,304 760,222 775,222" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
+    <!-- human → books -->
+    <polyline points="950,128 965,128 965,76 980,76" marker-end="url(#arrow)"/>
+    <polyline points="950,222 965,222 965,150 980,150" marker-end="url(#arrow)"/>
+    <!-- learning loop: human decisions → mined rules → changed behavior -->
+    <polyline points="862,254 862,478" marker-end="url(#arrow)"/>
+    <polyline points="517,384 548,384 548,510 565,510" marker-end="url(#arrow)"/>
+    <polyline points="565,494 550,494 550,140 535,140" marker-end="url(#arrow)"/>
+    <!-- memory feeds every turn -->
+    <line x1="380" y1="478" x2="380" y2="448" marker-end="url(#arrow)"/>
+  </g>
+  <text x="870" y="370" font-size="9.5" fill="#94a3b8">approved patterns</text>
+  <text x="428" y="466" font-size="9.5" fill="#94a3b8">rules change behavior</text>
+</svg>
+</div>
+
+<p class="text-slate-400 text-xs mt-3">Local models only — nothing leaves this machine. The chat streams this
+pipeline live (plan steps and tool calls) as it runs.</p>
+{% endblock %}
