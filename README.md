@@ -115,3 +115,10 @@ tests/
 Each module is a vertical slice: `service.py` is the only public entry point.
 Human routes, AI tools, and other modules all call the same service functions,
 so the AI never has a privileged path (see ADR-1).
+
+## Author
+
+Built by Jongwoo (Edward) Kim, Bellevue, WA — I run U.S. operations (finance,
+tax, HR, procurement) at a startup and built this solo as a personal project.
+
+Contact: edwardjk919@gmail.com
