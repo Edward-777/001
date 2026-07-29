@@ -22,9 +22,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("documents",
-                  sa.Column("uploaded_by", sa.Integer(),
-                            sa.ForeignKey("users.id"), nullable=True))
+    # batch_alter_table: SQLite cannot ALTER in an FK constraint — batch mode
+    # rebuilds the table (copy-and-move); on PostgreSQL it degrades to plain ALTERs.
+    with op.batch_alter_table("documents") as batch:
+        batch.add_column(sa.Column("uploaded_by", sa.Integer(), nullable=True))
+        batch.create_foreign_key("fk_documents_uploaded_by_users",
+                                 "users", ["uploaded_by"], ["id"])
     op.add_column("request_lines",
                   sa.Column("product_url", sa.String(length=1000), nullable=True))
     op.add_column("request_lines",
@@ -37,4 +40,6 @@ def downgrade() -> None:
     op.drop_column("ap_bills", "match_note")
     op.drop_column("request_lines", "price_source")
     op.drop_column("request_lines", "product_url")
-    op.drop_column("documents", "uploaded_by")
+    with op.batch_alter_table("documents") as batch:
+        batch.drop_constraint("fk_documents_uploaded_by_users", type_="foreignkey")
+        batch.drop_column("uploaded_by")

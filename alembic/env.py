@@ -13,16 +13,23 @@ from app.core.config import settings
 from app.core.db import Base
 
 # Register every module's models on Base.metadata (no create_all side effect).
+# MUST match app/main.py's import list — tests/test_migrations.py enforces it.
 from app.modules import (  # noqa: F401
     accounting,
+    ai,
     approval,
     assets,
     auth,
     bank,
+    budget,
+    contracts,
     documents,
     expense,
+    fleet,
     hr,
     inventory,
+    learning,
+    leave,
     notifications,
     procurement,
     sales,

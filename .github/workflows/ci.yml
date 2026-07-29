@@ -15,3 +15,30 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: pytest -q
+
+  # Deploy completeness: a fresh PostgreSQL must be installable from the
+  # migration chain alone, and the migrated schema must boot the app.
+  postgres-install:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U erp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]" psycopg2-binary
+      - run: pytest -q tests/test_migrations.py
+        env:
+          MIGRATION_TEST_URL: postgresql+psycopg2://erp:erp@localhost:5432/erp
