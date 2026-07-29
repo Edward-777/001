@@ -29,6 +29,7 @@ class Scope(StrEnum):
     FINANCE = "finance"
     INVENTORY = "inventory"
     PROCUREMENT = "procurement"
+    SALES = "sales"
     SYSTEM = "system"
 
 

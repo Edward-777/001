@@ -19,6 +19,8 @@ _ROLE_SCOPES: dict[Role, list[tuple[Scope, int, DataBoundary]]] = {
         (Scope.FINANCE, 3, DataBoundary.ALL),
         (Scope.INVENTORY, 2, DataBoundary.ALL),
         (Scope.PROCUREMENT, 2, DataBoundary.ALL),
+        # read the O2C pipeline (they invoice it); moving it forward stays L2
+        (Scope.SALES, 1, DataBoundary.ALL),
     ],
     Role.MANAGER: [
         (Scope.INVENTORY, 2, DataBoundary.DEPARTMENT),
