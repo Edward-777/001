@@ -1,5 +1,8 @@
 # 001 — AI Agent Layer Design (D5)
 
+> Design-time document, kept because code comments cite its section numbers.
+> For the implemented state see [CURRENT_STATUS.md](../CURRENT_STATUS.md).
+
 > Sections 8.1–8.6 cover AI governance (learning, autonomy, permissions, classification, input gateway). This document covers **how the agent actually runs** — model, tools, loop, RAG.
 
 ---

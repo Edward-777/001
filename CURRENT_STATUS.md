@@ -1,0 +1,87 @@
+# Current Status
+
+> What works **today**, verified by the test suite and live use.
+> Last updated: **2026-07-29** · 357 tests · 58 AI tools · 17 modules
+
+## Verified end-to-end flows
+
+**Procure-to-pay (chat-first).** Vendor onboarding with document attachment
+(W-9) → purchase request by SKU or pasted product link (page fetched locally;
+extracted price flagged for the approver) → org-chart approval in conversation
+(approve / reject-with-reason) → PO issuance with vendor xlsx → PO-validated
+receiving (over-receipts rejected; costs anchor to the PO) → true 3-way match
+(an exception can never post) → payment with segregation of duties.
+
+**Order-to-cash.** Quote → send → customer acceptance (PO) → shipment
+(packing list, stock issue, COGS) → AR invoice (revenue) → receipt. Customer
+documents (quote / packing list / invoice xlsx) download at each stage.
+Write access is gated: pipeline moves need sales L2, invoicing needs finance L3.
+
+**Autonomous fleet.** Uploaded documents are classified and parsed by a local
+vision model, then drafted into work a human approves from one inbox
+(`/fleet`): vendor invoices → draft bills (PO-matched when named), packing
+lists → draft receipts, weekly payment runs, month-end close proposals,
+anomaly alerts (spend spikes, duplicate bills), contract-renewal alerts, and
+budget-overrun alerts. Drafts only — posting happens on human approval.
+
+**Accounting core.** Double-entry ledger with event-driven posting rules,
+moving-average inventory costing, straight-line depreciation, GR/IR clearing,
+period close and locking, nine-sheet closing package, and the full report set
+(BS / IS / CF / TB / GL / AP·AR aging / inventory valuation / cash runway).
+QuickBooks Online import (`scripts/import_qbo`).
+
+**Operations.** PTO with manager approval routed through the org chart
+(balances derived from approved requests, never stored), new-hire onboarding
+checklist (I-9, W-4, direct deposit), a contracts register with renewal
+notice windows, and budget vs actual per expense account with actuals derived
+from posted journals (unbudgeted spend listed explicitly).
+
+## Agent architecture (implemented)
+
+- **Plan-then-execute** — template plans for known intents (month-end close),
+  gated LLM planning otherwise; live step checklist in chat
+- **Live SSE streaming** — plan steps and tool calls appear the moment they run
+- **Cross-conversation memory** — written only by audited tool calls
+- **Governed learning loop** — rules mined from human resolutions, proposed in
+  the approval inbox, active only after approval, application count measured
+- **Execution timeline** — every tool call with status and latency under each reply
+- **Honesty backstop** — a failed action can never be reported as a success
+- **Runtime map** (`/map`) — the whole pipeline drawn live from the database
+
+## Trust & security (implemented)
+
+- 3-axis permissions (scope × level × data boundary) enforced identically for
+  UI, AI tools, and RAG; re-checked at tool execution
+- Maker-checker: AI-created money drafts require human confirmation in a
+  separate turn before submission
+- Prompt-injection defense: document content is treated as data, not instructions
+- Authorization sweep test: every gated route returns an explicit 403 to an
+  unauthorized user (21-route regression net)
+- Deploy completeness: a fresh database installs from migrations alone —
+  verified in CI against PostgreSQL 16 on every push
+- Reversing entries only; gapless document numbering; full audit log
+
+## Numbers
+
+| Metric | Value |
+|---|---|
+| Automated tests | 357 (all passing; CI on every push) |
+| AI tools (audited, permission-gated) | 58 |
+| Modules (vertical slices) | 17 |
+| Architecture decision records | 10 ([docs/ADR.md](docs/ADR.md)) |
+| Local models | qwen2.5:14b (chat) · qwen2.5vl:7b (vision) · bge-m3 (embeddings) |
+| Cloud LLM calls | 0 |
+
+## Known gaps (honest list)
+
+- **Payroll and tax execution** — out of scope by design; the integration
+  seam (org chart, GL, onboarding docs) exists
+- **Live bank feeds / payment rails** — statements import via CSV/OFX today;
+  "payment" posts the journal, it does not move real money
+- **Email inbound** — the fleet accepts uploads and chat; the mailbox
+  connector is the next highest-value addition
+- **Evaluation harness** — model behavior is tested with scripted fakes and a
+  tool-selection battery; a versioned eval dataset is future work
+- **Approval-fatigue mitigation** — the inbox is chronological; risk-sorted
+  ranking is designed but not built
+- Dashboards beyond the runtime map; field-level close locking

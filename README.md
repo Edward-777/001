@@ -2,91 +2,121 @@
 
 ![tests](https://github.com/Edward-777/001/actions/workflows/ci.yml/badge.svg)
 
-**Finance · Procurement · Inventory · Sales — run by AI agents, approved by
-humans, audited end to end. Fully local LLMs (Ollama), zero cloud calls.**
+> **Traditional ERP asks humans to operate accounting software.**
+> **001 lets AI agents operate the business system — while humans keep approval and control.**
 
-A fully local system where AI agents run a company's operations — finance,
-procurement, inventory, sales — through the same permission-checked service
-layer as the human UI. Humans approve every consequential action. Everything
-the system does, including what it learns, is audited.
+This repository is a **working reference implementation** of an AI-native
+enterprise operating system: the core architecture and the representative
+business flows, implemented end to end and tested. It is not a packaged
+product — the scope is deliberate (see [Scope](#scope-what-this-repo-is-and-isnt)).
 
-Runs as a single-tenant appliance: the application, the database, and all
-three models (chat, vision, embeddings) live on the customer's own hardware.
-No data leaves the machine.
+**At a glance**
+
+- **58 permission-aware AI tools** — every tool is a thin wrapper over the same
+  service layer the human UI calls; the AI can never exceed the caller's permissions
+- **357 automated tests** (CI also proves a fresh-PostgreSQL install from migrations alone)
+- **Procure-to-pay and order-to-cash, end to end** — through chat, with real postings
+- **Double-entry accounting** — event-driven posting, US GAAP conventions, month-end close
+- **Autonomous agent fleet** — drafts work from inbound documents; only humans post
+- **Human approval and audit trail on every consequential action**
+- **Fully local AI** (Ollama: chat + vision + embeddings) — **no cloud LLM dependency, zero data egress**
+
+---
+
+## The three flows that prove it
+
+### Demo 1 — Procure-to-Pay (chat-first)
+
+```
+natural-language purchase request
+→ AI tool execution (draft — maker-checker gated)
+→ org-chart approval        → purchase order (+ vendor document)
+→ PO-validated receiving    → vendor invoice (vision-parsed)
+→ true 3-way match          → posting to the ledger → payment (SoD)
+```
 
 "Close June 2026" — the agent plans, executes each step through
 permission-checked tools, and returns the closing package:
 
 ![Plan-then-execute: month-end close with a visible step checklist and per-tool execution timeline](docs/img/plan-then-execute.png)
 
+### Demo 2 — Order-to-Cash
+
+```
+quote → customer acceptance (PO) → shipment (packing list, stock issue + COGS)
+→ AR invoice (revenue recognition) → receipt
+```
+
+Every stage produces a downloadable customer document; every posting is an
+automatic double-entry journal.
+
+### Demo 3 — Autonomous Fleet
+
+```
+agent detects work (uploaded invoice, packing list, anomaly, renewal, budget overrun)
+→ task in the work queue → role agent drafts (never posts)
+→ Approval Inbox (/fleet) → human approves → posting + audit trail
+```
+
 A document that orders the AI to wire money is refused — guardrails are code,
 not prompts:
 
 ![An instruction embedded in an uploaded invoice is treated as untrusted data and refused](docs/img/guardrails-injection.png)
 
-The system mines rules from human decisions and proposes them in the same
-approval inbox — learning is never applied silently:
+The system also **learns under governance**: rules mined from human decisions
+are proposed in the same approval inbox — never applied silently:
 
 ![A learned vendor-alias rule proposed as an approval card](docs/img/learning-loop.png)
 
+A live map of the whole runtime — every box real code, every number queried
+from the database — ships at `/map`.
+
+---
+
+## Why this isn't an AI wrapper
+
+The LLM is never a security boundary and never a source of record:
+
+- **Permission inheritance** — 3-axis gate (scope × level × data boundary)
+  applied identically to UI, AI tools, and RAG retrieval; re-checked at
+  execution (defense in depth)
+- **Maker-checker** — an AI-created money draft cannot be submitted in the same
+  turn; a human confirms the figures
+- **Honesty backstop** — a failed tool call is stamped into the data the model
+  reads back; a failure can never be reported as a success
+- **Prompt-injection defense** — document content is data, not instructions
+- **Draft-first fleet** — autonomous agents produce drafts; the approval inbox
+  is the single control point for posting
+- **Derived, never stored** — PTO used, budget actuals: always computed from
+  the source records, so reports cannot drift from the books
+- **Audit everything** — every AI tool call, approval, and posting lands in the
+  audit log; the ledger allows reversing entries only
+
+## Architecture (one paragraph)
+
+A **modular monolith**: 17 vertical-slice modules (auth, hr, approval,
+procurement, inventory, assets, sales, expense, bank, accounting, documents,
+ai, fleet, learning, leave, contracts, budget) where `service.py` is each
+module's only public entry point — human routes, AI tools, and other modules
+all call the same functions, so the AI has no privileged path. Cross-module
+integration is event-driven: inventory announces "a receiving happened";
+only accounting knows which accounts that posts to. Details:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · design rationale with the
+incidents that drove it: [docs/ADR.md](docs/ADR.md).
+
 ## Documentation
 
-- [docs/ADR.md](docs/ADR.md) — architecture decision records: why the system
-  is built this way. Start here if you are an engineer.
-- [OVERVIEW.md](OVERVIEW.md) — one-page summary
-- [DESIGN.md](DESIGN.md) · [ROADMAP.md](ROADMAP.md)
-- [docs/SCHEMA.md](docs/SCHEMA.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
-  [docs/POLICIES.md](docs/POLICIES.md) · [docs/AI-AGENT.md](docs/AI-AGENT.md) ·
-  [docs/AGENT-FLEET.md](docs/AGENT-FLEET.md)
+| Document | What it answers |
+|---|---|
+| [PRODUCT_VISION.md](PRODUCT_VISION.md) | Why this exists, what AI-native means, where it's going |
+| [CURRENT_STATUS.md](CURRENT_STATUS.md) | What works today, verified, with numbers |
+| [ROADMAP.md](ROADMAP.md) | What's next (and what's deliberately out of scope) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, event spine, dependency rules |
+| [docs/ADR.md](docs/ADR.md) | 10 architecture decision records — the WHY, with live incidents as evidence |
+| [docs/SCHEMA.md](docs/SCHEMA.md) | Every table, with the modeling decisions |
+| [docs/AI-OPS.md](docs/AI-OPS.md) | Running local models reliably (GPU pinning, VRAM budget) |
 
-## What works today
-
-**Accounting core.** Double-entry ledger, event-driven posting rules, US GAAP
-conventions, moving-average inventory costing, straight-line depreciation,
-GR/IR clearing, period close and locking, and a nine-sheet month-end closing
-package generated on demand. Reports: balance sheet, income statement, cash
-flow, trial balance, general ledger, journal entries, AP/AR aging, inventory
-valuation, cash runway.
-
-**Chat-first procure-to-pay.** Vendor onboarding with document attachment
-(e.g. a W-9), purchase requests from a pasted product link (the page is
-fetched locally and the extracted price is flagged for the approver to
-verify), org-chart approvals handled in conversation, purchase-order issuance
-with a vendor-ready document, PO-validated receiving (over-receipts are
-rejected, costs anchor to the approved PO), a true three-way match — bill vs
-receipt vs PO — where an exception can never post, and payment with
-segregation of duties between bill entry and payment.
-
-**Autonomous agent fleet.** Inbound documents are classified and parsed by a
-local vision model, then drafted into work a human approves from a single
-inbox: vendor invoices become draft bills (PO-matched when the invoice names
-one), supplier packing lists become draft goods receipts, plus weekly payment
-runs, month-end close, and anomaly alerts (spend spikes, duplicate bills).
-
-**Agent architecture.** Plan-then-execute with a visible step checklist
-(template plans for known intents such as month-end close; gated LLM planning
-otherwise), cross-conversation memory written only by audited tool calls, a
-governed learning loop (patterns mined from human decisions become rule
-proposals in the approval inbox; approved rules change behavior and count
-their own applications), a per-reply execution timeline (tool, status,
-latency) that streams live over SSE while the agent works (plan steps and
-tool calls appear the moment they run), an honesty backstop so a failed
-action can never be reported as a success, and a live runtime map (/map) that
-draws the whole pipeline — inputs → local models → guardrails → human decision
-→ system of record — with every count queried from the database.
-
-**Order-to-cash.** Quote, customer PO, shipment with packing list, invoice —
-each stage producing a downloadable customer document.
-
-**Operations & planning.** PTO with manager approval routed through the same
-org chart as spend approvals (balances derived from approved requests, never
-stored), a new-hire onboarding checklist (I-9, W-4, direct deposit), a
-contracts register that flags renewals inside their notice window (an
-auto-renewing subscription never lapses by surprise), and budget vs actual
-per expense account with actuals from the posted ledger — overruns and due
-renewals land as cards in the same approval inbox.
-
-58 audited AI tools. 332 tests.
+Earlier design-time documents are preserved in [docs/archive/](docs/archive/).
 
 ## Setup (requires Python 3.12+)
 
@@ -98,17 +128,31 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 332 tests
+pytest                          # 357 tests
 ```
 
-Dev uses SQLite for instant run. Production targets PostgreSQL (set
-`DATABASE_URL`). Existing books can be imported from a QuickBooks Online
-export with `python -m scripts.import_qbo`.
+Dev uses SQLite for instant run. Production targets PostgreSQL — a fresh
+database installs from the migration chain alone (`alembic upgrade head`),
+which CI verifies against PostgreSQL 16 on every push. Existing books can be
+imported from a QuickBooks Online export with `python -m scripts.import_qbo`.
 
 Local models (via [Ollama](https://ollama.com)): `qwen2.5:14b` (chat),
 `qwen2.5vl:7b` (vision), `bge-m3` (embeddings). Verify GPU residency with
 `python scripts/preflight_ai.py` before use — a silent CPU fallback is about
 20x slower.
+
+## Scope — what this repo is (and isn't)
+
+This is the **reference architecture layer**: the structures that make an
+AI-operated business system trustworthy (permission inheritance, maker-checker,
+draft-first autonomy, governed learning, derived reporting) implemented and
+tested on the representative flows above.
+
+Deliberately **not** in the public scope: payroll and tax execution (regulated
+— integrate, don't rebuild), live bank feeds and payment rails, installer and
+appliance provisioning, customer data migration tooling, per-industry
+accounting rule packs, and evaluation datasets. Those belong to a deployment
+layer, not to the reference architecture.
 
 ## Layout
 
@@ -122,10 +166,6 @@ app/
   main.py      # FastAPI app factory (single process, modular monolith)
 tests/
 ```
-
-Each module is a vertical slice: `service.py` is the only public entry point.
-Human routes, AI tools, and other modules all call the same service functions,
-so the AI never has a privileged path (see ADR-1).
 
 ## Author
 

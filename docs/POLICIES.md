@@ -1,5 +1,8 @@
 # 001 — Global Policies (Group C, G9–G13) — Finalized
 
+> Design-time document, kept because code comments cite its section numbers.
+> For the implemented state see [CURRENT_STATUS.md](../CURRENT_STATUS.md).
+
 Small rules that apply system-wide. Finalized with sensible defaults.
 
 ---

@@ -1,5 +1,8 @@
 # 001 — Autonomous Operations Agent Fleet Design (D6, v2)
 
+> Design-time document, kept because code comments cite its section numbers.
+> For the implemented state see [CURRENT_STATUS.md](../CURRENT_STATUS.md).
+
 > Endgame: **beyond "run the company through conversation" — "a company that runs itself even without conversation."**
 > Role-based AIs handle the day-to-day work; the human (founder) only sets direction, handles exceptions, and approves.
 > Living document — refined continuously as we implement stage by stage.

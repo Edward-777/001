@@ -1,6 +1,7 @@
 # 001 — Data Schema (D13)
 
-> v0.1 draft. Field-level detail for the domain model in [DESIGN.md](../DESIGN.md) §5.
+> Field-level detail for the domain model. Original design context:
+> [docs/archive/DESIGN.md](archive/DESIGN.md) §5.
 > Scope: **Phase 1 = Purchase → Inventory → Assets → Accounting + Sales/AR + Expense Reimbursement + Bank Reconciliation** (the full cycle).
 > Notation: `PK`=primary key, `FK`=foreign key, `enum(...)`=fixed value set, money=USD `Numeric(15,2)`.
 > Common columns (all tables): `id PK`, `created_at`, `updated_at`, `created_by FK→users`.
