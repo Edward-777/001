@@ -5,6 +5,12 @@
 > **Traditional ERP asks humans to operate accounting software.**
 > **001 lets AI agents operate the business system — while humans keep approval and control.**
 
+![18-second highlights: the agent plans and closes the month, refuses a payment order embedded in a document, and drafts work a human approves](docs/img/demo.gif)
+
+**[▶ Watch the 2-minute demo](docs/demo/demo-2min.mp4)** — the agent closing the
+books, being denied by the permission gate, refusing prompt injection, drafting
+under maker-checker, and learning a rule under human governance.
+
 This repository is a **working reference implementation** of an AI-native
 enterprise operating system: the core architecture and the representative
 business flows, implemented end to end and tested. It is not a packaged
