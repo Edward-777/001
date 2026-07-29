@@ -215,3 +215,40 @@ that cannot be audited is drift.
 each rule is reviewed once and pays off forever after. The miner framework is
 kind-extensible (per-vendor match tolerances and approval-band suggestions are
 natural next kinds mined from `match_note` and approval histories).
+
+---
+
+## ADR-11 · Measure the model; trust only the gates
+
+**Decision.** The one probabilistic component — the local model — is measured
+by a behavior battery (`scripts/battery_tools.py`, results in
+[EVAL.md](EVAL.md)) that drives the *real* agent loop and tool registry on a
+seeded throwaway world: six axes (tool choice, argument fidelity, permission
+refusal, ambiguity→ask, failure honesty, maker-checker), each in Korean and
+English, scored deterministically over N runs with no retries. Failures are
+published, not massaged: the table shows where a 14B model is weak, alongside
+the observation that every weak spot fails *closed*.
+
+**Evidence, not theory.** The battery's first runs caught three defects that
+live use had missed: (1) qwen resolved bare dates against its training era —
+"8월 24일부터 연차" became `2023-08-24` — even with today's date at the top of
+the system prompt (fix: the date rides on the user turn, the tokens the model
+actually honors); (2) a Korean budget question drew a fluent **Russian** reply,
+sailing past a Chinese-only language backstop (fix: the backstop now catches
+any foreign-script drift); (3) asked to order servers with no price, the model
+fabricated a product URL and retried the rejected create call to the iteration
+limit (fix: a tool failing three times in one turn is withdrawn, forcing the
+question the model should have asked). After the fixes, three independent runs
+produced identical results — the remaining failures are stable model limits,
+not flakiness.
+
+**Rejected alternative.** Trusting the 358 deterministic tests to speak for the
+system. They prove the gates; they say nothing about whether the model picks
+the right tool for "연차 며칠 남았어?". Conversely, prompt-tuning until every
+battery case passes was also rejected — a benchmark you tune to saturation
+stops measuring.
+
+**Consequences.** A model swap (the 70B-class shipping benchmark, or any future
+upgrade) is a measured decision: re-run the battery, diff the table. Evaluation
+data stays out of the public repo (transcripts are gitignored); the method and
+the honest summary are public.

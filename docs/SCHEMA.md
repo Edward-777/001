@@ -53,7 +53,7 @@
 | Column | Type | Notes |
 |---|---|---|
 | user_id | FK→users | |
-| scope | enum(hr, finance, inventory, procurement, system) | (1) domain |
+| scope | enum(hr, finance, inventory, procurement, sales, system) | (1) domain |
 | level | int (1~3) | (2) grade (e.g. hr 3 = salary data) |
 | data_boundary | enum(self, team, department, all) | (3) data boundary (based on the reports_to tree) |
 | → Check: user.level[scope] ≥ data.level AND the target falls within the boundary (reports_to subtree) |
@@ -358,6 +358,7 @@ Convert between sellable inventory and fixed assets in both directions. **Journa
 | account_id | FK→accounts | |
 | debit / credit | money | **invariant: Σ debit = Σ credit** |
 | memo | text | |
+| party | text? | the vendor/customer ("Name") on the line — enables per-vendor AP/spend answers |
 
 ### ap_bills (vendor invoices = accounts payable) — the center of 3-way match
 | Column | Type | Notes |
@@ -697,3 +698,18 @@ Generated dynamically from double-entry journal lines (journal_lines). **Humans 
 - `budgets` — one row per (account_id FK→accounts, year): monthly_amount. Expense accounts only. Actuals are always **derived from posted journal_lines** (debits − credits in period), never stored. Overruns raise a monthly INSIGHT inbox card (key = month + over-set); `budget_vs_actual` also lists **unbudgeted** expense activity so spend can't hide by omission.
 
 - Alembic: `d92c4f7b1e03` (leave) · `f3a8d21c6b57` (contracts) · `b7e2c94a1f60` (budgets).
+
+## 2026-07-29 Schema Notes (deploy completeness + sales scope)
+
+- **`Scope.SALES` added** to the permission domain enum (axis ①): O2C pipeline
+  reads = sales L1, moving the flow forward (quote/accept/ship) = sales L2;
+  invoicing stays finance L3. ADMIN role-bundle inherits it; ACCOUNTANT gets
+  sales L1. Enum values live in `user_scopes.scope` as strings — no migration
+  needed for the new value.
+- **Catch-up migration `c8f5a3e19d72`**: tables that had shipped without a
+  revision (`ai_conversations`, `ai_messages`, `rag_chunks`, `fleet_tasks`,
+  `quotes`, `quote_lines`, `shipments`, `shipment_lines`) plus
+  `journal_lines.party`. `tests/test_migrations.py` now enforces table- and
+  column-level parity between `Base.metadata` and `alembic upgrade head` on an
+  empty database, and CI proves the chain against PostgreSQL 16 per push —
+  this class of drift cannot recur silently.

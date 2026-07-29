@@ -125,7 +125,7 @@ incidents that drove it: [docs/ADR.md](docs/ADR.md).
 | [CURRENT_STATUS.md](CURRENT_STATUS.md) | What works today, verified, with numbers |
 | [ROADMAP.md](ROADMAP.md) | What's next (and what's deliberately out of scope) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, event spine, dependency rules |
-| [docs/ADR.md](docs/ADR.md) | 10 architecture decision records — the WHY, with live incidents as evidence |
+| [docs/ADR.md](docs/ADR.md) | 11 architecture decision records — the WHY, with live incidents as evidence |
 | [docs/SCHEMA.md](docs/SCHEMA.md) | Every table, with the modeling decisions |
 | [docs/EVAL.md](docs/EVAL.md) | Live-model behavior battery: method, results, what it caught |
 | [docs/AI-OPS.md](docs/AI-OPS.md) | Running local models reliably (GPU pinning, VRAM budget) |

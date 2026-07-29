@@ -46,6 +46,11 @@ from posted journals (unbudgeted spend listed explicitly).
   the approval inbox, active only after approval, application count measured
 - **Execution timeline** — every tool call with status and latency under each reply
 - **Honesty backstop** — a failed action can never be reported as a success
+- **Deterministic model babysitting** (all battery-driven — [docs/EVAL.md](docs/EVAL.md)):
+  today's date rides on the user turn (qwen ignored it in the system prompt and
+  resolved bare dates to 2023), a foreign-script backstop regenerates replies
+  that drift into Chinese or Russian, and a tool failing 3× in one turn is
+  withdrawn so the model asks instead of retrying fabricated arguments
 - **Runtime map** (`/map`) — the whole pipeline drawn live from the database
 
 ## Trust & security (implemented)
@@ -69,7 +74,7 @@ from posted journals (unbudgeted spend listed explicitly).
 | Live-model battery ([docs/EVAL.md](docs/EVAL.md)) | 42/51 case-runs; all money-critical axes 3/3 |
 | AI tools (audited, permission-gated) | 58 |
 | Modules (vertical slices) | 17 |
-| Architecture decision records | 10 ([docs/ADR.md](docs/ADR.md)) |
+| Architecture decision records | 11 ([docs/ADR.md](docs/ADR.md)) |
 | Local models | qwen2.5:14b (chat) · qwen2.5vl:7b (vision) · bge-m3 (embeddings) |
 | Cloud LLM calls | 0 |
 
