@@ -36,8 +36,9 @@ The customers this serves (small and mid-size companies) are being asked to
 send their books, payroll, and contracts to cloud AI vendors. 001 takes the
 opposite bet: **a single-tenant appliance** — the application, the database,
 and all three models (chat, vision, embeddings) run on hardware the customer
-owns. "Local" means no data egress, not device restriction: phones and laptops
-connect over LAN/VPN. Your data trains nobody and travels nowhere.
+owns. "Local" means business data never feeds a cloud model — all inference
+happens on the box — not device restriction: phones and laptops connect over
+LAN/VPN. Your data trains nobody.
 
 ## Where this repository fits
 

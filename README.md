@@ -13,13 +13,15 @@ product — the scope is deliberate (see [Scope](#scope-what-this-repo-is-and-is
 **At a glance**
 
 - **58 permission-aware AI tools** — every tool is a thin wrapper over the same
-  service layer the human UI calls; the AI can never exceed the caller's permissions
+  service layer the human UI calls, constrained by the caller's permissions and
+  re-checked at execution
 - **357 automated tests** (CI also proves a fresh-PostgreSQL install from migrations alone)
 - **Procure-to-pay and order-to-cash, end to end** — through chat, with real postings
 - **Double-entry accounting** — event-driven posting, US GAAP conventions, month-end close
 - **Autonomous agent fleet** — drafts work from inbound documents; only humans post
 - **Human approval and audit trail on every consequential action**
-- **Fully local AI** (Ollama: chat + vision + embeddings) — **no cloud LLM dependency, zero data egress**
+- **Fully local AI** (Ollama: chat + vision + embeddings) — **no business data
+  is sent to a cloud LLM; all model inference runs locally**
 
 ---
 
@@ -68,9 +70,6 @@ are proposed in the same approval inbox — never applied silently:
 
 ![A learned vendor-alias rule proposed as an approval card](docs/img/learning-loop.png)
 
-A live map of the whole runtime — every box real code, every number queried
-from the database — ships at `/map`.
-
 ---
 
 ## Why this isn't an AI wrapper
@@ -92,15 +91,21 @@ The LLM is never a security boundary and never a source of record:
 - **Audit everything** — every AI tool call, approval, and posting lands in the
   audit log; the ledger allows reversing entries only
 
-## Architecture (one paragraph)
+## Architecture
+
+The system ships a live map of its own runtime at `/map` — every box is real
+code in this repo, every number is queried from the database at render time:
+
+![Runtime map: inputs → local-model AI runtime → guardrail membrane → human decision → system of record, with the memory and learning feedback loops](docs/img/runtime-map.png)
 
 A **modular monolith**: 17 vertical-slice modules (auth, hr, approval,
 procurement, inventory, assets, sales, expense, bank, accounting, documents,
-ai, fleet, learning, leave, contracts, budget) where `service.py` is each
-module's only public entry point — human routes, AI tools, and other modules
-all call the same functions, so the AI has no privileged path. Cross-module
-integration is event-driven: inventory announces "a receiving happened";
-only accounting knows which accounts that posts to. Details:
+ai, fleet, learning, leave, contracts, budget). Each module exposes its
+business operations through `service.py`; human routes and AI tools share
+those same service functions — so the AI has no privileged path — while
+selected read-side and relational integrations reference domain models
+directly. Cross-module posting is event-driven: inventory announces "a
+receiving happened"; only accounting knows which accounts that posts to. Details:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · design rationale with the
 incidents that drove it: [docs/ADR.md](docs/ADR.md).
 
@@ -150,9 +155,12 @@ tested on the representative flows above.
 
 Deliberately **not** in the public scope: payroll and tax execution (regulated
 — integrate, don't rebuild), live bank feeds and payment rails, installer and
-appliance provisioning, customer data migration tooling, per-industry
-accounting rule packs, and evaluation datasets. Those belong to a deployment
-layer, not to the reference architecture.
+appliance provisioning, production data-migration tooling (a limited reference
+importer for QuickBooks Online exports **is** included; migration and
+reconciliation tooling for real customer books is not), per-industry
+accounting rule packs, provider-specific connector deployments and credential
+management (generic intake interfaces stay public), and production evaluation
+datasets. Those belong to a deployment layer, not to the reference architecture.
 
 ## Layout
 

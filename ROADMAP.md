@@ -9,7 +9,9 @@
 1. **Email inbound** — the highest-value missing intake: poll a mailbox,
    classify attachments with the existing pipeline, and land vendor invoices
    in the approval inbox minutes after they arrive. The fleet's
-   `TaskSource.EMAIL` seam already exists.
+   `TaskSource.EMAIL` seam already exists. *Public scope = the generic intake
+   interface and a reference implementation; credential management and
+   provider-specific deployment stay in the private layer.*
 2. **Risk-sorted approval inbox** — mitigate approval fatigue: rank cards by
    amount, vendor novelty, match status, and budget impact instead of
    chronology.
@@ -32,5 +34,7 @@ These belong to a deployment/product layer, not the reference architecture
 
 payroll & tax execution (integrate Gusto/ADP — regulated, don't rebuild),
 live bank feeds and payment rails, installer & appliance provisioning,
-customer data migration tooling, per-industry accounting rule packs,
-connector credentials/integrations, and production evaluation datasets.
+production data-migration tooling (the limited QBO reference importer stays
+public), per-industry accounting rule packs, provider-specific connector
+deployments and credential management (generic intake interfaces stay
+public), and production evaluation datasets.
