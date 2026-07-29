@@ -21,7 +21,9 @@ product — the scope is deliberate (see [Scope](#scope-what-this-repo-is-and-is
 - **58 permission-aware AI tools** — every tool is a thin wrapper over the same
   service layer the human UI calls, constrained by the caller's permissions and
   re-checked at execution
-- **357 automated tests** (CI also proves a fresh-PostgreSQL install from migrations alone)
+- **358 automated tests** (CI also proves a fresh-PostgreSQL install from
+  migrations alone) plus a **live-model behavior battery** — six axes, two
+  languages, honest results ([docs/EVAL.md](docs/EVAL.md))
 - **Procure-to-pay and order-to-cash, end to end** — through chat, with real postings
 - **Double-entry accounting** — event-driven posting, US GAAP conventions, month-end close
 - **Autonomous agent fleet** — drafts work from inbound documents; only humans post
@@ -125,6 +127,7 @@ incidents that drove it: [docs/ADR.md](docs/ADR.md).
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, event spine, dependency rules |
 | [docs/ADR.md](docs/ADR.md) | 10 architecture decision records — the WHY, with live incidents as evidence |
 | [docs/SCHEMA.md](docs/SCHEMA.md) | Every table, with the modeling decisions |
+| [docs/EVAL.md](docs/EVAL.md) | Live-model behavior battery: method, results, what it caught |
 | [docs/AI-OPS.md](docs/AI-OPS.md) | Running local models reliably (GPU pinning, VRAM budget) |
 
 Earlier design-time documents are preserved in [docs/archive/](docs/archive/).
@@ -139,7 +142,7 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 357 tests
+pytest                          # 358 tests
 ```
 
 Dev uses SQLite for instant run. Production targets PostgreSQL — a fresh

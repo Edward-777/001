@@ -15,8 +15,10 @@
 2. **Risk-sorted approval inbox** — mitigate approval fatigue: rank cards by
    amount, vendor novelty, match status, and budget impact instead of
    chronology.
-3. **Evaluation harness** — versioned eval dataset + regression scoring for
-   tool selection and figure fidelity, so a model swap is a measured decision.
+3. **Evaluation depth** — the live-model battery exists
+   ([docs/EVAL.md](docs/EVAL.md)); next is paraphrase coverage for the weak
+   phrasings it found and a versioned dataset so a model swap is a measured
+   decision.
 4. **Dashboards** — spend, cash, and pipeline cards on the landing page
    (the runtime map at `/map` already covers the AI runtime itself).
 

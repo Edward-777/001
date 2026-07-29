@@ -1,7 +1,7 @@
 # Current Status
 
 > What works **today**, verified by the test suite and live use.
-> Last updated: **2026-07-29** · 357 tests · 58 AI tools · 17 modules
+> Last updated: **2026-07-29** · 358 tests · 58 AI tools · 17 modules
 
 ## Verified end-to-end flows
 
@@ -65,7 +65,8 @@ from posted journals (unbudgeted spend listed explicitly).
 
 | Metric | Value |
 |---|---|
-| Automated tests | 357 (all passing; CI on every push) |
+| Automated tests | 358 (all passing; CI on every push) |
+| Live-model battery ([docs/EVAL.md](docs/EVAL.md)) | 42/51 case-runs; all money-critical axes 3/3 |
 | AI tools (audited, permission-gated) | 58 |
 | Modules (vertical slices) | 17 |
 | Architecture decision records | 10 ([docs/ADR.md](docs/ADR.md)) |
@@ -80,8 +81,10 @@ from posted journals (unbudgeted spend listed explicitly).
   "payment" posts the journal, it does not move real money
 - **Email inbound** — the fleet accepts uploads and chat; the mailbox
   connector is the next highest-value addition
-- **Evaluation harness** — model behavior is tested with scripted fakes and a
-  tool-selection battery; a versioned eval dataset is future work
+- **Evaluation depth** — the live-model battery ([docs/EVAL.md](docs/EVAL.md))
+  covers six behavior axes in two languages; broader paraphrase coverage and a
+  versioned eval dataset are future work. Known 14B weak spots are documented
+  there (runway/anomaly paraphrases, unknown-SKU evasion)
 - **Approval-fatigue mitigation** — the inbox is chronological; risk-sorted
   ranking is designed but not built
 - Dashboards beyond the runtime map; field-level close locking

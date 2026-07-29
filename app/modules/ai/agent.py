@@ -19,7 +19,10 @@ from . import llm
 from .registry import registry
 
 _SYSTEM = (
-    "You are the ERP assistant for this company. You act ONLY through the tools "
+    "You are the ERP assistant for this company. Today's date is {today} — "
+    "resolve 'now', 'current', 'this month', 'next week', and any date the user "
+    "states without a year against it (a bare 'August 24' means {this_year}-08-24, "
+    "NEVER a past year). You act ONLY through the tools "
     "listed below. You have NO internet access and NO external data — no tax "
     "tables, no GSA/government per-diem rates, no airfare or market prices, no "
     "shipping rates, no facts beyond what a tool returns.\n\n"
@@ -162,23 +165,31 @@ def _has_chinese(text: str) -> bool:
     return sum(1 for ch in text if "一" <= ch <= "鿿") > 3
 
 
+def _has_foreign_script(text: str) -> bool:
+    """Scripts qwen has been observed drifting into that are never a valid reply
+    language here: Chinese (see _has_chinese) and Cyrillic (a full Russian reply
+    to a Korean budget question was caught by the tool-selection battery)."""
+    return _has_chinese(text) or sum(1 for ch in text if "Ѐ" <= ch <= "ӿ") > 3
+
+
 def _enforce_reply_language(reply: str, message: str, messages: list[dict], chat) -> str:
-    """Deterministic backstop for big-Qwen's drift to Chinese on CJK input (the
-    system/turn directives reduce it but don't eliminate it). If the user did NOT
-    write Chinese yet the reply did, regenerate ONCE in the right language. Best
-    effort: if the rewrite still drifts (or errors), keep the original."""
-    if _has_chinese(message) or not _has_chinese(reply):
+    """Deterministic backstop for big-Qwen's drift to a foreign script (Chinese on
+    CJK input; Russian has also been observed) — the system/turn directives reduce
+    it but don't eliminate it. If the user did NOT write in that script yet the
+    reply did, regenerate ONCE in the right language. Best effort: if the rewrite
+    still drifts (or errors), keep the original."""
+    if _has_foreign_script(message) or not _has_foreign_script(reply):
         return reply
     if any("가" <= ch <= "힣" for ch in message):
-        fix = ("직전 답변에 중국어(中文)가 섞였습니다. 똑같은 내용을 한국어로만 다시 쓰세요. "
-               "중국어·영어 금지. (계좌코드·SKU 등 영문 식별자는 그대로 둡니다.)")
+        fix = ("직전 답변에 외국어(중국어/러시아어)가 섞였습니다. 똑같은 내용을 한국어로만 "
+               "다시 쓰세요. (계좌코드·SKU 등 영문 식별자는 그대로 둡니다.)")
     else:
-        fix = ("Your previous answer contained Chinese characters. Rewrite the SAME "
-               "content in English only — no Chinese, no Korean.")
+        fix = ("Your previous answer drifted into a foreign language. Rewrite the "
+               "SAME content in English only.")
     try:
         regen = chat([*messages, {"role": "system", "content": fix}], tools=None)
         fixed = regen.get("content", "") or ""
-        return fixed if (fixed and not _has_chinese(fixed)) else reply
+        return fixed if (fixed and not _has_foreign_script(fixed)) else reply
     except Exception:
         return reply
 
@@ -226,19 +237,25 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
     base_messages = [
         # Qwen's chat template only reliably honors system messages at the TOP; a
         # system turn placed after the user message is ignored (it then drifts to
-        # Chinese on CJK input). Keep the language directive here, near the front.
-        {"role": "system", "content": _SYSTEM.format(tools=_tool_catalog(tools))},
+        # Chinese on CJK input). The date lives INSIDE the first system message for
+        # the same reason — as a separate 3rd system turn qwen ignored it and
+        # resolved bare dates to its training-era years (caught by the
+        # tool-selection battery: '8월 24일' became 2023-08-24).
+        {"role": "system", "content": _SYSTEM.format(
+            tools=_tool_catalog(tools), today=date.today().isoformat(),
+            this_year=date.today().year)},
         {"role": "system", "content": _language_directive(message)},
-        {"role": "system", "content": f"Today's date is {date.today().isoformat()}. "
-         "Resolve 'now', 'current', 'this month', 'as of today' against it."},
         *([{"role": "system", "content": memory_block}] if memory_block else []),
         *(history or []),
     ]
-    # Append the language tag to the user turn itself (not just a system line):
-    # it's the most recent token the model sees, so it overrides English/Chinese
-    # text sitting in history (e.g. an English invoice readout) that otherwise
-    # makes big Qwen drift to Chinese. Only the LLM copy is tagged; storage isn't.
-    user_turn = {"role": "user", "content": f"{message}\n\n[{_reply_lang_tag(message)}]"}
+    # Append the language tag AND today's date to the user turn itself (not just
+    # a system line): the most recent tokens are the ones qwen reliably honors.
+    # The date must ride here too — even at the TOP of the system prompt it was
+    # ignored for bare dates ('8월 24일' resolved to 2023-08-24 in the battery).
+    # Only the LLM copy is tagged; storage isn't.
+    user_turn = {"role": "user", "content":
+                 f"{message}\n\n[Today is {date.today().isoformat()}. "
+                 f"{_reply_lang_tag(message)}]"}
     used: list[dict] = []
     # Maker-checker state spans the WHOLE user turn, including every plan step —
     # a plan cannot create a money draft in one step and submit it in the next.
@@ -300,12 +317,21 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
     return {"reply": reply, "tool_calls": used, "plan": plan}
 
 
+# A tool that fails this many times in one turn is withdrawn from the model for
+# the rest of the turn. Observed failure mode (tool-selection battery): asked to
+# order servers with no price, qwen fabricated a product_url and retried the
+# rejected create call until the iteration limit — instead of asking the user.
+# Withdrawing the tool forces a text answer (i.e. the question it should ask).
+_MAX_SAME_TOOL_FAILURES = 3
+
+
 def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
                tools: list[dict], chat, max_iters: int, used: list[dict],
                state: dict, on_event=None) -> str | None:
     """The permission-checked tool loop for one (sub-)task. Appends every call to
     `used`, shares maker-checker state across the turn via `state`, and returns
     the model's final text — or None when the iteration limit is exhausted."""
+    fail_counts: dict[str, int] = {}
     for _ in range(max_iters):
         msg = chat(messages, tools=tools)
         messages.append(msg)
@@ -346,6 +372,11 @@ def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
             used.append({"tool": name, "args": args, "result": result,
                          "ok": not failed, "ms": elapsed_ms})
             _emit(on_event, type="tool", tool=name, ok=not failed, ms=elapsed_ms)
+            if failed:
+                fail_counts[name] = fail_counts.get(name, 0) + 1
+                if fail_counts[name] >= _MAX_SAME_TOOL_FAILURES:
+                    tools = [t for t in tools
+                             if t["function"]["name"] != name] or None
             audit.record(session, actor_user_id=user.id, action="ai_tool",
                          entity_type=name, detail={"args": args, "ok": not failed})
             messages.append({"role": "tool", "name": name, "content": json.dumps(result, default=str)})
