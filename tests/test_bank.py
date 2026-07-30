@@ -8,7 +8,10 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.core.db import Base
-from app.modules import accounting, bank  # noqa: F401  register tables
+from app.modules import (  # noqa: F401  register ALL tables (FKs cross modules)
+    accounting, approval, assets, auth, bank, documents, expense, hr,
+    inventory, notifications, procurement, sales,
+)
 from app.modules.accounting import service as acct
 from app.modules.accounting.ledger_models import JournalEntry, JournalLine
 from app.modules.accounting.service import Line

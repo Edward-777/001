@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.core import backup
 from app.core.db import Base
-from app.modules import documents  # noqa: F401  register tables
+from app.modules import (  # noqa: F401  register ALL tables (FKs and learned rules cross modules)
+    accounting, ai, approval, assets, auth, bank, budget, contracts,
+    documents, expense, fleet, hr, inventory, learning, leave,
+    notifications, procurement, sales,
+)
 from app.modules.documents import service as docs
 from app.modules.documents.models import DocStatus, Relevance
 

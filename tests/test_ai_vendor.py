@@ -6,7 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.core.db import Base
-from app.modules import ai, auth, documents, procurement  # noqa: F401  register
+from app.modules import (  # noqa: F401  register ALL tables (FKs and learned rules cross modules)
+    accounting, ai, approval, assets, auth, bank, budget, contracts,
+    documents, expense, fleet, hr, inventory, learning, leave,
+    notifications, procurement, sales,
+)
 from app.modules.ai.registry import registry
 from app.modules.auth import service as auth_svc
 from app.modules.auth.models import DataBoundary, Role, Scope

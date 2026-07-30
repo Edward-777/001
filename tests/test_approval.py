@@ -5,7 +5,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.core.db import Base
-from app.modules import approval, auth, hr  # noqa: F401  register tables
+from app.modules import (  # noqa: F401  register ALL tables (FKs and learned rules cross modules)
+    accounting, ai, approval, assets, auth, bank, budget, contracts,
+    documents, expense, fleet, hr, inventory, learning, leave,
+    notifications, procurement, sales,
+)
 from app.modules.approval import service as appr
 from app.modules.approval.events import RequestApproved
 from app.modules.approval.models import RequestStatus, RequestType
