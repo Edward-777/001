@@ -1,5 +1,6 @@
 """One-off smoke test: drive the real AI agent against dev.db via live Ollama.
-Proves the full path: NL -> LLM (qwen2.5:32b) -> tool call -> service -> answer."""
+Proves the full path: NL -> LLM (qwen2.5:32b) -> tool call -> service -> answer.
+The default prompt is Korean on purpose — the system is bilingual (docs/EVAL.md)."""
 import sys
 import time
 

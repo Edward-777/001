@@ -5,6 +5,9 @@ subledger-vs-GL trap, paying things that must not be paid, and ghost entities.
 A PASS here requires the model to produce a non-empty reply with the CORRECT figure
 (or the correct refusal), not merely to call a plausible tool.
 
+NOTE: the Korean prompts are intentional — the system is evaluated bilingually
+(see docs/EVAL.md), and several failure modes only reproduce on Korean input.
+
 Usage: python scripts/bench_hard.py qwen2.5:14b qwen2.5:32b qwen3:14b
 """
 import re

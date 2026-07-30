@@ -57,7 +57,7 @@ class BankStatementLine(PKMixin, Base):
 
     statement_id: Mapped[int] = mapped_column(ForeignKey("bank_statements.id"), nullable=False)
     txn_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    description: Mapped[str | None] = mapped_column(String(400), nullable=True)  # 적요 (AI-parsed)
+    description: Mapped[str | None] = mapped_column(String(400), nullable=True)  # memo line (AI-parsed)
     amount: Mapped[float] = mapped_column(Money, nullable=False, default=0)  # +deposit / -withdrawal
     matched_journal_line_id: Mapped[int | None] = mapped_column(
         ForeignKey("journal_lines.id"), nullable=True
