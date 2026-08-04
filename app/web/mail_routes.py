@@ -21,10 +21,31 @@ def mailroom(request: Request, user=Depends(require_login),
              session: Session = Depends(get_session)):
     return templates.TemplateResponse(request, "mail.html", {
         "user": user, "emails": mail.list_recent(session),
+        "outbox": mail.list_outbox(session),
     })
 
 
 @router.post("/mail/poll")
 def mail_poll(user=Depends(_finance), session: Session = Depends(get_session)):
     mail.poll_and_ingest(session)
+    return RedirectResponse("/mail", status_code=303)
+
+
+@router.post("/mail/outbox/{outbound_id}/send")
+def outbox_send(outbound_id: int, user=Depends(_finance),
+                session: Session = Depends(get_session)):
+    try:
+        mail.send_outbound(session, outbound_id, user_id=user.id)
+    except ValueError:
+        pass  # stale click — the page re-render shows the real state
+    return RedirectResponse("/mail", status_code=303)
+
+
+@router.post("/mail/outbox/{outbound_id}/cancel")
+def outbox_cancel(outbound_id: int, user=Depends(_finance),
+                  session: Session = Depends(get_session)):
+    try:
+        mail.cancel_outbound(session, outbound_id, user_id=user.id)
+    except ValueError:
+        pass
     return RedirectResponse("/mail", status_code=303)

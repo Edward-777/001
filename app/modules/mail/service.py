@@ -24,7 +24,7 @@ from ..documents import service as docs
 from ..fleet import dispatcher as fleet_dispatch
 from ..fleet.models import TaskSource
 from ..procurement.models import Vendor
-from .models import InboundEmail, InboundStatus
+from .models import InboundEmail, InboundStatus, OutboundEmail, OutboundStatus
 from .provider import FilesystemMailbox, MailProvider, RawEmail
 
 _UPLOAD_DIR = Path("uploads")
@@ -206,3 +206,88 @@ def poll_and_ingest(session: Session,
 def list_recent(session: Session, limit: int = 50) -> list[InboundEmail]:
     return list(session.scalars(
         select(InboundEmail).order_by(InboundEmail.id.desc()).limit(limit)))
+
+
+# ---- outbound (maker-checker end to end) -----------------------------------
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def draft_outbound(
+    session: Session,
+    *,
+    to_addr: str,
+    subject: str,
+    body_text: str,
+    created_by: int | None = None,
+    related_type: str | None = None,
+    related_id: int | None = None,
+    reply_to_email_id: int | None = None,
+) -> OutboundEmail:
+    """Create a DRAFT. Anyone (including AI tools) may draft; nothing sends."""
+    to_addr = (to_addr or "").strip().lower()
+    if not _EMAIL_RE.match(to_addr):
+        raise ValueError(f"not a valid email address: {to_addr!r}")
+    if not (subject or "").strip() or not (body_text or "").strip():
+        raise ValueError("subject and body are required")
+    if reply_to_email_id is not None and session.get(
+            InboundEmail, reply_to_email_id) is None:
+        raise ValueError("reply_to_email_id does not exist")
+    row = OutboundEmail(
+        to_addr=to_addr, subject=subject.strip()[:500], body_text=body_text,
+        created_by=created_by, related_type=related_type, related_id=related_id,
+        reply_to_email_id=reply_to_email_id,
+    )
+    session.add(row)
+    session.flush()
+    audit.record(session, actor_user_id=created_by, action="create",
+                 entity_type="outbound_email", entity_id=row.id,
+                 detail={"to": to_addr, "subject": row.subject})
+    return row
+
+
+def send_outbound(session: Session, outbound_id: int, *, user_id: int,
+                  provider=None) -> OutboundEmail:
+    """The human send gate. Only a draft can be sent, exactly once. The
+    reference provider writes to the outbox dir and stamps SENT_SIMULATED —
+    nothing leaves the machine; real SMTP is a private-deployment adapter."""
+    row = session.get(OutboundEmail, outbound_id)
+    if row is None:
+        raise ValueError("outbound email not found")
+    if row.status != str(OutboundStatus.DRAFT):
+        raise ValueError(f"outbound email is '{row.status}', not a draft")
+    provider = provider or default_mailbox()
+    message_id = f"<out-{row.id}-{uuid.uuid4().hex[:12]}@001.local>"
+    ref = provider.send(to_addr=row.to_addr, subject=row.subject,
+                        body_text=row.body_text, message_id=message_id)
+    from datetime import datetime, timezone
+
+    row.status = str(OutboundStatus.SENT_SIMULATED)
+    row.approved_by = user_id
+    row.sent_at = datetime.now(timezone.utc)
+    row.provider_ref = str(ref)
+    session.flush()
+    audit.record(session, actor_user_id=user_id, action="send",
+                 entity_type="outbound_email", entity_id=row.id,
+                 detail={"to": row.to_addr, "provider_ref": row.provider_ref})
+    return row
+
+
+def cancel_outbound(session: Session, outbound_id: int, *,
+                    user_id: int) -> OutboundEmail:
+    row = session.get(OutboundEmail, outbound_id)
+    if row is None:
+        raise ValueError("outbound email not found")
+    if row.status != str(OutboundStatus.DRAFT):
+        raise ValueError(f"outbound email is '{row.status}', not a draft")
+    row.status = str(OutboundStatus.CANCELED)
+    session.flush()
+    audit.record(session, actor_user_id=user_id, action="update",
+                 entity_type="outbound_email", entity_id=row.id,
+                 detail={"status": "canceled"})
+    return row
+
+
+def list_outbox(session: Session, limit: int = 50) -> list[OutboundEmail]:
+    return list(session.scalars(
+        select(OutboundEmail).order_by(OutboundEmail.id.desc()).limit(limit)))

@@ -23,6 +23,39 @@ class InboundStatus(StrEnum):
     FAILED = "failed"            # could not be parsed/processed
 
 
+class OutboundStatus(StrEnum):
+    DRAFT = "draft"                    # written (by AI or human), not sent
+    SENT_SIMULATED = "sent_simulated"  # reference impl: written to outbox dir
+    CANCELED = "canceled"
+
+
+class OutboundEmail(PKMixin, TimestampMixin, Base):
+    """Outbound mail is maker-checker end to end: anything (AI tools included)
+    may DRAFT a message; only a human with finance authority sends it. The
+    reference provider never leaves the machine (SENT_SIMULATED)."""
+    __tablename__ = "outbound_emails"
+
+    to_addr: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    body_text: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False,
+                                        default=str(OutboundStatus.DRAFT))
+    # what business object this message is about (loose ref, like fleet tasks)
+    related_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    related_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # threading: the inbound message this replies to
+    reply_to_email_id: Mapped[int | None] = mapped_column(
+        ForeignKey("inbound_emails.id"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+    approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"),
+                                                    nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                     nullable=True)
+    # provider receipt (reference impl: the .eml path in the outbox dir)
+    provider_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
 class InboundEmail(PKMixin, TimestampMixin, Base):
     __tablename__ = "inbound_emails"
 

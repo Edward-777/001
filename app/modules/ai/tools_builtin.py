@@ -818,6 +818,26 @@ def _check_mailbox(session: Session, user: User, args: dict) -> dict:
                     "dispatched as a DRAFT to the approval inbox, never executed."}
 
 
+def _draft_outbound_email(session: Session, user: User, args: dict) -> dict:
+    from ..mail import service as mail
+    try:
+        row = mail.draft_outbound(
+            session, to_addr=str(args.get("to", "")),
+            subject=str(args.get("subject", "")),
+            body_text=str(args.get("body", "")),
+            created_by=user.id,
+            related_type=args.get("related_type") or None,
+            related_id=int(args["related_id"]) if args.get("related_id") else None,
+            reply_to_email_id=(int(args["reply_to_email_id"])
+                               if args.get("reply_to_email_id") else None))
+    except (ValueError, TypeError) as exc:
+        return {"error": str(exc)}
+    return {"outbound_id": row.id, "to": row.to_addr, "subject": row.subject,
+            "status": row.status,
+            "note": "DRAFT only — it was NOT sent. A human sends it from the "
+                    "Mailroom (/mail). Never claim an email was sent."}
+
+
 def _list_recent_emails(session: Session, user: User, args: dict) -> dict:
     from ..mail import service as mail
     rows = mail.list_recent(session, limit=int(args.get("limit") or 20))
@@ -1634,6 +1654,21 @@ _BUILTIN = [
                      "classification, and the fleet task each produced."),
         parameters={"type": "object", "properties": {"limit": {"type": "integer"}}},
         handler=_list_recent_emails, scope="finance", level=2,
+    ),
+    Tool(
+        name="draft_outbound_email",
+        description=("DRAFT an outbound email (vendor discrepancy note, payment-delay "
+                     "apology, document request). Creates a draft in the Mailroom outbox "
+                     "— it is NOT sent; a human reviews and sends it. Write the body the "
+                     "user asked for; never invent commitments (amounts, dates) the user "
+                     "did not state."),
+        parameters={"type": "object", "properties": {
+            "to": {"type": "string"}, "subject": {"type": "string"},
+            "body": {"type": "string"},
+            "related_type": {"type": "string"}, "related_id": {"type": "integer"},
+            "reply_to_email_id": {"type": "integer"}},
+            "required": ["to", "subject", "body"]},
+        handler=_draft_outbound_email, scope="finance", level=2,
     ),
     Tool(
         name="set_budget",

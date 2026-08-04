@@ -42,4 +42,39 @@ arriving by email are held for a human — only invoices and packing lists dispa
   </table>
   {% endif %}
 </div>
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4 mt-6">
+  <h2 class="font-semibold mb-1">Outbox</h2>
+  <p class="text-slate-400 text-xs mb-3">Anything (including the AI) can draft; only a human sends.
+  The reference provider writes to the outbox directory — <span class="font-mono">SENT_SIMULATED</span>,
+  nothing leaves this machine.</p>
+  {% if not outbox %}<p class="text-sm text-slate-400">No outbound drafts.</p>{% else %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400">
+      <th class="py-1">To</th><th>Subject</th><th>About</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for o in outbox %}
+      <tr class="border-t">
+        <td class="py-2">{{ o.to_addr }}</td>
+        <td class="text-slate-600">{{ o.subject[:60] }}</td>
+        <td class="text-slate-400">{% if o.related_type %}{{ o.related_type }} #{{ o.related_id }}{% else %}—{% endif %}</td>
+        <td>
+          {% if o.status == 'draft' %}<span class="text-amber-600">draft</span>
+          {% elif o.status == 'sent_simulated' %}<span class="text-emerald-600">sent (simulated)</span>
+          {% else %}<span class="text-slate-400">{{ o.status }}</span>{% endif %}
+        </td>
+        <td class="text-right whitespace-nowrap">
+          {% if o.status == 'draft' %}
+          <form method="post" action="/mail/outbox/{{ o.id }}/send" class="inline">
+            <button class="bg-emerald-600 text-white rounded px-3 py-1 hover:bg-emerald-700">Send</button></form>
+          <form method="post" action="/mail/outbox/{{ o.id }}/cancel" class="inline">
+            <button class="text-slate-400 hover:text-rose-600 underline">Cancel</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
 {% endblock %}
