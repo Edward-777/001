@@ -29,6 +29,7 @@ from .modules import fleet as _fleet  # noqa: F401  (registers fleet_tasks queue
 from .modules import leave as _leave  # noqa: F401  (PTO + onboarding)
 from .modules import contracts as _contracts  # noqa: F401  (commitments register)
 from .modules import budget as _budget  # noqa: F401  (plan vs actual)
+from .modules import mail as _mail  # noqa: F401  (email intake surface)
 
 
 _DEFAULT_SECRET = "dev-secret-change-me"
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
     from .web.contracts_routes import router as contracts_router
     from .web.fleet_routes import router as fleet_router
     from .web.leave_routes import router as leave_router
+    from .web.mail_routes import router as mail_router
     from .web.main_routes import router as main_router
     from .web.map_routes import router as map_router
     from .web.procurement_routes import router as procurement_router
@@ -95,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(leave_router)
     app.include_router(contracts_router)
     app.include_router(budget_router)
+    app.include_router(mail_router)
 
     # Nightly backup scheduler (production only; off in dev/tests).
     if settings.enable_scheduler:

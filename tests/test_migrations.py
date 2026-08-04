@@ -23,8 +23,8 @@ from sqlalchemy.pool import NullPool
 from app.core.db import Base
 from app.modules import (  # noqa: F401  register every model on Base.metadata
     accounting, ai, approval, assets, auth, bank, budget, contracts, documents,
-    expense, fleet, hr, inventory, leave, learning, notifications, procurement,
-    sales,
+    expense, fleet, hr, inventory, leave, learning, mail, notifications,
+    procurement, sales,
 )
 
 # CI can point this at a postgres service; locally we use a temp sqlite file.

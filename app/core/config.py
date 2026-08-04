@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     backup_dir: str = "backups"
     # Fleet work loop — how often the single loop drains the task queue (minutes).
     fleet_loop_minutes: int = 10
+    # Mailbox root for the filesystem mail provider (inbox/ processed/ outbox/).
+    # Real IMAP/SMTP providers are a private-deployment concern.
+    mail_dir: str = "mailbox"
+    mail_poll_minutes: int = 5
 
     # Dev bootstraps tables via create_all; production uses Alembic migrations.
     auto_create_tables: bool = True

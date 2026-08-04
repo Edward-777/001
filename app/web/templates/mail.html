@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block title %}Mailroom — 001{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-2 max-w-5xl">
+  <h1 class="text-2xl font-bold">Mailroom</h1>
+  <form method="post" action="/mail/poll">
+    <button class="px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-700 text-sm">
+      Check mailbox now</button>
+  </form>
+</div>
+<p class="text-slate-500 mb-4 text-sm">Inbound email is untrusted data: it can produce <em>drafts</em> in the
+<a href="/fleet" class="underline">Approval Inbox</a>, never side effects. Statements and policy documents
+arriving by email are held for a human — only invoices and packing lists dispatch automatically.</p>
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4">
+  {% if not emails %}<p class="text-sm text-slate-400">Nothing ingested yet. Drop .eml files into the
+  mailbox inbox directory and click “Check mailbox now”.</p>{% else %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400">
+      <th class="py-1">From</th><th>Subject</th><th>Matched</th><th>Category</th>
+      <th>Att.</th><th>Status</th><th>Task</th></tr></thead>
+    <tbody>
+    {% for m in emails %}
+      <tr class="border-t {% if m.status == 'held' %}bg-amber-50{% endif %}">
+        <td class="py-2">{{ m.from_name or m.from_addr }}</td>
+        <td class="text-slate-600">{{ (m.subject or '')[:60] }}</td>
+        <td>{% if m.vendor_id %}<span class="text-emerald-700">vendor #{{ m.vendor_id }}</span>
+            {% else %}<span class="text-slate-300">—</span>{% endif %}</td>
+        <td class="text-slate-500">{{ m.category or '—' }}</td>
+        <td>{{ m.attachment_count }}</td>
+        <td>
+          {% if m.status == 'dispatched' %}<span class="text-emerald-600">dispatched</span>
+          {% elif m.status == 'held' %}<span class="text-amber-600">held ⚠</span>
+          {% elif m.status == 'failed' %}<span class="text-rose-600">failed</span>
+          {% else %}<span class="text-slate-400">received</span>{% endif %}
+        </td>
+        <td>{% if m.task_id %}<a class="text-sky-600 underline" href="/fleet">#{{ m.task_id }}</a>
+            {% else %}<span class="text-slate-300">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

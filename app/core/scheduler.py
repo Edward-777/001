@@ -69,6 +69,13 @@ def _budget_tick() -> None:
     _in_session(alerts.enqueue_budget_alerts)
 
 
+def _mail_tick() -> None:
+    """Every few minutes: poll the mailbox and ingest new messages."""
+    from ..modules.mail import service as mail
+
+    _in_session(mail.poll_and_ingest)
+
+
 def start_scheduler():
     global _scheduler
     if _scheduler is not None:
@@ -96,6 +103,9 @@ def start_scheduler():
     sch.add_job(_renewal_tick, trigger="cron", hour=7, minute=10, id="renewal_scan")
     # Daily budget-overrun check — 07:20 (idempotent per month per over-set).
     sch.add_job(_budget_tick, trigger="cron", hour=7, minute=20, id="budget_scan")
+    # Mailbox poll — email is an intake surface, so it runs like the fleet loop.
+    sch.add_job(_mail_tick, trigger="interval",
+                minutes=settings.mail_poll_minutes, id="mail_poll")
     # Monthly close proposal — 1st of the month, 06:00 (closes the prior month).
     sch.add_job(_month_close_tick, trigger="cron", day=1, hour=6, minute=0, id="month_close")
     sch.start()

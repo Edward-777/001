@@ -30,6 +30,7 @@ from app.modules import (  # noqa: F401
     inventory,
     learning,
     leave,
+    mail,
     notifications,
     procurement,
     sales,
