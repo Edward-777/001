@@ -46,6 +46,9 @@ class Vendor(PKMixin, TimestampMixin, Base):
         String(20), nullable=False, default=PaymentTerms.NET30
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Autonomy tier (policy engine): None = normal; "allowlisted" = a human has
+    # approved this vendor for L3 envelopes (vendor_allowlisted condition).
+    autonomy_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class PurchaseOrder(PKMixin, TimestampMixin, Base):

@@ -804,6 +804,37 @@ def _check_affordability(session: Session, user: User, args: dict) -> dict:
     }
 
 
+# ---- autonomy policies ------------------------------------------------------
+
+def _propose_autonomy_policy(session: Session, user: User, args: dict) -> dict:
+    from ..policy import service as policy
+    conditions = args.get("conditions")
+    if not isinstance(conditions, dict) or not conditions:
+        return {"error": "conditions (object) is required — an envelope with no "
+                         "bounds is refused. Known keys: "
+                         f"{sorted(policy.KNOWN_CONDITIONS)}"}
+    try:
+        p = policy.propose_policy(
+            session, name=str(args.get("name", "")),
+            action_scope=str(args.get("action_scope", "spend.approve_bill")),
+            conditions=conditions, proposed_by=user.id)
+    except (ValueError, TypeError) as exc:
+        return {"error": str(exc)}
+    return {"policy_id": p.id, "name": p.name, "status": p.status,
+            "note": "DRAFT only — it grants nothing until a human activates it "
+                    "on the Autonomy page (/policies). Never claim it is active."}
+
+
+def _list_autonomy_policies(session: Session, user: User, args: dict) -> dict:
+    from ..policy import service as policy
+    rows = policy.list_policies(session)
+    return {"count": len(rows), "policies": [
+        {"policy_id": p.id, "name": p.name, "action_scope": p.action_scope,
+         "max_level": p.max_level, "conditions": p.conditions,
+         "status": p.status, "rejection_count": p.rejection_count,
+         "suspend_reason": p.suspend_reason} for p in rows]}
+
+
 # ---- mailroom ---------------------------------------------------------------
 
 def _check_mailbox(session: Session, user: User, args: dict) -> dict:
@@ -1638,6 +1669,29 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {"contract_id": {"type": "integer"}},
                     "required": ["contract_id"]},
         handler=_end_contract, scope="finance", level=2,
+    ),
+    Tool(
+        name="propose_autonomy_policy",
+        description=("PROPOSE an autonomy envelope (L3: execute-without-preapproval "
+                     "within bounds) as a DRAFT. It grants NOTHING until a human "
+                     "activates it on /policies. conditions keys: max_amount, "
+                     "daily_cap, vendor_allowlisted, account_codes, budget_headroom. "
+                     "Propose ONLY bounds the user explicitly stated — never invent "
+                     "amounts."),
+        parameters={"type": "object", "properties": {
+            "name": {"type": "string"},
+            "action_scope": {"type": "string", "enum": ["spend.approve_bill"]},
+            "conditions": {"type": "object"}},
+            "required": ["name", "conditions"]},
+        handler=_propose_autonomy_policy, scope="finance", level=3,
+    ),
+    Tool(
+        name="list_autonomy_policies",
+        description=("List autonomy envelopes with status (draft/active/suspended), "
+                     "conditions, and rejection counts. USE THIS for 'what can the "
+                     "system do on its own / 자동 실행 정책 뭐 있어'."),
+        parameters={"type": "object", "properties": {}},
+        handler=_list_autonomy_policies, scope="finance", level=2,
     ),
     Tool(
         name="check_mailbox",

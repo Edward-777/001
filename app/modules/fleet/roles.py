@@ -113,7 +113,7 @@ def spend_handle(session: Session, task: Task) -> None:
             notes.append("Looks like a service / direct cost. Approving posts it to the "
                          "suggested account.")
 
-    q.request_approval(session, task, result={
+    result = {
         "draft_bill_id": bill.id,
         "bill_no": bill.bill_no,
         "vendor_id": vendor.id,
@@ -126,7 +126,64 @@ def spend_handle(session: Session, task: Task) -> None:
         "suggested_account_name": suggested.name if suggested else None,
         "goods_received": goods_received,
         "note": " ".join(notes),
-    })
+    }
+    _park_or_auto_spend(session, task, result)
+
+
+def _park_or_auto_spend(session: Session, task: Task, result: dict) -> None:
+    """The L3 gate for the spend role. Default is exactly the old behavior:
+    park for approval (L2). Only when an ACTIVE human-signed envelope passes
+    every condition does the draft post without pre-approval — and even then a
+    post-hoc review card lands in the same inbox, and every downstream
+    guardrail (3-way match, posting rules) still applies unchanged.
+
+    Extra belt regardless of policy: a brand-new vendor (auto-created from an
+    inbound document) can never auto-post."""
+    from ..policy import service as policy
+
+    decision = policy.evaluate(
+        session, action_scope="spend.approve_bill",
+        action_ref=f"task:{task.id}",
+        amount=result.get("amount"),
+        vendor_id=result.get("vendor_id"),
+        account_code=result.get("suggested_account_code"),
+    )
+    auto = (decision.passed and decision.resolved_level >= 3
+            and not result.get("new_vendor")
+            and not result.get("po_matched"))  # keep 3-way flow human-gated
+    if not auto:
+        result["autonomy"] = {"decision_id": decision.id,
+                              "resolved_level": decision.resolved_level}
+        q.request_approval(session, task, result=result)
+        return
+
+    result["autonomy"] = {"decision_id": decision.id,
+                          "policy_id": decision.policy_id,
+                          "resolved_level": decision.resolved_level,
+                          "auto_executed": True}
+    task.result = result
+    session.flush()
+    spend_approve(session, task)  # posts through the same code the human OK runs
+    if task.status != str(q.TaskStatus.DONE):
+        return  # guardrails refused (e.g. match exception) — visible as-is
+    review = q.enqueue(
+        session, to_role=Role.INSIGHT, category="l3_review",
+        title=f"L3 auto-posted: {result.get('vendor_name')} — ${result.get('amount')}",
+        source=q.TaskSource.AGENT, from_role=Role.SPEND,
+        payload={"task_id": task.id, "decision_id": decision.id,
+                 "policy_id": decision.policy_id},
+        idempotency_key=f"l3review:task:{task.id}",
+    )
+    if review.status == str(q.TaskStatus.QUEUED):
+        q.request_approval(session, review, result={
+            "bill_no": result.get("bill_no"),
+            "vendor_name": result.get("vendor_name"),
+            "amount": result.get("amount"),
+            "decision_id": decision.id,
+            "note": "Executed automatically inside an approved envelope. "
+                    "Approve to acknowledge; reject to flag the policy "
+                    "(repeated rejections suspend it).",
+        })
 
 
 def spend_approve(session: Session, task: Task) -> None:
@@ -380,6 +437,14 @@ APPROVERS: dict[str, Callable[[Session, Task], None]] = {
 def resolve(session: Session, task: Task, *, approved: bool) -> None:
     """Apply the founder's decision to a parked (needs_approval) task."""
     if not approved:
+        if task.category == "l3_review":
+            # rejecting an L3 review card flags the granting policy — the
+            # breaker suspends it after repeated rejections
+            from ..policy import service as policy
+
+            policy_id = (task.payload or {}).get("policy_id")
+            if policy_id:
+                policy.record_review_rejection(session, policy_id)
         q.resolve_approval(session, task, approved=False)
         return
     approver = APPROVERS.get(task.to_role)

@@ -32,6 +32,7 @@ from app.modules import (  # noqa: F401
     leave,
     mail,
     notifications,
+    policy,
     procurement,
     sales,
 )

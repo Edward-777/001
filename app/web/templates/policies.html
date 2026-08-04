@@ -1,0 +1,96 @@
+{% extends "layout.html" %}
+{% block title %}Autonomy — 001{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-1">Autonomy Policies</h1>
+<p class="text-slate-500 mb-4 text-sm">An envelope you sign: inside these bounds the system executes without
+pre-approval (L3) and leaves a review card; outside them everything parks for approval exactly as before.
+Repeated review rejections suspend a policy automatically.</p>
+
+{% if error %}
+<div class="max-w-5xl mb-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-2 text-sm">{{ error }}</div>
+{% endif %}
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4 mb-6">
+  <h2 class="font-semibold mb-3">Propose an envelope (spend.approve_bill)</h2>
+  <form method="post" action="/policies/propose" class="flex flex-wrap items-end gap-3 text-sm">
+    <label class="block flex-1 min-w-48">Name
+      <input name="name" required placeholder="Micro office spend, allowlisted vendors"
+             class="block w-full border rounded px-2 py-1.5 mt-1"></label>
+    <label class="block">Max per bill ($)
+      <input type="number" step="0.01" min="0.01" name="max_amount" required
+             class="block border rounded px-2 py-1.5 mt-1 w-28"></label>
+    <label class="block">Daily cap ($)
+      <input type="number" step="0.01" min="0" name="daily_cap"
+             class="block border rounded px-2 py-1.5 mt-1 w-28"></label>
+    <label class="block">Expires
+      <input type="date" name="effective_to" class="block border rounded px-2 py-1.5 mt-1"></label>
+    <label class="flex items-center gap-2 pb-2">
+      <input type="checkbox" name="vendor_allowlisted" value="true" checked> Allowlisted vendors only</label>
+    <label class="flex items-center gap-2 pb-2">
+      <input type="checkbox" name="budget_headroom" value="true"> Require budget headroom</label>
+    <button class="bg-slate-900 text-white rounded px-4 py-2 hover:bg-slate-700">Propose</button>
+  </form>
+</div>
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4 mb-6">
+  <h2 class="font-semibold mb-3">Envelopes</h2>
+  {% if not policies %}<p class="text-sm text-slate-400">None yet — every action runs at L2 (approve first).</p>
+  {% else %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400">
+      <th class="py-1">Name</th><th>Scope</th><th>Conditions</th><th>Status</th>
+      <th>Rejections</th><th></th></tr></thead>
+    <tbody>
+    {% for p in policies %}
+      <tr class="border-t {% if p.status == 'suspended' %}bg-rose-50{% endif %}">
+        <td class="py-2 font-medium">{{ p.name }}</td>
+        <td class="font-mono text-xs text-slate-500">{{ p.action_scope }} → L{{ p.max_level }}</td>
+        <td class="font-mono text-xs text-slate-500">{{ p.conditions }}</td>
+        <td>
+          {% if p.status == 'active' %}<span class="text-emerald-600">active</span>
+          {% elif p.status == 'draft' %}<span class="text-amber-600">draft</span>
+          {% elif p.status == 'suspended' %}<span class="text-rose-600">suspended</span>
+          {% else %}<span class="text-slate-400">{{ p.status }}</span>{% endif %}
+          {% if p.suspend_reason %}<div class="text-xs text-rose-500">{{ p.suspend_reason }}</div>{% endif %}
+        </td>
+        <td>{{ p.rejection_count }}</td>
+        <td class="text-right whitespace-nowrap">
+          {% if p.status in ('draft', 'suspended') %}
+          <form method="post" action="/policies/{{ p.id }}/activate" class="inline">
+            <button class="bg-emerald-600 text-white rounded px-3 py-1 hover:bg-emerald-700">Activate</button></form>
+          {% endif %}
+          {% if p.status == 'active' %}
+          <form method="post" action="/policies/{{ p.id }}/suspend" class="inline">
+            <button class="text-slate-400 hover:text-rose-600 underline">Suspend</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4">
+  <h2 class="font-semibold mb-1">Recent decisions</h2>
+  <p class="text-slate-400 text-xs mb-3">Every evaluation leaves a record — the "why was this allowed (or not)".</p>
+  {% if not decisions %}<p class="text-sm text-slate-400">No evaluations yet.</p>
+  {% else %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400">
+      <th class="py-1">Action</th><th>Inputs</th><th>Result</th><th>Checks</th></tr></thead>
+    <tbody>
+    {% for d in decisions %}
+      <tr class="border-t">
+        <td class="py-2 font-mono text-xs">{{ d.action_scope }} · {{ d.action_ref }}</td>
+        <td class="font-mono text-xs text-slate-500">{{ d.inputs }}</td>
+        <td>{% if d.passed %}<span class="text-emerald-600">L{{ d.resolved_level }} auto</span>
+            {% else %}<span class="text-slate-500">L{{ d.resolved_level }} (park)</span>{% endif %}</td>
+        <td class="font-mono text-xs text-slate-400">{{ d.checks }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}
