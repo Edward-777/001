@@ -24,7 +24,7 @@ from app.core.db import Base
 from app.modules import (  # noqa: F401  register every model on Base.metadata
     accounting, ai, approval, assets, auth, bank, budget, contracts, documents,
     expense, fleet, hr, inventory, leave, learning, mail, notifications,
-    obligations, policy, procurement, sales,
+    obligations, payments, policy, procurement, sales,
 )
 
 # CI can point this at a postgres service; locally we use a temp sqlite file.

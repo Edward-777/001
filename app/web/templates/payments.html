@@ -1,0 +1,69 @@
+{% extends "layout.html" %}
+{% block title %}Payments — 001{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-1">Payments</h1>
+<p class="text-slate-500 mb-4 text-sm">The system never moves money. It prepares the packet a human needs —
+payee, remit-to, amount, wire reference, evidence chain — you execute the transfer at the bank, then confirm
+here with the paid date and bank reference. Only that confirmation posts the payment journal.</p>
+
+{% if error %}
+<div class="max-w-5xl mb-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-2 text-sm">{{ error }}</div>
+{% endif %}
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4 mb-6">
+  <h2 class="font-semibold mb-3">Prepare an instruction</h2>
+  <form method="post" action="/payments/prepare" class="flex items-end gap-3 text-sm">
+    <label class="block">Bill #
+      <input name="bill_no" required placeholder="BILL-2026-0001"
+             class="block border rounded px-2 py-1.5 mt-1 w-44"></label>
+    <button class="bg-slate-900 text-white rounded px-4 py-2 hover:bg-slate-700">Prepare</button>
+  </form>
+</div>
+
+<div class="max-w-5xl space-y-4">
+  {% if not instructions %}
+  <div class="bg-white rounded-xl shadow p-4 text-sm text-slate-400">No payment instructions yet.</div>
+  {% endif %}
+  {% for i in instructions %}
+  <div class="bg-white rounded-xl shadow p-4 {% if i.status == 'prepared' %}border-l-4 border-amber-400{% endif %}">
+    <div class="flex items-center justify-between">
+      <div class="font-semibold">{{ i.evidence.get('vendor_name') or ('vendor #' ~ i.vendor_id) }}
+        — ${{ i.amount | money }}</div>
+      <div>
+        {% if i.status == 'prepared' %}<span class="text-amber-600 text-sm">awaiting execution</span>
+        {% elif i.status == 'confirmed' %}<span class="text-emerald-600 text-sm">confirmed · {{ i.payment_no }}</span>
+        {% else %}<span class="text-slate-400 text-sm">canceled</span>{% endif %}
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-x-8 gap-y-1 mt-2 text-sm">
+      <div><span class="text-slate-400">Pay to:</span> {{ i.remit_to or '⚠ no remit-to on file — add it to the vendor' }}</div>
+      <div><span class="text-slate-400">Reference:</span> <span class="font-mono">{{ i.reference }}</span></div>
+      <div><span class="text-slate-400">Due:</span> {{ i.evidence.get('due_date') or '—' }}</div>
+      <div><span class="text-slate-400">3-way match:</span> {{ i.evidence.get('match_status') }}
+        {% if i.evidence.get('po_no') %}· {{ i.evidence.get('po_no') }}{% endif %}</div>
+      <div class="col-span-2"><span class="text-slate-400">Evidence:</span>
+        <span class="font-mono text-xs">{{ i.evidence }}</span></div>
+      {% if i.status == 'confirmed' %}
+      <div><span class="text-slate-400">Paid:</span> {{ i.paid_date }}</div>
+      <div><span class="text-slate-400">Bank ref:</span> {{ i.payment_ref or '—' }}</div>
+      {% endif %}
+    </div>
+    {% if i.status == 'prepared' %}
+    <form method="post" action="/payments/{{ i.id }}/confirm"
+          class="flex items-end gap-3 text-sm mt-3 pt-3 border-t">
+      <label class="block">Paid date
+        <input type="date" name="paid_date" value="{{ today }}" required
+               class="block border rounded px-2 py-1.5 mt-1"></label>
+      <label class="block flex-1">Bank confirmation #
+        <input name="payment_ref" placeholder="e.g. wire #20260804-0113"
+               class="block w-full border rounded px-2 py-1.5 mt-1"></label>
+      <button class="bg-emerald-600 text-white rounded px-4 py-2 hover:bg-emerald-700">
+        I executed this — post it</button>
+      <button formaction="/payments/{{ i.id }}/cancel"
+              class="text-slate-400 hover:text-rose-600 underline pb-2">Cancel</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -627,8 +627,9 @@ def _record_direct_bill(session: Session, user: User, args: dict) -> dict:
 
 
 def _pay_vendor(session: Session, user: User, args: dict) -> dict:
-    """Pay a vendor bill (Dr Accounts Payable / Cr Cash). The amount must be
-    stated explicitly — money movement never defaults to 'the whole balance'."""
+    """RECORD that a vendor bill was paid (Dr AP / Cr Cash). The system never
+    moves money — this books a payment the human already executed. The amount
+    must be stated explicitly, never defaulted to 'the whole balance'."""
     bill = acct.get_ap_bill_by_no(session, args.get("bill_no", ""))
     if bill is None:
         return {"error": "bill not found — call list_open_bills"}
@@ -645,7 +646,46 @@ def _pay_vendor(session: Session, user: User, args: dict) -> dict:
     pay = acct.create_payment(session, vendor_id=bill.vendor_id,
                               applications=[{"ap_bill_id": bill.id, "amount": amt}])
     return {"payment_no": pay.payment_no, "paid": str(amt),
-            "bill_no": bill.bill_no, "bill_status": bill.status}
+            "bill_no": bill.bill_no, "bill_status": bill.status,
+            "note": "Recorded in the books. No money was moved by the system — "
+                    "say 'recorded the payment', never 'sent the money'."}
+
+
+def _prepare_payment_instructions(session: Session, user: User, args: dict) -> dict:
+    from ..payments import service as payments
+    try:
+        instr = payments.prepare_instruction(
+            session, bill_no=str(args.get("bill_no", "")),
+            amount=args.get("amount"), user=user)
+    except (ValueError, TypeError) as exc:
+        return {"error": str(exc)}
+    return {"instruction_id": instr.id, "amount": str(instr.amount),
+            "pay_to": instr.remit_to or "(no remit-to on file — ask the user to "
+                                        "add the vendor's bank details)",
+            "reference": instr.reference, "evidence": instr.evidence,
+            "note": "Instruction PREPARED — no money moves and nothing posted. "
+                    "Show the user WHERE to pay, HOW MUCH, the wire REFERENCE, "
+                    "and the evidence. After they execute the transfer, "
+                    "confirm_payment_executed posts the journal."}
+
+
+def _confirm_payment_executed(session: Session, user: User, args: dict) -> dict:
+    from ..payments import service as payments
+    try:
+        paid = date.fromisoformat(str(args.get("paid_date", "")))
+    except ValueError:
+        return {"error": "need paid_date as YYYY-MM-DD — the day the user "
+                         "actually executed the transfer; never guess it"}
+    try:
+        instr = payments.confirm_executed(
+            session, int(args.get("instruction_id") or 0), user=user,
+            paid_date=paid, payment_ref=args.get("payment_ref"))
+    except (ValueError, TypeError) as exc:
+        return {"error": str(exc)}
+    return {"instruction_id": instr.id, "payment_no": instr.payment_no,
+            "paid_date": str(instr.paid_date), "payment_ref": instr.payment_ref,
+            "note": "Payment journal posted (Dr AP / Cr Cash) recording the "
+                    "human-executed transfer."}
 
 
 def _list_my_approvals(session: Session, user: User, args: dict) -> list[dict]:
@@ -1584,14 +1624,41 @@ _BUILTIN = [
     ),
     Tool(
         name="pay_vendor",
-        description=("Pay a vendor bill by its bill_no (Dr Accounts Payable / Cr Cash). The "
-                     "amount must be stated explicitly."),
+        description=("RECORD a vendor-bill payment the user already executed at the bank "
+                     "(Dr AP / Cr Cash), by bill_no with an explicit amount. The system "
+                     "never moves money — call this ONLY after the user states the "
+                     "transfer actually happened. To help the user pay, use "
+                     "prepare_payment_instructions instead."),
         parameters={"type": "object", "properties": {
             "bill_no": {"type": "string"}, "amount": {"type": "number"}},
             "required": ["bill_no", "amount"]},
-        # Segregation of Duties: entering a bill is finance L2, but PAYING it
-        # requires L3 — so the maker (bill) cannot also be the payer at L2.
+        # Segregation of Duties: entering a bill is finance L2, but recording its
+        # payment requires L3 — the maker (bill) cannot also be the payer at L2.
         handler=_pay_vendor, scope="finance", level=3,
+    ),
+    Tool(
+        name="prepare_payment_instructions",
+        description=("Prepare the packet a human needs to PAY a bill: payee, remit-to "
+                     "bank details, amount, wire reference, and the evidence chain "
+                     "(PO, 3-way match, due date). Nothing moves and nothing posts. "
+                     "USE THIS for '이 청구서 어디로 입금해 / how do I pay this bill / "
+                     "지급 준비해줘'."),
+        parameters={"type": "object", "properties": {
+            "bill_no": {"type": "string"}, "amount": {"type": "number"}},
+            "required": ["bill_no"]},
+        handler=_prepare_payment_instructions, scope="finance", level=2,
+    ),
+    Tool(
+        name="confirm_payment_executed",
+        description=("The user states they EXECUTED a prepared payment at the bank — "
+                     "record it: posts the payment journal with their paid_date "
+                     "(YYYY-MM-DD) and bank confirmation number. Never call this unless "
+                     "the user explicitly says the transfer happened."),
+        parameters={"type": "object", "properties": {
+            "instruction_id": {"type": "integer"}, "paid_date": {"type": "string"},
+            "payment_ref": {"type": "string"}},
+            "required": ["instruction_id", "paid_date"]},
+        handler=_confirm_payment_executed, scope="finance", level=3,
     ),
     Tool(
         name="request_time_off",

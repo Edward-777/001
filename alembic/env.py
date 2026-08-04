@@ -33,6 +33,7 @@ from app.modules import (  # noqa: F401
     mail,
     notifications,
     obligations,
+    payments,
     policy,
     procurement,
     sales,

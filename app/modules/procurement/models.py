@@ -49,6 +49,10 @@ class Vendor(PKMixin, TimestampMixin, Base):
     # Autonomy tier (policy engine): None = normal; "allowlisted" = a human has
     # approved this vendor for L3 envelopes (vendor_allowlisted condition).
     autonomy_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Where money goes when a human pays this vendor — free-form remittance
+    # details ("Chase •••1234 · routing •••0021 · ACH preferred"), snapshotted
+    # into each payment instruction. The system shows this; it never uses it.
+    remit_to: Mapped[str | None] = mapped_column(String(400), nullable=True)
 
 
 class PurchaseOrder(PKMixin, TimestampMixin, Base):
