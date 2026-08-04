@@ -62,6 +62,32 @@ def enqueue_budget_alerts(session: Session, *, as_of: date | None = None):
     return task
 
 
+def enqueue_obligation_alerts(session: Session, *, as_of: date | None = None):
+    """Compliance duties inside their notice window -> one informational card.
+    Idempotent per week per due-set (a newly due obligation re-alerts at once)."""
+    from ..obligations import service as obligations
+
+    as_of = as_of or date.today()
+    due = obligations.upcoming(session, as_of=as_of)
+    if not due:
+        return None
+    ids = ",".join(str(r["obligation_id"]) for r in due)
+    plural = "deadlines" if len(due) != 1 else "deadline"
+    task = q.enqueue(
+        session, to_role=Role.INSIGHT, category="obligation_alert",
+        title=f"{len(due)} compliance {plural} approaching", source=TaskSource.AGENT,
+        from_role=Role.SYSTEM,
+        idempotency_key=f"obligation:{as_of.isocalendar().year}"
+                        f"-w{as_of.isocalendar().week}:{ids}",
+    )
+    if task.status == TaskStatus.QUEUED:
+        q.request_approval(session, task, result={
+            "deadlines": due, "count": len(due),
+            "note": "Approve to acknowledge; manage the calendar at /obligations.",
+        })
+    return task
+
+
 def enqueue_renewal_alerts(session: Session, *, as_of: date | None = None):
     """Contracts inside their notice window -> one informational card for the
     founder. Idempotent per week (renewals move slowly; a daily card is nagging),

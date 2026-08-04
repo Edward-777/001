@@ -69,6 +69,13 @@ def _budget_tick() -> None:
     _in_session(alerts.enqueue_budget_alerts)
 
 
+def _obligation_tick() -> None:
+    """Daily: compliance deadlines entering their notice window -> inbox card."""
+    from ..modules.fleet import alerts
+
+    _in_session(alerts.enqueue_obligation_alerts)
+
+
 def _mail_tick() -> None:
     """Every few minutes: poll the mailbox and ingest new messages."""
     from ..modules.mail import service as mail
@@ -103,6 +110,9 @@ def start_scheduler():
     sch.add_job(_renewal_tick, trigger="cron", hour=7, minute=10, id="renewal_scan")
     # Daily budget-overrun check — 07:20 (idempotent per month per over-set).
     sch.add_job(_budget_tick, trigger="cron", hour=7, minute=20, id="budget_scan")
+    # Daily compliance-deadline check — 07:15 (idempotent per week per due-set).
+    sch.add_job(_obligation_tick, trigger="cron", hour=7, minute=15,
+                id="obligation_scan")
     # Mailbox poll — email is an intake surface, so it runs like the fleet loop.
     sch.add_job(_mail_tick, trigger="interval",
                 minutes=settings.mail_poll_minutes, id="mail_poll")

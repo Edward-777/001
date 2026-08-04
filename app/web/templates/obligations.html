@@ -1,0 +1,82 @@
+{% extends "layout.html" %}
+{% block title %}Obligations — 001{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-1 max-w-5xl">
+  <h1 class="text-2xl font-bold">Compliance Calendar</h1>
+  <form method="post" action="/obligations/seed">
+    <button class="px-3 py-1.5 rounded border hover:bg-slate-100 text-sm">
+      Seed US basics (federal · WA · DE)</button>
+  </form>
+</div>
+<p class="text-slate-500 mb-4 text-sm">Every dated duty in one place — tax returns, annual reports, renewals,
+labor filings. Completing a recurring duty schedules its next occurrence automatically; approaching deadlines
+land as cards in the <a href="/fleet" class="underline">Approval Inbox</a>. Reference checklist, not tax advice.</p>
+
+{% if error %}
+<div class="max-w-5xl mb-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-2 text-sm">{{ error }}</div>
+{% endif %}
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4 mb-6">
+  <h2 class="font-semibold mb-3">Add a duty</h2>
+  <form method="post" action="/obligations/add" class="flex flex-wrap items-end gap-3 text-sm">
+    <label class="block flex-1 min-w-48">Name
+      <input name="name" required placeholder="City business license renewal"
+             class="block w-full border rounded px-2 py-1.5 mt-1"></label>
+    <label class="block">Due
+      <input type="date" name="due_date" required class="block border rounded px-2 py-1.5 mt-1"></label>
+    <label class="block">Category
+      <select name="category" class="block border rounded px-2 py-1.5 mt-1">
+        {% for c in ["tax", "filing", "renewal", "labor", "insurance", "other"] %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="block">Repeats
+      <select name="recurrence" class="block border rounded px-2 py-1.5 mt-1">
+        {% for r in ["none", "monthly", "quarterly", "annual"] %}
+        <option value="{{ r }}">{{ r }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="block">Jurisdiction
+      <input name="jurisdiction" placeholder="US-WA" class="block border rounded px-2 py-1.5 mt-1 w-24"></label>
+    <label class="block">Notice (days)
+      <input type="number" min="0" name="notice_days" value="30"
+             class="block border rounded px-2 py-1.5 mt-1 w-20"></label>
+    <button class="bg-slate-900 text-white rounded px-4 py-2 hover:bg-slate-700">Add</button>
+  </form>
+</div>
+
+<div class="max-w-5xl bg-white rounded-xl shadow p-4">
+  {% if not obligations %}<p class="text-sm text-slate-400">No open duties — seed the US basics or add one.</p>
+  {% else %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400">
+      <th class="py-1">Duty</th><th>Category</th><th>Jurisdiction</th><th>Due</th>
+      <th>Days left</th><th>Repeats</th><th></th></tr></thead>
+    <tbody>
+    {% for o in obligations %}
+      <tr class="border-t {% if o.id in due_ids %}bg-amber-50{% endif %}">
+        <td class="py-2 font-medium">{{ o.name }}
+          {% if o.source == 'seed' %}<span class="ml-1 text-xs bg-slate-100 text-slate-500 rounded px-1.5 py-0.5">seed</span>{% endif %}</td>
+        <td class="text-slate-500">{{ o.category }}</td>
+        <td class="text-slate-500">{{ o.jurisdiction or '—' }}</td>
+        <td>{{ o.due_date }}</td>
+        <td>
+          {% set left = days_left[o.id] %}
+          {% if left < 0 %}<span class="text-rose-600 font-medium">{{ -left }}d overdue</span>
+          {% elif o.id in due_ids %}<span class="text-amber-600 font-medium">{{ left }}d ⚠</span>
+          {% else %}{{ left }}d{% endif %}
+        </td>
+        <td class="text-slate-400">{{ o.recurrence if o.recurrence != 'none' else '—' }}</td>
+        <td class="text-right whitespace-nowrap">
+          <form method="post" action="/obligations/{{ o.id }}/complete" class="inline">
+            <button class="bg-emerald-600 text-white rounded px-3 py-1 hover:bg-emerald-700">Done</button></form>
+          <form method="post" action="/obligations/{{ o.id }}/dismiss" class="inline">
+            <button class="text-slate-400 hover:text-rose-600 underline">Dismiss</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

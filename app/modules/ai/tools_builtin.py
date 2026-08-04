@@ -804,6 +804,48 @@ def _check_affordability(session: Session, user: User, args: dict) -> dict:
     }
 
 
+# ---- compliance calendar ----------------------------------------------------
+
+def _upcoming_deadlines(session: Session, user: User, args: dict) -> dict:
+    from ..obligations import service as obligations
+    within = args.get("within_days")
+    due = obligations.upcoming(
+        session, within_days=int(within) if within not in (None, "") else None)
+    return {"count": len(due), "deadlines": due,
+            "note": "Empty list means nothing is inside its notice window."}
+
+
+def _add_obligation(session: Session, user: User, args: dict) -> dict:
+    from ..obligations import service as obligations
+    try:
+        o = obligations.add_obligation(
+            session, name=str(args.get("name", "")),
+            due_date=date.fromisoformat(str(args.get("due_date", ""))),
+            category=str(args.get("category") or "other"),
+            jurisdiction=args.get("jurisdiction") or None,
+            recurrence=str(args.get("recurrence") or "none"),
+            notice_days=int(args.get("notice_days") or 30),
+            created_by=user.id)
+    except (ValueError, TypeError) as exc:
+        return {"error": str(exc)}
+    return {"obligation_id": o.id, "name": o.name, "due_date": str(o.due_date),
+            "recurrence": o.recurrence}
+
+
+def _complete_obligation(session: Session, user: User, args: dict) -> dict:
+    from ..obligations import service as obligations
+    try:
+        o = obligations.complete_obligation(
+            session, int(args.get("obligation_id") or 0), user=user,
+            notes=args.get("notes"))
+    except (ValueError, TypeError) as exc:
+        return {"error": str(exc)}
+    out = {"obligation_id": o.id, "name": o.name, "status": o.status}
+    if o.recurrence != "none":
+        out["note"] = "recurring duty — the next occurrence was scheduled"
+    return out
+
+
 # ---- autonomy policies ------------------------------------------------------
 
 def _propose_autonomy_policy(session: Session, user: User, args: dict) -> dict:
@@ -1669,6 +1711,38 @@ _BUILTIN = [
         parameters={"type": "object", "properties": {"contract_id": {"type": "integer"}},
                     "required": ["contract_id"]},
         handler=_end_contract, scope="finance", level=2,
+    ),
+    Tool(
+        name="upcoming_deadlines",
+        description=("Compliance deadlines inside their notice window (tax returns, "
+                     "annual reports, renewals, labor filings) with days left. USE THIS "
+                     "for '이번에 뭐 신고해야 돼 / 마감 뭐 남았어 / what filings are due / "
+                     "upcoming deadlines'."),
+        parameters={"type": "object", "properties": {"within_days": {"type": "integer"}}},
+        handler=_upcoming_deadlines, scope="finance", level=2,
+    ),
+    Tool(
+        name="add_obligation",
+        description=("Add a dated compliance duty to the calendar (name, due_date "
+                     "YYYY-MM-DD, category tax|filing|renewal|labor|insurance|other, "
+                     "recurrence none|monthly|quarterly|annual). Pass ONLY dates the "
+                     "user stated."),
+        parameters={"type": "object", "properties": {
+            "name": {"type": "string"}, "due_date": {"type": "string"},
+            "category": {"type": "string"}, "jurisdiction": {"type": "string"},
+            "recurrence": {"type": "string"}, "notice_days": {"type": "integer"}},
+            "required": ["name", "due_date"]},
+        handler=_add_obligation, scope="finance", level=2,
+    ),
+    Tool(
+        name="complete_obligation",
+        description=("Mark a compliance duty DONE by obligation_id (recurring duties "
+                     "schedule their next occurrence automatically). Complete ONLY "
+                     "duties the user explicitly said are filed/done."),
+        parameters={"type": "object", "properties": {
+            "obligation_id": {"type": "integer"}, "notes": {"type": "string"}},
+            "required": ["obligation_id"]},
+        handler=_complete_obligation, scope="finance", level=3,
     ),
     Tool(
         name="propose_autonomy_policy",
