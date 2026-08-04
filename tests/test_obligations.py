@@ -48,7 +48,19 @@ def test_completing_recurring_duty_spawns_next(session):
     open_ = svc.list_obligations(session)
     assert len(open_) == 1
     assert open_[0].name == "Form 941"
-    assert open_[0].due_date == date(2027, 1, 28)  # +3mo, clamped to day 28
+    assert open_[0].due_date == date(2027, 1, 31)  # +3mo, month-end preserved
+
+
+def test_advance_preserves_month_end_and_clamps_short_months(session):
+    # month-end stays month-end across quarters (941 cadence)
+    assert svc._advance(date(2026, 10, 31), "quarterly") == date(2027, 1, 31)
+    assert svc._advance(date(2027, 1, 31), "quarterly") == date(2027, 4, 30)
+    # Feb clamps but a mid-month day is untouched
+    assert svc._advance(date(2026, 11, 30), "quarterly") == date(2027, 2, 28)
+    assert svc._advance(date(2028, 11, 30), "quarterly") == date(2029, 2, 28)
+    assert svc._advance(date(2026, 1, 15), "monthly") == date(2026, 2, 15)
+    # annual leap-day case
+    assert svc._advance(date(2028, 2, 29), "annual") == date(2029, 2, 28)
 
 
 def test_dismiss_spawns_nothing(session):

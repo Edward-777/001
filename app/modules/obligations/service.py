@@ -61,18 +61,23 @@ def add_obligation(
 
 
 def _advance(due: date, recurrence: str) -> date:
+    """Next occurrence, preserving the day of month. A day past the target
+    month's end clamps to that month's last day, so month-end duties (941 due
+    Oct 31 -> Jan 31) stay on month-end instead of drifting to the 28th."""
+    from calendar import monthrange
+
     if recurrence == str(Recurrence.MONTHLY):
-        year, month = (due.year, due.month + 1) if due.month < 12 else (due.year + 1, 1)
-        day = min(due.day, 28)  # stay valid in February
-        return date(year, month, day)
-    if recurrence == str(Recurrence.QUARTERLY):
-        month = due.month + 3
-        year = due.year + (month - 1) // 12
-        month = (month - 1) % 12 + 1
-        return date(year, month, min(due.day, 28))
-    if recurrence == str(Recurrence.ANNUAL):
-        return date(due.year + 1, due.month, min(due.day, 28))
-    raise ValueError("not recurring")
+        months = 1
+    elif recurrence == str(Recurrence.QUARTERLY):
+        months = 3
+    elif recurrence == str(Recurrence.ANNUAL):
+        months = 12
+    else:
+        raise ValueError("not recurring")
+    month = due.month + months
+    year = due.year + (month - 1) // 12
+    month = (month - 1) % 12 + 1
+    return date(year, month, min(due.day, monthrange(year, month)[1]))
 
 
 def complete_obligation(session: Session, obligation_id: int, *,
