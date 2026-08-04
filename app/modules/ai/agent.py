@@ -395,7 +395,10 @@ def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
                 result["action_failed"] = True
                 result["instruction"] = ("THIS ACTION FAILED — nothing was recorded. Tell "
                                          "the user it failed and why. Do NOT claim it "
-                                         "succeeded or invent an outcome.")
+                                         "succeeded or invent an outcome. Do NOT "
+                                         "compensate by recording, confirming, or "
+                                         "creating something else the user did not ask "
+                                         "for.")
             if name in _DRAFT_CREATE_TOOLS and not failed:
                 state["drafted"] = True
             used.append({"tool": name, "args": args, "result": result,
