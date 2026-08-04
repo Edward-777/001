@@ -59,6 +59,11 @@ def test_propose_validates_and_fails_closed(session, admin):
     with pytest.raises(ValueError, match="unknown action_scope"):
         svc.propose_policy(session, name="x", action_scope="world.domination",
                            conditions={"max_amount": 1})
+    # an allowlist alone is unbounded in dollars — a money bound is mandatory
+    # (battery G3: the model proposed exactly this when no limit was stated)
+    with pytest.raises(ValueError, match="money bound"):
+        svc.propose_policy(session, name="x", action_scope="spend.approve_bill",
+                           conditions={"vendor_allowlisted": True})
 
 
 def test_draft_grants_nothing_until_human_activates(session, admin):

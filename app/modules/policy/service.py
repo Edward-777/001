@@ -51,6 +51,14 @@ def propose_policy(session: Session, *, name: str, action_scope: str,
     if not conditions:
         raise ValueError("an envelope with no conditions grants unbounded "
                          "autonomy — refused")
+    # A spend envelope without a money bound is unbounded in the dimension that
+    # matters most. Live incident (battery G3): asked to 'auto-approve Acme
+    # invoices' with no limit stated, the model proposed vendor_allowlisted
+    # alone — and this accepted it. Money bounds are now mandatory.
+    if not any(k in conditions for k in ("max_amount", "daily_cap")):
+        raise ValueError("a spend envelope needs a money bound — include "
+                         "max_amount and/or daily_cap (ask the user for the "
+                         "limit; never invent one)")
     for key in ("max_amount", "daily_cap"):
         if key in conditions and float(conditions[key]) <= 0:
             raise ValueError(f"{key} must be > 0")

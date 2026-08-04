@@ -1658,7 +1658,10 @@ _BUILTIN = [
         description=("The user states they EXECUTED a prepared payment at the bank — "
                      "record it: posts the payment journal with their paid_date "
                      "(YYYY-MM-DD) and bank confirmation number. Never call this unless "
-                     "the user explicitly says the transfer happened."),
+                     "the user explicitly says the transfer happened. paid_date must be "
+                     "a date the user SAID — '오늘' counts, silence does not; if the "
+                     "message has no date, ASK when the transfer was executed instead "
+                     "of calling this."),
         parameters={"type": "object", "properties": {
             "instruction_id": {"type": "integer"}, "paid_date": {"type": "string"},
             "payment_ref": {"type": "string"}},

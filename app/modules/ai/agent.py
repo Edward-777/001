@@ -167,9 +167,20 @@ def _has_chinese(text: str) -> bool:
 
 def _has_foreign_script(text: str) -> bool:
     """Scripts qwen has been observed drifting into that are never a valid reply
-    language here: Chinese (see _has_chinese) and Cyrillic (a full Russian reply
-    to a Korean budget question was caught by the tool-selection battery)."""
-    return _has_chinese(text) or sum(1 for ch in text if "Ѐ" <= ch <= "ӿ") > 3
+    language here: Chinese (see _has_chinese), Cyrillic (a full Russian reply to
+    a Korean budget question), and Thai (a full Thai reply to an ENGLISH stock
+    question, 2026-08-04 battery) — each caught live, so the net is now every
+    script block qwen could plausibly reach that isn't Latin or Hangul."""
+    if _has_chinese(text):
+        return True
+    suspicious = sum(
+        1 for ch in text
+        if "Ѐ" <= ch <= "ӿ"          # Cyrillic
+        or "฀" <= ch <= "๿"  # Thai
+        or "ऀ" <= ch <= "ॿ"  # Devanagari
+        or "؀" <= ch <= "ۿ"  # Arabic
+    )
+    return suspicious > 3
 
 
 def _enforce_reply_language(reply: str, message: str, messages: list[dict], chat) -> str:
