@@ -9,6 +9,7 @@ from app.core.db import Base
 from app.modules import ai, approval, auth, hr  # noqa: F401
 from app.modules.ai import agent
 from app.modules.auth import service as auth_svc
+from app.modules.auth.models import Role
 
 
 @pytest.fixture
@@ -38,6 +39,43 @@ class RetryingChat:
                 "name": "create_purchase_request",
                 "arguments": {"title": "GPU servers", "qty": 2}}}]}  # no price -> error
         return {"content": "What is the unit price for the servers?"}
+
+
+class SubstitutingChat:
+    """Fails a pay, then tries to 'succeed' with a different money write —
+    the live E1 incident (fabricated bank ref on an unrelated instruction)."""
+
+    def __init__(self):
+        self.step = 0
+
+    def __call__(self, messages, tools=None):
+        self.step += 1
+        if self.step == 1:
+            return {"content": "", "tool_calls": [{"function": {
+                "name": "pay_vendor",
+                "arguments": {"bill_no": "BILL-2026-9999", "amount": 500}}}]}
+        if self.step == 2:
+            return {"content": "", "tool_calls": [{"function": {
+                "name": "confirm_payment_executed",
+                "arguments": {"instruction_id": 1, "paid_date": "2026-08-04",
+                              "payment_ref": "PaymentRef123"}}}]}
+        return {"content": "The bill was not found; nothing was recorded."}
+
+
+def test_failed_money_write_blocks_substitute_money_writes(session):
+    """After one money-write tool fails in a turn, a DIFFERENT money-write
+    tool is refused (same-tool batch retries stay allowed)."""
+    admin = auth_svc.create_user(session, name="Adm", email="a@x", password="pw",
+                                 role=Role.ADMIN)
+    out = agent.run(session, admin, "Pay vendor bill BILL-2026-9999 for $500.",
+                    chat=SubstitutingChat())
+    pay = [c for c in out["tool_calls"] if c["tool"] == "pay_vendor"]
+    confirm = [c for c in out["tool_calls"]
+               if c["tool"] == "confirm_payment_executed"]
+    assert pay and not pay[0]["ok"]
+    assert confirm and not confirm[0]["ok"]
+    assert "blocked" in str(confirm[0]["result"])
+    assert "pay_vendor" in str(confirm[0]["result"])
 
 
 def test_failing_tool_is_withdrawn_and_model_asks(session, user):

@@ -116,6 +116,25 @@ _SUBMIT_BLOCKED = {
              "they confirm in their next message."
 }
 
+# The substitution gate. Live incident (battery E1, 3/3 runs identical): asked
+# to pay a bill that doesn't exist, pay_vendor failed honestly — and the model
+# then confirmed an UNRELATED prepared payment instruction with a fabricated
+# bank reference and reported success. The failure stamp told it not to; prompt
+# levers don't hold. Rule: once one money-write tool fails in a turn, a
+# DIFFERENT money-write tool is refused for the rest of the turn. Same-tool
+# retries stay allowed (legitimate batches: bill 2 of 3 failing must not block
+# bill 3), and reads are never touched.
+_MONEY_WRITE_TOOLS = {
+    "pay_vendor", "confirm_payment_executed", "prepare_payment_instructions",
+    "record_vendor_bill", "record_direct_bill", "receive_customer_payment",
+}
+_SUBSTITUTION_BLOCKED = (
+    "blocked: %s failed earlier in this turn. Report that failure to the user "
+    "and stop — do not record a different money action in its place. If the "
+    "user separately asked for this action, ask them to confirm it in their "
+    "next message."
+)
+
 
 def _emit(on_event, **payload) -> None:
     """Report progress to an optional observer (live UI streaming). Observers are
@@ -379,8 +398,13 @@ def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
             args = _arguments(call)
             _emit(on_event, type="tool_start", tool=name)
             started = time.perf_counter()
+            failed_money = state.setdefault("failed_money_tools", set())
             if name in _SUBMIT_TOOLS and state["drafted"]:
                 result = dict(_SUBMIT_BLOCKED)
+            elif (name in _MONEY_WRITE_TOOLS
+                  and any(f != name for f in failed_money)):
+                other = next(f for f in failed_money if f != name)
+                result = {"error": _SUBSTITUTION_BLOCKED % other}
             else:
                 result = registry.execute(name, args, session=session, user=user)
             elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -401,6 +425,8 @@ def _tool_loop(session: Session, user: User, message: str, messages: list[dict],
                                          "for.")
             if name in _DRAFT_CREATE_TOOLS and not failed:
                 state["drafted"] = True
+            if name in _MONEY_WRITE_TOOLS and failed:
+                failed_money.add(name)
             used.append({"tool": name, "args": args, "result": result,
                          "ok": not failed, "ms": elapsed_ms})
             _emit(on_event, type="tool", tool=name, ok=not failed, ms=elapsed_ms)
