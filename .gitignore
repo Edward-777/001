@@ -30,3 +30,4 @@ Thumbs.db
 # Local DB backups and machine-local Claude config
 dev.db.*
 .claude/
+uvicorn-*.log
