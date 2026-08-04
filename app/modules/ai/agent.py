@@ -322,6 +322,16 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
     final = chat([*base_messages, compose, user_turn], tools=None)
     reply = _enforce_reply_language(final.get("content", "") or "", message,
                                     [*base_messages, compose, user_turn], chat)
+    # Honesty backstop, plan edition: 'say so plainly' is an instruction, and
+    # instructions get ignored (observed: 'I created the draft' composed over a
+    # FAILED step). Failed steps are stamped into the reply deterministically.
+    failed_titles = [p["title"] for p in plan if p["status"] == "failed"]
+    if failed_titles and not re.search(
+            r"fail|could ?n[o']t|unable|didn['’]?t|not complet|실패|못했|않았",
+            reply, re.IGNORECASE):
+        banner = "; ".join(f"'{t}'" for t in failed_titles)
+        reply = (f"⚠ NOT completed — the step {banner} failed and nothing was "
+                 f"recorded for it.\n\n{reply}")
     return {"reply": reply, "tool_calls": used, "plan": plan}
 
 

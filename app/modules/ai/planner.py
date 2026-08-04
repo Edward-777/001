@@ -33,6 +33,21 @@ _CLOSE_PLAN = [
     "Generate the month-end closing package report",
 ]
 
+# 'Create a purchase request ... and submit it for approval' — the second half
+# is ALWAYS blocked by maker-checker (no draft is submitted in the turn that
+# created it), and LLM plans for this message sent qwen into a vendor/PO tool
+# spiral instead of create_purchase_request (live incident, 2026-08-04). One
+# deterministic step, request-creation tools only; the compose step explains
+# that submission waits for the human.
+_PR_SUBMIT_RE = re.compile(
+    r"(purchase\s+request|구매\s*(요청|신청)).{0,80}(submit|approval|승인|제출)"
+    r"|(submit|제출).{0,80}(purchase\s+request|구매\s*(요청|신청))",
+    re.IGNORECASE | re.DOTALL)
+
+_PR_PLAN = [
+    "Create the purchase request draft with the user's items, quantities and prices",
+]
+
 # Template steps come with a tool allowlist: the step is deterministic code, so
 # the tools it may touch are too. Live incident (review test, 2026-08-04): given
 # the full 65-tool surface inside a close plan, qwen2.5:14b wandered through
@@ -44,6 +59,10 @@ _STEP_TOOLS: dict[str, list[str]] = {
     _CLOSE_PLAN[0]: ["get_trial_balance"],
     _CLOSE_PLAN[1]: ["get_anomalies", "list_open_bills", "budget_vs_actual"],
     _CLOSE_PLAN[2]: ["generate_report"],
+    # No submit tool on purpose: the draft is created, submission is the
+    # human's move (maker-checker) — the model literally cannot jump the gate.
+    _PR_PLAN[0]: ["create_purchase_request", "list_products", "get_stock",
+                  "list_vendors"],
 }
 
 
@@ -64,6 +83,11 @@ _PLAN_PROMPT = (
     "- A single question or single action -> {\"steps\": []}\n"
     "- A genuinely multi-action request -> 2 to 5 short imperative steps, written "
     "in the user's language, each step one concrete action.\n"
+    "- Each step must be a business action the system can execute directly "
+    "(create the purchase request / approve X / record Y / report Z) and must "
+    "carry the user's stated items, quantities and amounts verbatim.\n"
+    "- Never plan paperwork: no 'draft a document', 'review for accuracy', "
+    "'verify details' steps.\n"
     "Never invent work the user did not ask for. ONLY the JSON."
 )
 
@@ -71,6 +95,8 @@ _PLAN_PROMPT = (
 def _template_plan(message: str) -> list[str] | None:
     if _CLOSE_RE.search(message or ""):
         return list(_CLOSE_PLAN)
+    if _PR_SUBMIT_RE.search(message or ""):
+        return list(_PR_PLAN)
     return None
 
 

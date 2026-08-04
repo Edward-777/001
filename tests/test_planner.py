@@ -20,6 +20,23 @@ def test_month_close_gets_template_plan_without_llm():
     assert planner.maybe_plan("6월 마감 진행해줘", chat=boom) == planner._CLOSE_PLAN
 
 
+def test_create_and_submit_request_gets_the_draft_only_template():
+    """'purchase request … submit/approval' is a template: one deterministic
+    draft step whose allowlist has NO submit tool — the maker-checker gate is
+    structural, not a prompt. (Live incident: the LLM plan for this message
+    sent the model into a vendor/PO spiral and a fabricated success claim.)"""
+    def boom(*a, **k):
+        raise AssertionError("LLM called for a template intent")
+    for msg in ("Create a purchase request for 10 widgets at $5 each and "
+                "submit it for approval.",
+                "구매 요청 하나 올리고 승인까지 제출해줘"):
+        steps = planner.maybe_plan(msg, chat=boom)
+        assert steps == planner._PR_PLAN
+        allowed = planner.tools_for_step(steps[0])
+        assert "create_purchase_request" in allowed
+        assert "submit_request_for_approval" not in allowed
+
+
 def test_template_steps_carry_tool_allowlists():
     """Every close-template step restricts the tool surface, and the write
     tools that fabricated obligations in the live incident are NOT on any
@@ -143,8 +160,10 @@ def test_maker_checker_spans_plan_steps(session, user):
         # final compose
         {"content": "Draft created; submission awaits your confirmation."},
     ])
+    # phrased to dodge the purchase-request TEMPLATE on purpose — this test
+    # pins the maker-checker gate for LLM-planned steps
     out = agent.run(session, user,
-                    "Create a purchase request for 2 desks at $100 and submit it",
+                    "Order 2 desks at $100 each and then send that on for sign-off",
                     chat=chat)
     submit_calls = [c for c in out["tool_calls"]
                     if c["tool"] == "submit_request_for_approval"]
