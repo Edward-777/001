@@ -1797,8 +1797,10 @@ _BUILTIN = [
         name="add_obligation",
         description=("Add a dated compliance duty to the calendar (name, due_date "
                      "YYYY-MM-DD, category tax|filing|renewal|labor|insurance|other, "
-                     "recurrence none|monthly|quarterly|annual). Pass ONLY dates the "
-                     "user stated."),
+                     "recurrence none|monthly|quarterly|annual). USE ONLY when the "
+                     "user explicitly asked to register this duty — NEVER as a side "
+                     "effect of a close, report, or plan step. Pass ONLY names and "
+                     "dates the user stated; if the date is missing, ask."),
         parameters={"type": "object", "properties": {
             "name": {"type": "string"}, "due_date": {"type": "string"},
             "category": {"type": "string"}, "jurisdiction": {"type": "string"},

@@ -20,6 +20,18 @@ def test_month_close_gets_template_plan_without_llm():
     assert planner.maybe_plan("6월 마감 진행해줘", chat=boom) == planner._CLOSE_PLAN
 
 
+def test_template_steps_carry_tool_allowlists():
+    """Every close-template step restricts the tool surface, and the write
+    tools that fabricated obligations in the live incident are NOT on any
+    step's list. LLM-planned titles get no restriction."""
+    lists = [planner.tools_for_step(t) for t in planner._CLOSE_PLAN]
+    assert all(lst for lst in lists)
+    allowed = {name for lst in lists for name in lst}
+    assert "get_anomalies" in allowed and "generate_report" in allowed
+    assert not any(n.startswith(("add_", "create_", "register_")) for n in allowed)
+    assert planner.tools_for_step("Register the vendor") is None
+
+
 def test_simple_question_skips_planning_entirely():
     def boom(*a, **k):
         raise AssertionError("LLM planning call for a simple question")

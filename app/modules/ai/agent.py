@@ -281,13 +281,21 @@ def run(session: Session, user: User, message: str, *, history: list[dict] | Non
             "role": "system",
             "content": (f"PLAN for the user's request:\n{numbered}\n"
                         f"Results of completed steps:\n{done}\n"
-                        f"Execute ONLY step {i} now: '{title}'. When it is done, state "
-                        "its outcome in one or two sentences (include key figures/ids)."),
+                        f"Execute ONLY step {i} now: '{title}'. Use the fewest tool "
+                        "calls that complete this step — do not explore beyond it, and "
+                        "NEVER create/add/register anything unless this step explicitly "
+                        "says to. When it is done, state its outcome in one or two "
+                        "sentences (include key figures/ids)."),
         }
         messages = [*base_messages, step_directive, user_turn]
+        # Template steps carry a tool allowlist (planner._STEP_TOOLS) — the
+        # step can only call what the deterministic plan says it needs.
+        allowed = planner.tools_for_step(title)
+        step_tools = ([t for t in tools if t["function"]["name"] in allowed]
+                      if allowed is not None else tools)
         marker = len(used)
         _emit(on_event, type="step", index=i - 1, status="running")
-        result_text = _tool_loop(session, user, message, messages, tools, chat,
+        result_text = _tool_loop(session, user, message, messages, step_tools, chat,
                                  max_iters, used, state, on_event=on_event)
         step_calls = used[marker:]
         step_failed = result_text is None or (

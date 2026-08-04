@@ -72,11 +72,18 @@ def test_procure_to_pay_chain(session, setup):
 
 
 def test_amount_comes_from_receipt_not_fabricated(session, setup):
-    """record_vendor_bill ignores any model-supplied amount — it derives from the
-    receipt, so the AP figure can never be a hallucinated number."""
+    """A model-supplied amount can never reach AP: the tool declares no such
+    argument, so the registry rejects the call loudly (better than the old
+    silent-ignore), and a clean call derives the figure from the receipt."""
     r = _run(session, setup.admin, "receive_inventory", {"sku": "W1", "qty": 10, "unit_cost": 7})
+    inbound_no = r["inbound_no"]
+    out = registry.execute("record_vendor_bill",
+                           {"vendor": "Acme", "against_inbound_no": inbound_no,
+                            "amount": 99999},
+                           session=session, user=setup.admin)
+    assert "amount" in out.get("error", "")  # fabricated arg refused, not ignored
     r = _run(session, setup.admin, "record_vendor_bill",
-             {"vendor": "Acme", "against_inbound_no": r["inbound_no"], "amount": 99999})
+             {"vendor": "Acme", "against_inbound_no": inbound_no})
     assert float(r["amount"]) == 70  # 10 * 7, from the receipt — not 99999
 
 

@@ -69,6 +69,16 @@ class Registry:
             return {"error": f"unknown tool: {name}"}
         if not self._allowed(tool, user):
             return {"error": f"permission denied: requires {tool.scope} level {tool.level}"}
+        # Reject argument names the tool never declared, instead of letting the
+        # handler silently default them away. Live incident: the model invented
+        # generate_report(report_type=..., month=12, year=2023) and got back the
+        # CURRENT month's closing package as if that were the answer. Unknown
+        # args now fail loudly with the accepted names so the model can retry.
+        declared = set((tool.parameters or {}).get("properties") or {})
+        unknown = set(args or {}) - declared
+        if unknown:
+            return {"error": f"unknown argument(s) {sorted(unknown)} — "
+                             f"{name} accepts: {sorted(declared) or 'no arguments'}"}
         try:
             return {"result": tool.handler(session, user, args or {})}
         except Exception as exc:  # surface as data, not a crash

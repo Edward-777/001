@@ -33,6 +33,25 @@ _CLOSE_PLAN = [
     "Generate the month-end closing package report",
 ]
 
+# Template steps come with a tool allowlist: the step is deterministic code, so
+# the tools it may touch are too. Live incident (review test, 2026-08-04): given
+# the full 65-tool surface inside a close plan, qwen2.5:14b wandered through
+# ~27 calls and REGISTERED fabricated compliance obligations with 2023 dates —
+# twice, despite 'USE ONLY when the user asked' in the tool description and
+# 'NEVER create' in the step directive. Prompt levers don't hold under plan
+# pressure; the allowlist removes the pen, not the instruction.
+_STEP_TOOLS: dict[str, list[str]] = {
+    _CLOSE_PLAN[0]: ["get_trial_balance"],
+    _CLOSE_PLAN[1]: ["get_anomalies", "list_open_bills", "budget_vs_actual"],
+    _CLOSE_PLAN[2]: ["generate_report"],
+}
+
+
+def tools_for_step(title: str) -> list[str] | None:
+    """Allowlisted tool names for a template step; None = no restriction
+    (LLM-planned steps keep the full permission-filtered surface)."""
+    return _STEP_TOOLS.get(title)
+
 # ---- LLM planning, deterministically gated --------------------------------
 
 _MULTI_MARKERS = (" and ", " then ", ", ", " after ", "그리고", "하고", "한 다음",
