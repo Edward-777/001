@@ -114,8 +114,9 @@ def start_scheduler():
     sch.add_job(_obligation_tick, trigger="cron", hour=7, minute=15,
                 id="obligation_scan")
     # Mailbox poll — email is an intake surface, so it runs like the fleet loop.
-    sch.add_job(_mail_tick, trigger="interval",
-                minutes=settings.mail_poll_minutes, id="mail_poll")
+    if settings.mail_enabled:
+        sch.add_job(_mail_tick, trigger="interval",
+                    minutes=settings.mail_poll_minutes, id="mail_poll")
     # Monthly close proposal — 1st of the month, 06:00 (closes the prior month).
     sch.add_job(_month_close_tick, trigger="cron", day=1, hour=6, minute=0, id="month_close")
     sch.start()

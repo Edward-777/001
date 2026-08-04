@@ -26,7 +26,7 @@ the guardrails and a human decision.</p>
   {{ node(10, 48, 175, 56, '💬 Founder chat', s.conversations ~ ' conversations') }}
   {{ node(10, 122, 175, 56, '📄 Document upload', s.documents ~ ' documents') }}
   {{ node(10, 196, 175, 56, '🏦 Bank statements', 'auto-reconciled') }}
-  {{ node(10, 270, 175, 56, '📨 Email intake', s.inbound_emails ~ ' ingested · drafts only') }}
+  {% if settings.mail_enabled %}{{ node(10, 270, 175, 56, '📨 Email intake', s.inbound_emails ~ ' ingested · drafts only') }}{% endif %}
 
   <!-- ── column: the AI runtime (all local) ─────────────────────────── -->
   <rect x="225" y="20" width="310" height="428" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>

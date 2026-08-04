@@ -26,6 +26,9 @@ class Tool:
     handler: Callable[[Session, User, dict], object]
     scope: str | None = None  # required permission scope (None = any logged-in user)
     level: int = 1
+    # Feature flag, checked at call time (None = always on). A disabled tool is
+    # invisible in schemas_for and behaves as unknown in execute.
+    enabled: Callable[[], bool] | None = None
     # CONTRACT: this gate enforces only scope × level (axes ① ②). The data_boundary
     # (③ axis: self/team/dept/all) depends on WHOSE record is returned, which is only
     # known inside the handler. Any tool returning PER-SUBJECT data (a person's
@@ -41,6 +44,9 @@ class Registry:
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
 
+    def _enabled(self, tool: Tool) -> bool:
+        return tool.enabled is None or tool.enabled()
+
     def _allowed(self, tool: Tool, user: User) -> bool:
         if tool.scope is None:
             return True
@@ -51,14 +57,15 @@ class Registry:
         return [
             {"type": "function", "function": {
                 "name": t.name, "description": t.description, "parameters": t.parameters}}
-            for t in self._tools.values() if self._allowed(t, user)
+            for t in self._tools.values()
+            if self._enabled(t) and self._allowed(t, user)
         ]
 
     def execute(self, name: str, args: dict, *, session: Session, user: User) -> dict:
         """Run a tool as `user`. Re-checks permission (layer 2) and never raises —
         errors come back as data the model can read."""
         tool = self._tools.get(name)
-        if tool is None:
+        if tool is None or not self._enabled(tool):
             return {"error": f"unknown tool: {name}"}
         if not self._allowed(tool, user):
             return {"error": f"permission denied: requires {tool.scope} level {tool.level}"}

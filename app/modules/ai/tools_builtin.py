@@ -21,6 +21,11 @@ from ..procurement import service as proc
 from ..sales import service as sls
 from . import rag
 from .registry import Registry, Tool
+from ...core.config import settings
+
+
+def _mail_on() -> bool:
+    return settings.mail_enabled
 
 
 def _draft_preview(req, *, detail: str) -> dict:
@@ -1841,14 +1846,14 @@ _BUILTIN = [
                      "policies from email are held for review). USE THIS for '메일 확인해줘 "
                      "/ 새 메일 있어? / check the mailbox / any new email'."),
         parameters={"type": "object", "properties": {}},
-        handler=_check_mailbox, scope="finance", level=3,
+        handler=_check_mailbox, scope="finance", level=3, enabled=_mail_on,
     ),
     Tool(
         name="list_recent_emails",
         description=("Recently ingested inbound emails with sender, matched vendor, "
                      "classification, and the fleet task each produced."),
         parameters={"type": "object", "properties": {"limit": {"type": "integer"}}},
-        handler=_list_recent_emails, scope="finance", level=2,
+        handler=_list_recent_emails, scope="finance", level=2, enabled=_mail_on,
     ),
     Tool(
         name="draft_outbound_email",
@@ -1863,7 +1868,7 @@ _BUILTIN = [
             "related_type": {"type": "string"}, "related_id": {"type": "integer"},
             "reply_to_email_id": {"type": "integer"}},
             "required": ["to", "subject", "body"]},
-        handler=_draft_outbound_email, scope="finance", level=2,
+        handler=_draft_outbound_email, scope="finance", level=2, enabled=_mail_on,
     ),
     Tool(
         name="set_budget",

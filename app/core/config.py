@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     backup_dir: str = "backups"
     # Fleet work loop — how often the single loop drains the task queue (minutes).
     fleet_loop_minutes: int = 10
+    # Email intake/outbound — OFF until it has been tested end-to-end against a
+    # real mailbox before launch. Code stays dormant; flip to re-attach.
+    mail_enabled: bool = False
     # Mailbox root for the filesystem mail provider (inbox/ processed/ outbox/).
     # Real IMAP/SMTP providers are a private-deployment concern.
     mail_dir: str = "mailbox"

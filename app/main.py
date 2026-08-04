@@ -84,7 +84,6 @@ def create_app() -> FastAPI:
     from .web.contracts_routes import router as contracts_router
     from .web.fleet_routes import router as fleet_router
     from .web.leave_routes import router as leave_router
-    from .web.mail_routes import router as mail_router
     from .web.main_routes import router as main_router
     from .web.map_routes import router as map_router
     from .web.obligation_routes import router as obligation_router
@@ -103,7 +102,10 @@ def create_app() -> FastAPI:
     app.include_router(leave_router)
     app.include_router(contracts_router)
     app.include_router(budget_router)
-    app.include_router(mail_router)
+    if settings.mail_enabled:  # dormant until tested against a real mailbox
+        from .web.mail_routes import router as mail_router
+
+        app.include_router(mail_router)
     app.include_router(policy_router)
     app.include_router(obligation_router)
     app.include_router(payment_router)

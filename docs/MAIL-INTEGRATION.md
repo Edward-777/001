@@ -1,5 +1,10 @@
 # Mail Integration Plan — from the filesystem simulator to real mailboxes
 
+> **Status: dormant.** The whole mail surface ships behind
+> `settings.mail_enabled` (default **off**): no `/mail` routes, no nav entry,
+> no scheduler poll, no AI tools. It is re-attached (flag flipped on) only
+> after the pre-launch live test against a real mailbox passes.
+
 > The public reference implementation ships `FilesystemMailbox` (drop `.eml`
 > into `mailbox/inbox/`, sent mail lands in `mailbox/outbox/` stamped
 > `SENT_SIMULATED`). This document is the plan for connecting real mailboxes.

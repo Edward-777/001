@@ -69,8 +69,10 @@ def test_send_is_single_shot_and_draft_only(session, admin, tmp_path):
         svc.send_outbound(session, canceled.id, user_id=admin.id, provider=box)
 
 
-def test_ai_tool_drafts_only_and_never_sends(session, admin):
+def test_ai_tool_drafts_only_and_never_sends(session, admin, monkeypatch):
+    from app.core.config import settings
     from app.modules.ai.registry import registry
+    monkeypatch.setattr(settings, "mail_enabled", True)
     out = registry.execute("draft_outbound_email",
                            {"to": "ap@acme.com", "subject": "Payment delay",
                             "body": "We will confirm the schedule shortly."},

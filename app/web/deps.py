@@ -13,11 +13,13 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 
+from ..core.config import settings
 from ..core.db import get_session
 from ..modules.auth import service as auth
 from ..modules.auth.models import User
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+templates.env.globals["settings"] = settings  # feature flags in templates
 
 # Turn report-download URLs in assistant text into real clickable links. The text
 # comes from the LLM, so we FIRST html-escape everything (XSS guard) and only then

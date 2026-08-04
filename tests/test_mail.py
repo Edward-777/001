@@ -167,11 +167,13 @@ def test_filesystem_mailbox_polls_and_consumes(tmp_path, session):
 # ---- AI tools ----------------------------------------------------------------
 
 def test_mail_tools_gated_and_working(session, tmp_path, monkeypatch):
+    from app.core.config import settings
     from app.modules.ai.registry import registry
     from app.modules.auth import service as auth_svc
     from app.modules.auth.models import DataBoundary, Role as URole, Scope
     from app.modules.mail import service as mail_svc
 
+    monkeypatch.setattr(settings, "mail_enabled", True)
     box = FilesystemMailbox(tmp_path)
     box.ensure_dirs()
     (box.inbox / "m.eml").write_bytes(_eml(message_id="<tool@x>"))
@@ -188,3 +190,27 @@ def test_mail_tools_gated_and_working(session, tmp_path, monkeypatch):
     lst = registry.execute("list_recent_emails", {}, session=session,
                            user=admin)["result"]
     assert lst["count"] == 1
+
+
+# ---- feature flag (mail ships dormant) --------------------------------------
+
+def test_mail_is_off_by_default(session):
+    """Until the pre-launch live test, mail is detached everywhere: no AI
+    tools, no /mail routes. settings.mail_enabled=True re-attaches it."""
+    from app.core.config import settings
+    from app.main import app
+    from app.modules.ai.registry import registry
+    from app.modules.auth import service as auth_svc
+    from app.modules.auth.models import Role as URole
+
+    assert settings.mail_enabled is False
+    admin = auth_svc.create_user(session, name="Adm2", email="a2@x",
+                                 password="pw", role=URole.ADMIN)
+    for name in ("check_mailbox", "list_recent_emails", "draft_outbound_email"):
+        out = registry.execute(name, {}, session=session, user=admin)
+        assert out == {"error": f"unknown tool: {name}"}
+    offered = [t["function"]["name"] for t in registry.schemas_for(admin)]
+    assert not any(n in offered for n in
+                   ("check_mailbox", "list_recent_emails", "draft_outbound_email"))
+    assert not any(getattr(r, "path", "").startswith("/mail")
+                   for r in app.routes)
