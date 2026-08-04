@@ -18,12 +18,18 @@ product — the scope is deliberate (see [Scope](#scope-what-this-repo-is-and-is
 
 **At a glance**
 
-- **58 permission-aware AI tools** — every tool is a thin wrapper over the same
+- **68 permission-aware AI tools** — every tool is a thin wrapper over the same
   service layer the human UI calls, constrained by the caller's permissions and
   re-checked at execution
-- **358 automated tests** (CI also proves a fresh-PostgreSQL install from
+- **404 automated tests** (CI also proves a fresh-PostgreSQL install from
   migrations alone) plus a **live-model behavior battery** — six axes, two
   languages, honest results ([docs/EVAL.md](docs/EVAL.md))
+- **Policy-bounded autonomy (L3)** — humans sign envelopes (amount, velocity,
+  vendor, budget conditions); inside them the system executes and leaves a
+  review card, outside them everything parks for approval; repeated rejections
+  suspend the envelope automatically
+- **Email as a governed intake** — a mailbox feeds the same pipeline as every
+  other surface: drafts only, provenance default-deny, nothing executable
 - **Procure-to-pay and order-to-cash, end to end** — through chat, with real postings
 - **Double-entry accounting** — event-driven posting, US GAAP conventions, month-end close
 - **Autonomous agent fleet** — drafts work from inbound documents; only humans post
@@ -94,6 +100,11 @@ The LLM is never a security boundary and never a source of record:
 - **Prompt-injection defense** — document content is data, not instructions
 - **Draft-first fleet** — autonomous agents produce drafts; the approval inbox
   is the single control point for posting
+- **Autonomy fails closed** — envelopes with unknown conditions grant nothing;
+  no matching envelope means today's approve-first behavior
+- **Instructions, not transfers** — the system never moves money: it prepares
+  the payment packet (payee, remit-to, reference, evidence chain); a human
+  executes at the bank and only their confirmation posts the journal
 - **Derived, never stored** — PTO used, budget actuals: always computed from
   the source records, so reports cannot drift from the books
 - **Audit everything** — every AI tool call, approval, and posting lands in the
@@ -106,9 +117,10 @@ code in this repo, every number is queried from the database at render time:
 
 ![Runtime map: inputs → local-model AI runtime → guardrail membrane → human decision → system of record, with the memory and learning feedback loops](docs/img/runtime-map.png)
 
-A **modular monolith**: 17 vertical-slice modules (auth, hr, approval,
+A **modular monolith**: 22 vertical-slice modules (auth, hr, approval,
 procurement, inventory, assets, sales, expense, bank, accounting, documents,
-ai, fleet, learning, leave, contracts, budget). Each module exposes its
+notifications, ai, fleet, learning, leave, contracts, budget, mail, policy,
+obligations, payments). Each module exposes its
 business operations through `service.py`; human routes and AI tools share
 those same service functions — so the AI has no privileged path — while
 selected read-side and relational integrations reference domain models
@@ -128,6 +140,7 @@ incidents that drove it: [docs/ADR.md](docs/ADR.md).
 | [docs/ADR.md](docs/ADR.md) | 11 architecture decision records — the WHY, with live incidents as evidence |
 | [docs/SCHEMA.md](docs/SCHEMA.md) | Every table, with the modeling decisions |
 | [docs/EVAL.md](docs/EVAL.md) | Live-model behavior battery: method, results, what it caught |
+| [docs/MAIL-INTEGRATION.md](docs/MAIL-INTEGRATION.md) | Plan for real mailbox providers behind the shipped MailProvider protocol |
 | [docs/AI-OPS.md](docs/AI-OPS.md) | Running local models reliably (GPU pinning, VRAM budget) |
 
 Earlier design-time documents are preserved in [docs/archive/](docs/archive/).
@@ -142,7 +155,7 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 358 tests
+pytest                          # 404 tests
 ```
 
 Dev uses SQLite for instant run. Production targets PostgreSQL — a fresh
@@ -177,8 +190,9 @@ datasets. Those belong to a deployment layer, not to the reference architecture.
 app/
   core/        # config, db, events (the spine), sequences, audit, base, scheduler
   modules/     # auth, hr, approval, procurement, inventory, assets, sales,
-               # expense, bank, accounting, documents, ai, fleet, learning,
-               # leave, contracts, budget
+               # expense, bank, accounting, documents, notifications, ai,
+               # fleet, learning, leave, contracts, budget, mail, policy,
+               # obligations, payments
   web/         # routes + templates (dashboard, /fleet inbox, /sales O2C, ...)
   main.py      # FastAPI app factory (single process, modular monolith)
 tests/

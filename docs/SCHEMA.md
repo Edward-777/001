@@ -699,6 +699,26 @@ Generated dynamically from double-entry journal lines (journal_lines). **Humans 
 
 - Alembic: `d92c4f7b1e03` (leave) · `f3a8d21c6b57` (contracts) · `b7e2c94a1f60` (budgets).
 
+## 2026-08 Schema Additions (master-design wave: intake · autonomy · calendar · payments)
+
+**mail module**
+- `inbound_emails` — one provenance row per ingested message: message_id (unique, idempotency), from/to/subject/body, thread_key (Re:/Fwd: stripped), matched vendor_id, classification, status (received|dispatched|**held**|failed), produced task_id. Provenance default-deny: statements/policy docs arriving by email are HELD, never auto-reconciled or auto-indexed.
+- `outbound_emails` — draft → human send → **sent_simulated** (reference provider writes .eml to the outbox dir; real SMTP is private-layer). related_type/id business link, reply_to_email_id threading, created_by/approved_by. There is deliberately no AI send tool.
+
+**policy module (the autonomy ladder)**
+- `autonomy_policies` — human-signed L3 envelopes: action_scope (e.g. spend.approve_bill), max_level, conditions JSON (max_amount, daily_cap, vendor_allowlisted, account_codes, budget_headroom — unknown keys FAIL CLOSED), status draft|active|suspended|expired, rejection_count (breaker: 3 review rejections auto-suspend).
+- `policy_decisions` — one audit-shaped row per evaluation: inputs snapshot (incl. the local business date used for velocity sums), per-condition verdicts, passed, resolved_level. No matching policy ⇒ L2 (today's behavior).
+- `vendors.autonomy_tier` — None | "allowlisted" (human-granted L3 eligibility).
+
+**obligations module**
+- `obligations` — the compliance calendar: name, category (tax|filing|renewal|labor|insurance|other), jurisdiction, due_date, recurrence (completing a recurring duty spawns the next occurrence), notice_days, status, source (seed|manual), linked ref. Idempotent US reference seed (941/940/1099/1120 + WA B&O/L&I + DE franchise).
+
+**payments module (instructions, not transfers)**
+- `payment_instructions` — the packet a human needs to release money: bill/vendor refs, amount, remit_to snapshot, wire reference, **evidence JSON** (bill/invoice numbers, PO, 3-way match status/note, due date), status prepared|confirmed|canceled, paid_date + bank payment_ref on confirmation. Preparing posts NOTHING; confirmation posts the payment journal via the existing accounting path.
+- `vendors.remit_to` — free-form remittance details, snapshotted per instruction.
+
+- Alembic: `e4b8c72f5a19` (inbound) · `f9d3a61c8b24` (outbound) · `a2e7f94c1d58` (policies + vendor tier) · `b6c1d85e3f42` (obligations) · `c9a4e73b2f61` (payment instructions + remit_to).
+
 ## 2026-07-29 Schema Notes (deploy completeness + sales scope)
 
 - **`Scope.SALES` added** to the permission domain enum (axis ①): O2C pipeline

@@ -30,6 +30,10 @@
 | **leave** | PTO balances (granted only; used derived from requests), manager-approved leave via reports_to, onboarding checklist | `request_leave`, `approve_leave`, `balance`, `start_onboarding` |
 | **contracts** | Commitments register: subscriptions/leases/insurance, renewal notice windows → INSIGHT inbox card | `add_contract`, `upcoming_renewals`, `end_contract` |
 | **budget** | Monthly budget per expense account; actuals derived from posted journals; overruns → INSIGHT inbox card | `set_budget`, `budget_vs_actual`, `consumption_note` |
+| **mail** | Email as a governed intake (provenance default-deny, drafts only) + maker-checker outbox (AI drafts, humans send) | `ingest`, `poll_and_ingest`, `draft_outbound`, `send_outbound` |
+| **policy** | Autonomy envelopes (L3): human-signed conditions, fail-closed evaluation, decision trail, self-suspending breaker | `propose_policy`, `activate_policy`, `evaluate` |
+| **obligations** | Compliance calendar: self-perpetuating recurring duties, US reference seed, deadline cards | `add_obligation`, `complete_obligation`, `upcoming` |
+| **payments** | Payment instructions, not transfers: remit-to + evidence packet → human executes → confirmation posts | `prepare_instruction`, `confirm_executed` |
 
 > **Dependency direction rule:** dependencies flow top → bottom only. Accounting knows nothing about inventory (reverse direction forbidden). Inventory doesn't call accounting directly either → **connected via events** (§3 below).
 > **fleet is the top-level orchestrator** — it calls other modules' services to draft role-specific work, and posts after human approval. Details = [AGENT-FLEET.md](AGENT-FLEET.md).

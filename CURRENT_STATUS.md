@@ -1,7 +1,7 @@
 # Current Status
 
 > What works **today**, verified by the test suite and live use.
-> Last updated: **2026-07-29** · 358 tests · 58 AI tools · 17 modules
+> Last updated: **2026-08-04** · 404 tests · 68 AI tools · 22 modules
 
 ## Verified end-to-end flows
 
@@ -35,6 +35,35 @@ QuickBooks Online import (`scripts/import_qbo`).
 checklist (I-9, W-4, direct deposit), a contracts register with renewal
 notice windows, and budget vs actual per expense account with actuals derived
 from posted journals (unbudgeted spend listed explicitly).
+
+**Email intake & outbox.** A mailbox is the fifth intake surface (chat,
+uploads, bank files, schedules being the others): messages are parsed,
+senders matched to vendor master data, invoices/packing lists dispatched as
+fleet drafts, and statements/policy documents arriving by email are HELD for
+a human — provenance default-deny. Outbound is maker-checker end to end: the
+AI drafts, only a human sends, and the reference provider never leaves the
+machine (`SENT_SIMULATED`; real IMAP/Gmail/Graph adapters are the private
+deployment layer — see [docs/MAIL-INTEGRATION.md](docs/MAIL-INTEGRATION.md)).
+
+**Policy-bounded autonomy (the L3 ladder).** Humans sign autonomy envelopes
+(per-bill cap, daily velocity cap, vendor allowlist, budget headroom);
+evaluation is pure code, unknown conditions fail closed, and no matching
+envelope means today's approve-first behavior. Inside an envelope the fleet
+posts through the same code path a human approval runs, leaves a post-hoc
+review card, and repeated rejections suspend the envelope automatically.
+Every evaluation writes an audit-shaped decision record.
+
+**Compliance calendar.** Tax returns, annual reports, renewals, and labor
+filings as one self-perpetuating calendar (completing a recurring duty
+schedules the next occurrence), with an idempotent US reference seed
+(federal + WA + Delaware) and weekly approaching-deadline cards.
+
+**Payments: instructions, not transfers.** The system prepares the packet a
+human needs to release money — payee, remit-to bank details, amount, wire
+reference, and the evidence chain (PO, 3-way match, due date) — the human
+executes the transfer at the bank, and only their confirmation (paid date +
+bank reference) posts the payment journal. The system never claims to have
+moved money, and the tools say so in their results.
 
 ## Agent architecture (implemented)
 
@@ -70,10 +99,10 @@ from posted journals (unbudgeted spend listed explicitly).
 
 | Metric | Value |
 |---|---|
-| Automated tests | 358 (all passing; CI on every push) |
+| Automated tests | 404 (all passing; CI on every push) |
 | Live-model battery ([docs/EVAL.md](docs/EVAL.md)) | 42/51 case-runs; all money-critical axes 3/3 |
-| AI tools (audited, permission-gated) | 58 |
-| Modules (vertical slices) | 17 |
+| AI tools (audited, permission-gated) | 68 |
+| Modules (vertical slices) | 22 |
 | Architecture decision records | 11 ([docs/ADR.md](docs/ADR.md)) |
 | Local models | qwen2.5:14b (chat) · qwen2.5vl:7b (vision) · bge-m3 (embeddings) |
 | Cloud LLM calls | 0 |
@@ -81,11 +110,14 @@ from posted journals (unbudgeted spend listed explicitly).
 ## Known gaps (honest list)
 
 - **Payroll and tax execution** — out of scope by design; the integration
-  seam (org chart, GL, onboarding docs) exists
+  seam (org chart, GL, onboarding docs, compliance calendar) exists
 - **Live bank feeds / payment rails** — statements import via CSV/OFX today;
-  "payment" posts the journal, it does not move real money
-- **Email inbound** — the fleet accepts uploads and chat; the mailbox
-  connector is the next highest-value addition
+  the system prepares payment instructions and records human-executed
+  transfers; it never moves money (by design, not omission)
+- **Real mailbox providers** — the MailProvider protocol and the full
+  downstream pipeline are shipped and tested against the filesystem
+  simulator; IMAP/Gmail/Graph adapters are private-layer work
+  ([docs/MAIL-INTEGRATION.md](docs/MAIL-INTEGRATION.md))
 - **Evaluation depth** — the live-model battery ([docs/EVAL.md](docs/EVAL.md))
   covers six behavior axes in two languages; broader paraphrase coverage and a
   versioned eval dataset are future work. Known 14B weak spots are documented

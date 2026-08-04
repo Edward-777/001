@@ -22,6 +22,9 @@ from ..modules.approval.models import RequestStatus
 from ..modules.documents.models import Document
 from ..modules.fleet.models import Task, TaskStatus
 from ..modules.learning.models import LearnedRule
+from ..modules.mail.models import InboundEmail
+from ..modules.payments.models import InstructionStatus, PaymentInstruction
+from ..modules.policy.models import AutonomyPolicy, PolicyStatus
 from .deps import require_login, templates
 
 router = APIRouter()
@@ -64,6 +67,12 @@ def runtime_stats(session: Session) -> dict:
             ApprovalRequest, ApprovalRequest.status == RequestStatus.SUBMITTED),
         "rules_active": count_of(LearnedRule, LearnedRule.status == "active"),
         "rules_applied": n(select(func.coalesce(func.sum(LearnedRule.applied_count), 0))),
+        "inbound_emails": count_of(InboundEmail),
+        "policies_active": count_of(
+            AutonomyPolicy, AutonomyPolicy.status == str(PolicyStatus.ACTIVE)),
+        "payments_prepared": count_of(
+            PaymentInstruction,
+            PaymentInstruction.status == str(InstructionStatus.PREPARED)),
     }
 
 

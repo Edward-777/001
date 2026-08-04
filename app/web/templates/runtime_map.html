@@ -26,6 +26,7 @@ the guardrails and a human decision.</p>
   {{ node(10, 48, 175, 56, '💬 Founder chat', s.conversations ~ ' conversations') }}
   {{ node(10, 122, 175, 56, '📄 Document upload', s.documents ~ ' documents') }}
   {{ node(10, 196, 175, 56, '🏦 Bank statements', 'auto-reconciled') }}
+  {{ node(10, 270, 175, 56, '📨 Email intake', s.inbound_emails ~ ' ingested · drafts only') }}
 
   <!-- ── column: the AI runtime (all local) ─────────────────────────── -->
   <rect x="225" y="20" width="310" height="428" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
@@ -53,12 +54,15 @@ the guardrails and a human decision.</p>
   <text x="580" y="258" font-size="11" fill="#78350f">💸 Never pays unasked</text>
   <text x="580" y="292" font-size="11" fill="#78350f">🧭 Sequential approvals</text>
   <text x="580" y="326" font-size="11" fill="#78350f">🗂 ACL-filtered retrieval</text>
+  <text x="580" y="360" font-size="11" fill="#78350f">🎚 Envelopes only ({{ s.policies_active }} active)</text>
+  <text x="580" y="394" font-size="11" fill="#78350f">💸 Instructions, never transfers</text>
 
   <!-- ── column: the human decides ──────────────────────────────────── -->
   <text x="781" y="38" font-size="10" font-weight="700" letter-spacing="1.5" fill="#94a3b8">HUMAN DECIDES</text>
   {{ node(775, 96, 175, 64, '📥 Approval Inbox',
           s.fleet_waiting ~ ' drafts waiting', s.fleet_done ~ ' completed') }}
   {{ node(775, 190, 175, 64, '🧑‍💼 Approvals', s.pending_approvals ~ ' requests pending') }}
+  {{ node(775, 284, 175, 64, '💸 Payment execution', s.payments_prepared ~ ' instructions awaiting a human') }}
 
   <!-- ── column: system of record ───────────────────────────────────── -->
   <text x="986" y="38" font-size="10" font-weight="700" letter-spacing="1.5" fill="#94a3b8">SYSTEM OF RECORD</text>

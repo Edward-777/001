@@ -4,22 +4,34 @@
 > [CURRENT_STATUS.md](CURRENT_STATUS.md); the phase-by-phase build history that
 > got us here is preserved in [docs/archive/BUILD-HISTORY.md](docs/archive/BUILD-HISTORY.md).
 
+## Shipped since this roadmap was written
+
+Email intake + maker-checker outbox (the fifth intake surface; real
+providers are private-layer — [docs/MAIL-INTEGRATION.md](docs/MAIL-INTEGRATION.md)),
+the **autonomy policy engine** (human-signed L3 envelopes, fail-closed,
+self-suspending), the **compliance calendar** (self-perpetuating recurring
+duties + US reference seed), and **payment instructions** (the system
+prepares remit-to + evidence packets; humans execute; confirmation posts).
+
 ## Next (reference-architecture scope)
 
-1. **Email inbound** — the highest-value missing intake: poll a mailbox,
-   classify attachments with the existing pipeline, and land vendor invoices
-   in the approval inbox minutes after they arrive. The fleet's
-   `TaskSource.EMAIL` seam already exists. *Public scope = the generic intake
-   interface and a reference implementation; credential management and
-   provider-specific deployment stay in the private layer.*
-2. **Risk-sorted approval inbox** — mitigate approval fatigue: rank cards by
+1. **Sourcing (RFQ)** — the front end of procurement: identify qualified
+   vendors, request quotes (over the outbox), compare price/delivery/terms/
+   history, and feed the winner into the existing PO → receipt → 3-way-match
+   spine. Generalizes to external professional services (insurance, legal,
+   tax) as engagement matters.
+2. **Auditor mode** — time-boxed read-all access grants; evidence-chain
+   pulls, GL↔subledger tie-outs, seeded sampling, PBC automation. The audit
+   trail, reversal-only ledger, and policy decision records already exist —
+   this is the conversational interface over them.
+3. **Risk-sorted approval inbox** — mitigate approval fatigue: rank cards by
    amount, vendor novelty, match status, and budget impact instead of
    chronology.
-3. **Evaluation depth** — the live-model battery exists
+4. **Evaluation depth** — the live-model battery exists
    ([docs/EVAL.md](docs/EVAL.md)); next is paraphrase coverage for the weak
-   phrasings it found and a versioned dataset so a model swap is a measured
-   decision.
-4. **Dashboards** — spend, cash, and pipeline cards on the landing page
+   phrasings it found, new cases for the mail/policy/payments tools, and a
+   versioned dataset so a model swap is a measured decision.
+5. **Dashboards** — spend, cash, and pipeline cards on the landing page
    (the runtime map at `/map` already covers the AI runtime itself).
 
 ## Later
