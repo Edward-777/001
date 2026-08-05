@@ -28,7 +28,8 @@ budget-overrun alerts. Drafts only — posting happens on human approval.
 moving-average inventory costing, straight-line depreciation, GR/IR clearing,
 period close and locking, nine-sheet closing package, and the full report set
 (BS / IS / CF / TB / GL / AP·AR aging / inventory valuation / cash runway).
-QuickBooks Online import (`scripts/import_qbo`).
+Existing books come over via the source-agnostic opening-balance migration
+path ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 **Operations.** PTO with manager approval routed through the org chart
 (balances derived from approved requests, never stored), new-hire onboarding

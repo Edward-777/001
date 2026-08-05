@@ -160,8 +160,9 @@ pytest                          # 404 tests
 
 Dev uses SQLite for instant run. Production targets PostgreSQL — a fresh
 database installs from the migration chain alone (`alembic upgrade head`),
-which CI verifies against PostgreSQL 16 on every push. Existing books can be
-imported from a QuickBooks Online export with `python -m scripts.import_qbo`.
+which CI verifies against PostgreSQL 16 on every push. Bringing existing books
+over is a cutover-date, opening-balance migration — source-agnostic by design;
+see [docs/MIGRATION.md](docs/MIGRATION.md).
 
 Local models (via [Ollama](https://ollama.com)): `qwen2.5:14b` (chat),
 `qwen2.5vl:7b` (vision), `bge-m3` (embeddings). Verify GPU residency with
@@ -177,9 +178,9 @@ tested on the representative flows above.
 
 Deliberately **not** in the public scope: payroll and tax execution (regulated
 — integrate, don't rebuild), live bank feeds and payment rails, installer and
-appliance provisioning, production data-migration tooling (a limited reference
-importer for QuickBooks Online exports **is** included; migration and
-reconciliation tooling for real customer books is not), per-industry
+appliance provisioning, production data-migration tooling (the migration
+*design* is public — [docs/MIGRATION.md](docs/MIGRATION.md) — source-specific
+adapters and reconciliation tooling for real customer books are not), per-industry
 accounting rule packs, provider-specific connector deployments and credential
 management (generic intake interfaces stay public), and production evaluation
 datasets. Those belong to a deployment layer, not to the reference architecture.

@@ -48,7 +48,8 @@ These belong to a deployment/product layer, not the reference architecture
 
 payroll & tax execution (integrate Gusto/ADP — regulated, don't rebuild),
 live bank feeds and payment rails, installer & appliance provisioning,
-production data-migration tooling (the limited QBO reference importer stays
-public), per-industry accounting rule packs, provider-specific connector
+production data-migration tooling (the source-agnostic migration design stays
+public — [docs/MIGRATION.md](docs/MIGRATION.md) — source adapters do not),
+per-industry accounting rule packs, provider-specific connector
 deployments and credential management (generic intake interfaces stay
 public), and production evaluation datasets.
