@@ -31,6 +31,10 @@ prepares remit-to + evidence packets; humans execute; confirmation posts).
    ([docs/EVAL.md](docs/EVAL.md)); next is paraphrase coverage for the weak
    phrasings it found, new cases for the mail/policy/payments tools, and a
    versioned dataset so a model swap is a measured decision.
+   4b. **Classification taxonomy expansion** — gated on email re-attach and on
+   a classification battery existing first: vendor statements, credit memos,
+   money-document direction (stage-2 check), HR-document ACL, tax notices —
+   rubric and priority order in [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md).
 5. **Dashboards** — spend, cash, and pipeline cards on the landing page
    (the runtime map at `/map` already covers the AI runtime itself).
 
