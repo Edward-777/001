@@ -6,7 +6,7 @@
 
 ## Why this exists
 
-The 358 automated tests prove the *deterministic* layers (services, guardrails,
+The 409 automated tests prove the *deterministic* layers (services, guardrails,
 permissions) with scripted fakes. This battery measures the one probabilistic
 component — the model — through the **real agent loop, real tool registry, and
 a real seeded database**, so a model swap or prompt change is a measured

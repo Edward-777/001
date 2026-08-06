@@ -51,7 +51,9 @@ def runtime_stats(session: Session) -> dict:
         select(Task.to_role, func.count()).group_by(Task.to_role)).all())
 
     return {
-        "tools": len(registry._tools),
+        # count what is actually callable today — feature-flagged (dormant)
+        # tools don't belong on a live map
+        "tools": sum(1 for t in registry._tools.values() if registry._enabled(t)),
         "tool_calls": tool_calls,
         "tool_fails": tool_fails,
         "conversations": count_of(Conversation),

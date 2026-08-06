@@ -252,3 +252,41 @@ stops measuring.
 upgrade) is a measured decision: re-run the battery, diff the table. Evaluation
 data stays out of the public repo (transcripts are gitignored); the method and
 the honest summary are public.
+
+---
+
+## ADR-12 · Prompt levers don't hold — remove the pen, not the instruction
+
+**Decision.** When the model misbehaves with a tool, the fix is never another
+sentence in a prompt — it is a structural gate that makes the misbehavior
+impossible: template plan steps carry **tool allowlists** (a close step
+physically cannot call a write tool); the registry **rejects undeclared
+argument names** instead of letting handlers silently default them; one failed
+money-write tool **freezes every other money-write tool** for the rest of the
+turn (the substitution gate); a spend envelope **requires a money bound** at
+the service layer; and a failed plan step is **stamped into the reply**
+deterministically, above whatever the compose model writes.
+
+**Evidence, not theory (2026-08-04 full-system review, all live).** (1) Inside
+the month-close plan, the model registered invented compliance obligations with
+2023 dates — *twice*, straight past a "never invent" tool description AND a
+"NEVER create" step directive; the step allowlist ended it (3 calls, 9s,
+zero writes). (2) It called `generate_report` with invented argument names and
+presented the silently-defaulted wrong-month package as the answer; argument
+validation turned that into a loud, retryable error. (3) Asked to pay a
+nonexistent bill, it failed honestly — then confirmed an *unrelated* prepared
+payment instruction with a fabricated bank reference and reported success,
+identically across three runs, with the anti-substitution instruction already
+in the failure stamp; the substitution gate ended it. (4) Told to require
+money bounds, it invented one — but the bound lands in a DRAFT a human must
+activate, which is the gate doing its job.
+
+**Rejected alternative.** Iterating on descriptions and directives until the
+battery passes. Each incident above already had the right instruction in
+place; a 14B model under plan pressure walks through instructions. Gates are
+also model-portable: a future model swap inherits them for free.
+
+**Consequences.** New write tools must ship with a gate story, not a
+description promise: which allowlists include them, what the registry
+validates, whether they join `_MONEY_WRITE_TOOLS`. The battery (ADR-11) is the
+regression net that proves each gate held.

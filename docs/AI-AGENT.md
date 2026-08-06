@@ -163,3 +163,14 @@ User: "I'm going to a conference in Korea May 1-15"
 - **Date grounding on the user turn:** qwen ignored "Today's date is …" even at the top of the system prompt and resolved bare dates to its training era (`8월 24일` → 2023-08-24). The date now rides on the user-turn tag — the most recent tokens are the ones the model reliably honors (same lever as the reply-language tag).
 - **Foreign-script backstop (`_has_foreign_script`):** the Chinese-drift regenerator now also catches Cyrillic (a Korean budget question drew a fluent Russian reply in the battery). One regeneration attempt; original kept if it still drifts.
 - **Repeated-failure breaker (`_MAX_SAME_TOOL_FAILURES = 3`):** a tool that fails three times in one turn is withdrawn for the rest of the turn. Observed failure mode: asked to order servers with no price, the model fabricated a product URL and retried the rejected create call to the iteration limit; withdrawal forces the text answer — the question it should have asked.
+
+## 10. Structural gates round (2026-08-04 · full-system review, rationale = ADR-12)
+
+Every item below replaced a prompt instruction the model had already walked through (incident details in ADR-12 and docs/EVAL.md):
+
+- **Template step tool allowlists (`planner._STEP_TOOLS`):** a template plan step can only call the tools the deterministic plan names — the month-close steps carry read/report tools only, and the purchase-request template's single draft step has **no submit tool**, making maker-checker structural for that flow.
+- **Undeclared-argument rejection (`registry.execute`):** argument names a tool never declared fail loudly with the accepted list, instead of handlers silently defaulting them away.
+- **The substitution gate (`_MONEY_WRITE_TOOLS`):** once one money-write tool fails in a turn, a *different* money-write tool is refused for the rest of the turn; same-tool batch retries stay allowed. Spans plan steps, like the maker-checker state.
+- **Plan-failure stamping:** a failed step is prepended to the reply ("⚠ NOT completed …") deterministically, above whatever the compose model writes.
+- **Script net widened:** the foreign-script backstop now also covers Thai, Devanagari, and Arabic (a full Thai reply to an English stock question was observed live).
+- **Envelope money bound (`policy.propose_policy`):** a spend envelope without `max_amount`/`daily_cap` is refused at the service layer.

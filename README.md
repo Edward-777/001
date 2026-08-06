@@ -21,15 +21,17 @@ product — the scope is deliberate (see [Scope](#scope-what-this-repo-is-and-is
 - **68 permission-aware AI tools** — every tool is a thin wrapper over the same
   service layer the human UI calls, constrained by the caller's permissions and
   re-checked at execution
-- **404 automated tests** (CI also proves a fresh-PostgreSQL install from
-  migrations alone) plus a **live-model behavior battery** — six axes, two
+- **409 automated tests** (CI also proves a fresh-PostgreSQL install from
+  migrations alone) plus a **live-model behavior battery** — seven axes, two
   languages, honest results ([docs/EVAL.md](docs/EVAL.md))
 - **Policy-bounded autonomy (L3)** — humans sign envelopes (amount, velocity,
   vendor, budget conditions); inside them the system executes and leaves a
   review card, outside them everything parks for approval; repeated rejections
   suspend the envelope automatically
 - **Email as a governed intake** — a mailbox feeds the same pipeline as every
-  other surface: drafts only, provenance default-deny, nothing executable
+  other surface: drafts only, provenance default-deny, nothing executable.
+  Built and tested; **ships dormant** behind `mail_enabled` until the
+  pre-launch live-mailbox test ([docs/MAIL-INTEGRATION.md](docs/MAIL-INTEGRATION.md))
 - **Procure-to-pay and order-to-cash, end to end** — through chat, with real postings
 - **Double-entry accounting** — event-driven posting, US GAAP conventions, month-end close
 - **Autonomous agent fleet** — drafts work from inbound documents; only humans post
@@ -155,7 +157,7 @@ copy .env.example .env          # then edit
 python -m scripts.seed_dev      # COA, rules, demo users
 uvicorn app.main:app --reload --port 8001
 #  -> http://127.0.0.1:8001/        login: admin@001.local / admin
-pytest                          # 404 tests
+pytest                          # 409 tests
 ```
 
 Dev uses SQLite for instant run. Production targets PostgreSQL — a fresh

@@ -6,7 +6,8 @@
 
 ## Shipped since this roadmap was written
 
-Email intake + maker-checker outbox (the fifth intake surface; real
+Email intake + maker-checker outbox (the fifth intake surface; ships dormant
+behind `mail_enabled` until the pre-launch live-mailbox test; real
 providers are private-layer — [docs/MAIL-INTEGRATION.md](docs/MAIL-INTEGRATION.md)),
 the **autonomy policy engine** (human-signed L3 envelopes, fail-closed,
 self-suspending), the **compliance calendar** (self-perpetuating recurring

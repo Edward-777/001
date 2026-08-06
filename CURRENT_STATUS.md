@@ -1,7 +1,8 @@
 # Current Status
 
 > What works **today**, verified by the test suite and live use.
-> Last updated: **2026-08-04** · 404 tests · 68 AI tools · 22 modules
+> Last updated: **2026-08-05** · 409 tests · 68 AI tools (65 active — the 3
+> mail tools ship dormant) · 22 modules
 
 ## Verified end-to-end flows
 
@@ -37,14 +38,16 @@ checklist (I-9, W-4, direct deposit), a contracts register with renewal
 notice windows, and budget vs actual per expense account with actuals derived
 from posted journals (unbudgeted spend listed explicitly).
 
-**Email intake & outbox.** A mailbox is the fifth intake surface (chat,
-uploads, bank files, schedules being the others): messages are parsed,
-senders matched to vendor master data, invoices/packing lists dispatched as
-fleet drafts, and statements/policy documents arriving by email are HELD for
-a human — provenance default-deny. Outbound is maker-checker end to end: the
-AI drafts, only a human sends, and the reference provider never leaves the
-machine (`SENT_SIMULATED`; real IMAP/Gmail/Graph adapters are the private
-deployment layer — see [docs/MAIL-INTEGRATION.md](docs/MAIL-INTEGRATION.md)).
+**Email intake & outbox — built, tested, shipped dormant.** A mailbox is the
+fifth intake surface (chat, uploads, bank files, schedules being the others):
+messages are parsed, senders matched to vendor master data, invoices/packing
+lists dispatched as fleet drafts, and statements/policy documents arriving by
+email are HELD for a human — provenance default-deny. Outbound is
+maker-checker end to end: the AI drafts, only a human sends, and the
+reference provider never leaves the machine (`SENT_SIMULATED`). The whole
+surface sits behind `settings.mail_enabled` (default **off**) — no routes,
+no scheduler poll, no AI tools — until the pre-launch live-mailbox test
+passes ([docs/MAIL-INTEGRATION.md](docs/MAIL-INTEGRATION.md)).
 
 **Policy-bounded autonomy (the L3 ladder).** Humans sign autonomy envelopes
 (per-bill cap, daily velocity cap, vendor allowlist, budget headroom);
@@ -76,11 +79,14 @@ moved money, and the tools say so in their results.
   the approval inbox, active only after approval, application count measured
 - **Execution timeline** — every tool call with status and latency under each reply
 - **Honesty backstop** — a failed action can never be reported as a success
-- **Deterministic model babysitting** (all battery-driven — [docs/EVAL.md](docs/EVAL.md)):
-  today's date rides on the user turn (qwen ignored it in the system prompt and
-  resolved bare dates to 2023), a foreign-script backstop regenerates replies
-  that drift into Chinese or Russian, and a tool failing 3× in one turn is
-  withdrawn so the model asks instead of retrying fabricated arguments
+- **Deterministic model babysitting** (all battery-driven — [docs/EVAL.md](docs/EVAL.md),
+  rationale [ADR-12](docs/ADR.md)): today's date rides on the user turn, a
+  foreign-script backstop regenerates drifted replies (Chinese/Cyrillic/Thai+),
+  a tool failing 3× in one turn is withdrawn, template plan steps carry
+  **tool allowlists** (a close step physically cannot write), the registry
+  **rejects undeclared arguments**, one failed money write **freezes the other
+  money-write tools** for the turn (the substitution gate), and a failed plan
+  step is stamped into the reply above whatever the model composes
 - **Runtime map** (`/map`) — the whole pipeline drawn live from the database
 
 ## Trust & security (implemented)
@@ -100,11 +106,11 @@ moved money, and the tools say so in their results.
 
 | Metric | Value |
 |---|---|
-| Automated tests | 404 (all passing; CI on every push) |
-| Live-model battery ([docs/EVAL.md](docs/EVAL.md)) | 42/51 case-runs; all money-critical axes 3/3 |
-| AI tools (audited, permission-gated) | 68 |
+| Automated tests | 409 (all passing; CI on every push) |
+| Live-model battery ([docs/EVAL.md](docs/EVAL.md)) | 54/72 case-runs (24 cases × 3 runs, zero flakiness); all money-critical axes 3/3 |
+| AI tools (audited, permission-gated) | 68 (65 active; 3 mail tools dormant) |
 | Modules (vertical slices) | 22 |
-| Architecture decision records | 11 ([docs/ADR.md](docs/ADR.md)) |
+| Architecture decision records | 12 ([docs/ADR.md](docs/ADR.md)) |
 | Local models | qwen2.5:14b (chat) · qwen2.5vl:7b (vision) · bge-m3 (embeddings) |
 | Cloud LLM calls | 0 |
 
